@@ -15,3 +15,7 @@ dist/
 .DS_Store
 Thumbs.db
 .vscode/
+
+# Referee ML-DSA secret key
+.referee-key.json
+*.key.json

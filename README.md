@@ -17,6 +17,16 @@ verified on chain, so a leaked or quantum-broken ECDSA key cannot drain the vaul
 | `web/` arena + leaderboard | Planned |
 | `audits/` two-stage QCAI audit | Planned |
 
+## Deployed on testnet
+
+| Contract | Address |
+|---|---|
+| EscrowVault | `0xcD9AAd1ad2D7981699f256e73F2780dac86f0266` |
+| RobotRegistry | `0x7733d4f2D707c2F8160831e2e0ca2b6B90Ef4940` |
+| Admin / deployer | `qor1g4xu64wuhy25y9h7lvtncz6mf5nt4q9ze87qvv` (`0x454DCD55DCB9154216fEfb173C0B5B4D26bA80A2`) |
+
+Transactions and the live precompile check are in [deployments/testnet.json](deployments/testnet.json).
+
 ## Network
 
 QoreChain testnet `qorechain-diana`, EVM chain id 9800, RPC `https://evm-testnet.qore.host`.
@@ -57,9 +67,11 @@ Deploy (needs a registered ML-DSA-87 key and an open EVM window):
 ```sh
 cp .env.example .env        # set PRIVATE_KEY, QORE_PQC_RECOVERY_CODE, REFEREE_PUBKEY
 npm run window status
+npm run referee-key         # creates the referee ML-DSA key (.referee-key.json, git-ignored)
 npm run window open
-npm run deploy:vault
-npm run deploy:registry
+# forge script simulates locally, where QoreChain precompiles do not exist, so deploy directly:
+forge create src/EscrowVault.sol:EscrowVault --rpc-url qorechain_testnet --private-key $PRIVATE_KEY --broadcast --constructor-args $REFEREE_PUBKEY
+forge create src/RobotRegistry.sol:RobotRegistry --rpc-url qorechain_testnet --private-key $PRIVATE_KEY --broadcast --constructor-args $REFEREE_PUBKEY
 ```
 
 ## Credits
