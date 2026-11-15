@@ -62,6 +62,20 @@ npm run deploy:vault
 npm run deploy:registry
 ```
 
+## Credits
+
+Built during the QoreChain Developer Fest (4 Nov – 2 Dec 2026). Third-party code and tools used:
+
+| What | Used for | Licence |
+|---|---|---|
+| [create-qorechain-dapp](https://www.npmjs.com/package/create-qorechain-dapp) 0.14.0, `foundry` template | Project scaffold and the EVM window helper (`contracts/scripts/window.ts`) | Apache-2.0 |
+| [@qorechain/sdk](https://www.npmjs.com/package/@qorechain/sdk) 0.14.0 | ML-DSA-87 keys and hybrid-signed native transactions | Apache-2.0 |
+| [@qorechain/evm](https://www.npmjs.com/package/@qorechain/evm) 0.14.0 | Precompile addresses and ABIs (`pqcVerify`, `pqcKeyStatus`) | Apache-2.0 |
+| [Foundry](https://github.com/foundry-rs/foundry) and [forge-std](https://github.com/foundry-rs/forge-std) | Build, tests, deploy scripts | MIT / Apache-2.0 |
+| [viem](https://viem.sh), [CosmJS](https://github.com/cosmos/cosmjs) | Chain clients used by the window helper | MIT / Apache-2.0 |
+
+AI assistance is documented in [AI_USAGE.md](AI_USAGE.md).
+
 ## License
 
 MIT
