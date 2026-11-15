@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import {Test} from "forge-std/Test.sol";
 import {EscrowVault} from "../src/EscrowVault.sol";
 import {PQGuard} from "../src/PQGuard.sol";
+import {PQAdmin} from "../src/PQAdmin.sol";
 import {MockPQC} from "./mocks/MockPQC.sol";
 
 contract ReentrantClaimer {
@@ -171,7 +172,7 @@ contract EscrowVaultTest is Test {
         uint256 deadline = block.timestamp + 1 hours;
         bytes memory sig = _refereeSig(id, player, deadline);
         vm.warp(deadline + 1);
-        vm.expectRevert(EscrowVault.Expired.selector);
+        vm.expectRevert(PQAdmin.Expired.selector);
         vault.claimBounty(id, player, REPLAY, deadline, sig);
     }
 
@@ -299,7 +300,7 @@ contract EscrowVaultTest is Test {
         vault.setPaused(true, deadline, _sig(adminPk, vault.setPausedDigest(true, 0, deadline)));
 
         bytes memory claimSig = _refereeSig(id, player, deadline);
-        vm.expectRevert(EscrowVault.Paused.selector);
+        vm.expectRevert(PQAdmin.Paused.selector);
         vault.claimBounty(id, player, REPLAY, deadline, claimSig);
 
         vault.withdrawBounty(id, owner, deadline, _sig(ownerPk, vault.withdrawDigest(id, owner, 0, deadline)));

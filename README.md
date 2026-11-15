@@ -12,8 +12,7 @@ verified on chain, so a leaked or quantum-broken ECDSA key cannot drain the vaul
 
 | Part | State |
 |---|---|
-| `contracts/` EscrowVault + PQGuard | Written, 24 Foundry tests passing |
-| `contracts/` RobotRegistry | Next |
+| `contracts/` EscrowVault, RobotRegistry, PQAdmin, PQGuard | Written, 47 Foundry tests passing |
 | `backend/` robot brain + ML-DSA referee | Planned |
 | `web/` arena + leaderboard | Planned |
 | `audits/` two-stage QCAI audit | Planned |
@@ -59,7 +58,8 @@ Deploy (needs a registered ML-DSA-87 key and an open EVM window):
 cp .env.example .env        # set PRIVATE_KEY, QORE_PQC_RECOVERY_CODE, REFEREE_PUBKEY
 npm run window status
 npm run window open
-npm run deploy:testnet
+npm run deploy:vault
+npm run deploy:registry
 ```
 
 ## License
