@@ -1,0 +1,17 @@
+# Secrets: never commit keys, mnemonics or PQC recovery codes
+.env
+.env.*
+!.env.example
+
+# Dependencies and build output
+node_modules/
+contracts/out/
+contracts/cache/
+contracts/lib/
+contracts/broadcast/*/31337/
+dist/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
