@@ -10,6 +10,8 @@
  *   pnpm window status     show the account, its PQC key and its window
  *   pnpm window register   register the account's ML-DSA-87 key (once)
  *   pnpm window open       open a window sized for a few deploys
+ *   pnpm window close      close the window right after use (RedZone)
+ *   pnpm window proof      hybrid-signed self-transfer, the drill-day proof (RedZone)
  *   pnpm window recovery-code   print a new PQC recovery code (QRC1)
  *
  * The account comes from QORE_MNEMONIC (BIP-44 m/44'/60'/0'/0/0), whose
@@ -28,6 +30,8 @@ import {
   isRegisteredPqcKey,
   isValidRecoveryCode,
   openEvmWindowMsg,
+  closeEvmWindowMsg,
+  msg as qoreMsg,
   signProofOfPossession,
   unifiedAccountFromSeed,
   type UnifiedAccount,
@@ -163,17 +167,38 @@ async function open(): Promise<void> {
   console.log("Opening advanced the account's nonce; deploy now.");
 }
 
+/**
+ * RedZone addition: close the window as soon as you are done with it. While a window is open,
+ * the classical ECDSA key alone can spend up to its limit (the Q-Day Drill showed this), so
+ * never leave one open. Closing is hybrid-signed, so an attacker cannot close or reopen it.
+ */
+async function close(): Promise<void> {
+  const acc = await account();
+  console.log(`closed: ${await broadcast(acc, "hybrid", [closeEvmWindowMsg(acc.cosmos)])}`);
+}
+
+/**
+ * RedZone addition: a "still works" proof for the Q-Day Drill that needs no EVM window.
+ * A hybrid-signed native transfer of 1 uqor to the account itself: the attacker, holding only
+ * the ECDSA key, cannot produce one, and no window is opened for it to hijack.
+ */
+async function proof(): Promise<void> {
+  const acc = await account();
+  const m = qoreMsg.bank.send({ fromAddress: acc.cosmos, toAddress: acc.cosmos, amount: [{ denom: "uqor", amount: "1" }] });
+  console.log(`proof tx: ${await broadcast(acc, "hybrid", [m])}`);
+}
+
 async function recoveryCode(): Promise<void> {
   console.log(generatePqcRecoveryCode());
   console.log("Put it in .env as QORE_PQC_RECOVERY_CODE and keep a copy apart from PRIVATE_KEY.");
   console.log("Use the same code every time: a new code gives the account a different ML-DSA-87 key.");
 }
 
-const commands: Record<string, () => Promise<void>> = { status, register, open, "recovery-code": recoveryCode };
+const commands: Record<string, () => Promise<void>> = { status, register, open, close, proof, "recovery-code": recoveryCode };
 const cmd = process.argv[2] ?? "status";
 const run = commands[cmd];
 if (!run) {
-  console.error(`Unknown command "${cmd}". Use: status | register | open | recovery-code`);
+  console.error(`Unknown command "${cmd}". Use: status | register | open | close | proof | recovery-code`);
   process.exit(1);
 }
 run().catch((err: unknown) => {
