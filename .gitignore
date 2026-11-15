@@ -19,3 +19,4 @@ Thumbs.db
 # Referee ML-DSA secret key
 .referee-key.json
 *.key.json
+.attacker.json

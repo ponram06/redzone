@@ -25,6 +25,26 @@ alone can do. We ran the same attacks against ourselves on 16 Nov with `npm run 
 | Plain QOR transfer into the vault | Blocked | Contract: `receive()` reverts |
 | Registry `updateBrain`, forged `recordResult` | Blocked | Contract: owner / referee ML-DSA signature required |
 
+## Advanced rehearsal: 5 of 5 attacks blocked
+
+The real bot also has its own funded accounts. `npm run attack:advanced`
+([contracts/scripts/qday-attack-advanced.ts](../contracts/scripts/qday-attack-advanced.ts)) creates an
+attacker account with its own ML-DSA key and EVM window, then uses only the drill account's ECDSA key:
+
+| Attack | Result | Why |
+|---|---|---|
+| `MsgExecuteCosmos` meta-transaction: ECDSA-signed spend of 1 QOR, relayed by the attacker | Blocked | The drill account has 0 linked authenticators, so no classical key can authorise spends for it |
+| `MsgExecuteEVM` meta-transaction: ECDSA-signed EVM transfer, relayed by the attacker | Blocked | Same |
+| EIP-7702: stolen key signs an authorization tuple, attacker sponsors the type-4 tx | Blocked | Chain: account has not consented to delegating its code (consent needs a hybrid-signed `MsgAuthorizeEVMDelegation`) |
+| Real tx from the attacker's window: `claimBounty(1)` with forged referee sig | Reverted on chain | `0x0fdf406dd720dbcb5bd1670fb148ce8fff802c56a42c70a46f08c3723dacfabb` |
+| Real tx from the attacker's window: `withdrawBounty(1)` with forged owner sig | Reverted on chain | `0x62580ffcad3ecb74eaf45305f0b837b0cc9b28003ca515c820a01be0897931f6` |
+
+After both runs the vault still holds its 1 QOR bounty and the drill account has no code installed.
+
+Not applicable to our account: ERC-20 approvals and permits (the drill account holds no tokens),
+staking, authz and fee grants, IBC transfers (all native messages, which need the hybrid signature
+shown above).
+
 ## Weak spot found and fixed
 
 **An open EVM window can be spent with the ECDSA key alone.** After deploying we had left a window

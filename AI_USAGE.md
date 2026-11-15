@@ -15,6 +15,7 @@ This file records how AI tools were used to build RedZone, for the Best AI-Nativ
 | 2026-11-15 | Moved shared ML-DSA admin logic into `PQAdmin.sol`; wrote `RobotRegistry.sol` (robots, 5 sessions per player per day, referee-signed results and utility scores, rating and tiers, brain changes reset stats) with 23 tests. 47 tests pass in total. | Agreed the rating formula and the brain-reset rule. |
 | 2026-11-16 | Created the drill account and referee ML-DSA key locally, registered the PQ key, opened an EVM window, live-tested `pqcVerify`/`pqcKeyStatus` on testnet, deployed EscrowVault and RobotRegistry, registered a demo robot and locked a 1 QOR bounty. Requested faucet tokens through Claude in Chrome (rate-limited). | Funded the drill account from QoreX. |
 | 2026-11-16 | Wrote and ran a Q-Day attack rehearsal (`qday-attack.ts`) using only the ECDSA key: 17/17 attacks blocked. Found that an open EVM window can be spent with ECDSA alone; added `window close` and a window-free `window proof` command and documented the drill-day procedure. | Asked for the self-attack before the real drill. |
+| 2026-11-16 | Wrote an advanced rehearsal (`qday-attack-advanced.ts`) with a separate attacker account: ECDSA-signed meta-transactions, an EIP-7702 delegation sponsored by the attacker, and real drain transactions. 5/5 blocked. | Asked for every possible attack. |
 
 ## Product use of AI
 

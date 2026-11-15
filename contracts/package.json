@@ -11,6 +11,7 @@
     "window": "tsx --env-file=.env scripts/window.ts",
     "referee-key": "tsx scripts/referee-key.ts",
     "attack": "tsx --env-file=.env scripts/qday-attack.ts",
+    "attack:advanced": "tsx --env-file=.env scripts/qday-attack-advanced.ts",
     "deploy:vault": "forge script script/DeployVault.s.sol --rpc-url qorechain_testnet --broadcast",
     "deploy:registry": "forge script script/DeployRedZone.s.sol --rpc-url qorechain_testnet --broadcast",
     "typecheck": "tsc --noEmit"

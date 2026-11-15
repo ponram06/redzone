@@ -26,7 +26,7 @@ verified on chain, so a leaked or quantum-broken ECDSA key cannot drain the vaul
 | Admin / deployer | `qor1g4xu64wuhy25y9h7lvtncz6mf5nt4q9ze87qvv` (`0x454DCD55DCB9154216fEfb173C0B5B4D26bA80A2`) |
 
 Transactions and the live precompile check are in [deployments/testnet.json](deployments/testnet.json).
-Q-Day Drill rehearsal (17/17 attacks blocked, one weak spot found and fixed): [docs/QDAY_DRILL.md](docs/QDAY_DRILL.md).
+Q-Day Drill rehearsal (22/22 attacks blocked, one weak spot found and fixed): [docs/QDAY_DRILL.md](docs/QDAY_DRILL.md).
 
 ## Network
 
