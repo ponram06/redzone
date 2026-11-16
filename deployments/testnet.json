@@ -16,14 +16,24 @@
     "RobotRegistry": {
       "address": "0x7733d4f2D707c2F8160831e2e0ca2b6B90Ef4940",
       "deployTx": "0xac7c743a7723426571af4f81c12b3c6f6ef5460ddcea9b1caf29282ffa70bfdc",
-      "deployBlock": 10150185
+      "deployBlock": 10150185,
+      "note": "v1, superseded by RobotRegistryV2 on 2026-11-16 (kept for history)"
+    },
+    "RobotRegistryV2": {
+      "address": "0x354f71Da76314Cd74A18524899Aeb43611d86448",
+      "deployTx": "0xd699e6de6a01f680b1804b28bd8e653a875504991d46f82bacf1df205210cd69",
+      "deployBlock": 10183479,
+      "nativeChainId": "qorechain-diana"
     }
   },
   "setup": {
     "pqcKeyRegistration": "DF714A0621E03515EB6933B7557C4E4C8CB4AF4C87997CD1BDECFCE46F6C4580",
     "evmWindowOpen": "D7676B9F79F3ECA613036BB488E60782F12F7320FAED7C8A355213855063879E",
     "registerRobot Sentinel-01 (id 1)": "0x95b9fa8f899fe0e15b1efca6052ea9b791a903f204fecceb94f4620d3e24902a",
-    "depositBounty 1 QOR (id 1)": "0x1bdb674242d107d1d375f2a42b0cfbb967e6120fed1229a8022a9aec9518c98e"
+    "depositBounty 1 QOR (id 1)": "0x1bdb674242d107d1d375f2a42b0cfbb967e6120fed1229a8022a9aec9518c98e",
+    "evmWindowOpen v2 deploy (200 blocks, 2 txs, 0.8 QOR cap)": "3BF7BA374CC9BEEAF9E70C7D271F7AF21B26C2266B84E8F59D491770F62CCB10",
+    "RobotRegistryV2 registerRobot Sentinel-01 (id 1)": "0x01b2ec0d4a34184af8d11104ce6c685554c98aa6ca04a09f18bb38eda0ec21d7",
+    "evmWindowClose after v2 deploy": "025BD558A7AA22BEEAD1271236C8C0C50341A5D7626FF2771ED3EAF73BAFA436"
   },
   "precompileLiveCheck": "contracts/scripts/check-precompiles.ts: pqcVerify accepts an SDK ML-DSA-87 signature over a 32-byte digest and rejects a wrong message; pqcKeyStatus reports the deployer registered (algo 1, 2592-byte key)."
 }

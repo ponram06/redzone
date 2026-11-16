@@ -4,11 +4,12 @@ import { createPublicClient, defineChain, http, keccak256, parseAbi, stringToByt
 
 const deployments = JSON.parse(
   readFileSync(new URL("../../deployments/testnet.json", import.meta.url), "utf8"),
-) as { evmChainId: number; contracts: { EscrowVault: { address: Address }; RobotRegistry: { address: Address } } };
+) as { evmChainId: number; contracts: { EscrowVault: { address: Address }; RobotRegistryV2: { address: Address } } };
 
 export const CHAIN_ID = deployments.evmChainId;
 export const VAULT = deployments.contracts.EscrowVault.address;
-export const REGISTRY = deployments.contracts.RobotRegistry.address;
+/** RobotRegistryV2 (QoreX-signed, relayable sessions). v1 stays on chain for history only. */
+export const REGISTRY = deployments.contracts.RobotRegistryV2.address;
 /** Lower-case on purpose: viem rejects the mixed-case precompile constants. */
 export const PQC_VERIFY = "0x0000000000000000000000000000000000000a01" as Address;
 

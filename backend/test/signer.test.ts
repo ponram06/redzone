@@ -3,7 +3,7 @@ import { hexToBytes, toHex } from "viem";
 import { describe, expect, it } from "vitest";
 import { claimDigest, resultDigest, signDigest, utilityDigest } from "../src/signer.js";
 
-const REG = "0x7733d4f2D707c2F8160831e2e0ca2b6B90Ef4940";
+const REG = "0x354f71Da76314Cd74A18524899Aeb43611d86448";
 const VAULT = "0xcD9AAd1ad2D7981699f256e73F2780dac86f0266";
 const H = ("0x" + "ab".repeat(32)) as `0x${string}`;
 

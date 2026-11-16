@@ -13,7 +13,7 @@ import { Game, attemptMessage } from "../src/game.js";
 import { claimDigest, resultDigest, utilityDigest } from "../src/signer.js";
 import { Store } from "../src/store.js";
 
-const REG = "0x7733d4f2d707c2f8160831e2e0ca2b6b90ef4940" as Address;
+const REG = "0x354f71da76314cd74a18524899aeb43611d86448" as Address;
 const VAULT = "0xcd9aad1ad2d7981699f256e73f2780dac86f0266" as Address;
 const kp = generatePqcKeypair();
 const key = { publicKey: toHex(kp.publicKey), secretKey: kp.secretKey };

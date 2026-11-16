@@ -9,7 +9,7 @@ import { readFileSync } from "node:fs";
 import { pqcSign, pqcVerify } from "@qorechain/sdk";
 import { encodeAbiParameters, encodePacked, hexToBytes, keccak256, stringToBytes, toHex, type Address, type Hex } from "viem";
 
-export const REGISTRY_DOMAIN = "RedZone.RobotRegistry.v1";
+export const REGISTRY_DOMAIN = "RedZone.RobotRegistry.v2";
 export const VAULT_DOMAIN = "RedZone.EscrowVault.v1";
 
 const typehash = (s: string) => keccak256(stringToBytes(s));

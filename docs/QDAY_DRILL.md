@@ -7,7 +7,7 @@ alone can do. We ran the same attacks against ourselves on 16 Nov with `npm run 
 | | |
 |---|---|
 | Drill account | `qor1g4xu64wuhy25y9h7lvtncz6mf5nt4q9ze87qvv` (`0x454DCD55DCB9154216fEfb173C0B5B4D26bA80A2`) |
-| Contracts | EscrowVault `0xcD9AAd1ad2D7981699f256e73F2780dac86f0266`, RobotRegistry `0x7733d4f2D707c2F8160831e2e0ca2b6B90Ef4940` |
+| Contracts | EscrowVault `0xcD9AAd1ad2D7981699f256e73F2780dac86f0266`, RobotRegistryV2 `0x354f71Da76314Cd74A18524899Aeb43611d86448` (v1 `0x7733d4f2D707c2F8160831e2e0ca2b6B90Ef4940` superseded) |
 
 ## Rehearsal result: 17 of 17 attacks blocked
 
@@ -61,6 +61,21 @@ Fixes:
    `11D610B9C37BFFD6D59E2C13D08CA6962FC7B799F211073C9A8428578D38F179`.
 3. Money that matters sits in the vault, which never trusts `msg.sender`; even inside an open window
    the contracts refuse every drain.
+
+## RobotRegistryV2 (deployed 16 Nov)
+
+Players and owners now sign requests with their ML-DSA-87 key in QoreX; anyone relays them and the
+contract checks the signature on chain with `pqcVerify`. v2 has a 45-test attacker playbook
+([contracts/test/RobotRegistryV2.t.sol](../contracts/test/RobotRegistryV2.t.sol)): replay, identity
+swap, retargeting, cross-contract / cross-chain / action-label / type confusion, phishing reuse,
+stolen ECDSA keys (admin, owner, player), daily-limit bypass, front-running, forged and late
+verdicts, and a missing or junk precompile (fails closed). One weak spot found while attacking it
+(an owner-signed brain change could be held back for days) was fixed: every signed request now
+expires within one hour. A real QoreX signature over the exact v2 message was accepted by the live
+`pqcVerify` precompile, and refused with one digest character changed or the mainnet chain id.
+
+Deployed with a window of 200 blocks, 2 transactions and a 0.8 QOR cap, closed right after
+(`025BD558…`). Total cost 0.81 QOR.
 
 ## Drill-day procedure (18 Nov)
 

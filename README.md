@@ -12,7 +12,7 @@ verified on chain, so a leaked or quantum-broken ECDSA key cannot drain the vaul
 
 | Part | State |
 |---|---|
-| `contracts/` EscrowVault, RobotRegistry, PQAdmin, PQGuard | Written, 47 Foundry tests passing |
+| `contracts/` EscrowVault, RobotRegistryV2, PQAdmin, PQGuard, QoreXMessage | 92 Foundry tests passing, including a 45-test attacker playbook for v2 |
 | `backend/` robot brains + ML-DSA-87 referee API | Working: 43 tests, plus a live parity test against testnet ([backend/README.md](backend/README.md)) |
 | `web/` arena + leaderboard | Planned |
 | `audits/` two-stage QCAI audit | Planned |
@@ -22,7 +22,8 @@ verified on chain, so a leaked or quantum-broken ECDSA key cannot drain the vaul
 | Contract | Address |
 |---|---|
 | EscrowVault | `0xcD9AAd1ad2D7981699f256e73F2780dac86f0266` |
-| RobotRegistry | `0x7733d4f2D707c2F8160831e2e0ca2b6B90Ef4940` |
+| RobotRegistryV2 | `0x354f71Da76314Cd74A18524899Aeb43611d86448` (current: QoreX-signed, relayable sessions) |
+| RobotRegistry v1 | `0x7733d4f2D707c2F8160831e2e0ca2b6B90Ef4940` (superseded, kept for history) |
 | Admin / deployer | `qor1g4xu64wuhy25y9h7lvtncz6mf5nt4q9ze87qvv` (`0x454DCD55DCB9154216fEfb173C0B5B4D26bA80A2`) |
 
 Transactions and the live precompile check are in [deployments/testnet.json](deployments/testnet.json).
