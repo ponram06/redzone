@@ -58,6 +58,7 @@ export type Health = {
   vault: string;
   refereePubkeyHash: string;
   builtInBrains: Record<string, string>;
+  relayer: { address: string; cosmos: string } | null;
 };
 
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
@@ -70,7 +71,32 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
   return body;
 }
 
+export type SessionRequest = { robotId: number; player: string; nonce: string; deadline: number; digest: string; text: string; attemptsLeft: number };
+export type SessionStarted = { sessionId: number; tx: string; expiresAt: number; player: string };
+export type Verdict = {
+  sessionId: number;
+  robotId: number;
+  player: string;
+  breached: boolean;
+  say: string;
+  trace: Trace;
+  replayHash: string;
+  claims: { bountyId: number; amountWei: string }[];
+  relay?: { resultTx?: string; claimTxs?: { bountyId: number; tx: string }[]; error?: string };
+};
+
+/** Same text the backend and the referee check (game.ts attemptMessage). */
+export const attemptMessage = (chainId: number, registry: string, sessionId: number, instruction: string) =>
+  `RedZone attempt\nchain: ${chainId}\nregistry: ${registry.toLowerCase()}\nsession: ${sessionId}\ninstruction: ${instruction.replace(/\r\n?/g, "\n").trim()}`;
+
 export const api = {
+  sessionRequest: (robotId: number, player: string) =>
+    call<SessionRequest>(`/session/request?robotId=${robotId}&player=${encodeURIComponent(player)}`),
+  sessionStart: (body: { robotId: number; player: string; deadline: number; pqSignature: string }) =>
+    call<SessionStarted>("/session/start", { method: "POST", body: JSON.stringify(body) }),
+  attempt: (sessionId: number, instruction: string, pqSignature: string) =>
+    call<Verdict>("/attempt", { method: "POST", body: JSON.stringify({ sessionId, instruction, pqSignature }) }),
+  relayAgain: (sessionId: number) => call<Verdict>(`/attempt/${sessionId}/relay`, { method: "POST" }),
   health: () => call<Health>("/health"),
   arena: () => call<Arena>("/arena"),
   robots: () => call<{ robots: Robot[] }>("/robots").then((r) => r.robots),

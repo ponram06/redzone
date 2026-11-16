@@ -6,7 +6,7 @@ the first unchecked item of the earliest unfinished phase.
 Rules: no Claude co-author line in commits. Never commit `.env`, `.referee-key.json`, `.attacker.json`.
 Do not spend drill-account QOR or touch the fest website without the owner.
 
-Overall: about **56%** (each phase's weight is in brackets; last updated 2026-11-16).
+Overall: about **66%** (each phase's weight is in brackets; last updated 2026-11-16).
 
 ## Phase 1. Setup and registration (5%): done
 - [x] Hackathon registration, Post-Quantum dApp category, project page on build.qorechain.io
@@ -30,12 +30,13 @@ Overall: about **56%** (each phase's weight is in brackets; last updated 2026-11
 - [x] Replays and API: /attempt, /utility, /practice, /brains, /robots, /arena, /replay
 - [x] Backup chain: OpenRouter free models, then Groq gpt-oss-120b and gpt-oss-20b, then Deploy GLM-5.3-Flash, then local Ollama gemma4:e4b on D: (`npm run bench`)
 
-## Phase 5. Website (`web/`, React + Vite + TypeScript) (20%): 0%
-- [ ] Scaffold and theme
-- [ ] Wallet: QoreX / EVM provider on chain 9800, account display, EVM window guidance
-- [ ] Arena canvas: map, red zones, animated robot path, replay viewer
-- [ ] Practice mode (no wallet) against the demo robots
-- [ ] Attack flow: startSession tx, sign instruction, verdict, relay recordResult, claimBounty on breach
+## Phase 5. Website (`web/`, React + Vite + TypeScript) (20%): 60%
+- [x] Scaffold and theme
+- [x] Wallet: QoreX connect (native lane), ML-DSA signArbitrary for sessions and attempts
+- [x] Arena canvas: map, red zones, animated robot path, replay viewer
+- [x] Practice mode (no wallet) against the demo robots
+- [x] Attack flow: QoreX-signed StartSession relayed to RobotRegistryV2, signed instruction, verdict, auto recordResult + claimBounty
+- [ ] Relayer account: new testnet account, PQC key, funded with a few QOR (needs the owner)
 - [ ] Leaderboard and robot pages (rating, tier, bounty)
 - [ ] Owner flow: publish brain config, register robot, deposit bounty, utility score
 

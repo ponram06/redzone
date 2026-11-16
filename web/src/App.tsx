@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { api, formatQor, type Arena, type Health, type PracticeResult, type Robot } from "./api";
+import { api, formatQor, type Arena, type Health, type PracticeResult, type Robot, type Trace } from "./api";
 import { ArenaView } from "./components/ArenaView";
+import { PlayPanel } from "./components/PlayPanel";
 
 type Target = { key: string; name: string; brainHash: string; robot?: Robot; note: string };
 
@@ -25,6 +26,8 @@ export function App() {
   const [result, setResult] = useState<PracticeResult | null>(null);
   const [runError, setRunError] = useState<string | null>(null);
   const [runKey, setRunKey] = useState(0);
+  const [mode, setMode] = useState<"practice" | "real">("practice");
+  const [realTrace, setRealTrace] = useState<Trace | null>(null);
 
   useEffect(() => {
     Promise.all([api.health(), api.arena()])
@@ -140,8 +143,12 @@ export function App() {
         </aside>
 
         <section className="panel stage">
-          {arena ? <ArenaView arena={arena} trace={result?.trace ?? null} runKey={runKey} /> : <div className="arena placeholder" />}
-          {result && (
+          {arena ? (
+            <ArenaView arena={arena} trace={mode === "real" ? realTrace : (result?.trace ?? null)} runKey={runKey} />
+          ) : (
+            <div className="arena placeholder" />
+          )}
+          {mode === "practice" && result && (
             <div className={`verdict ${result.breached ? "breached" : "defended"}`} aria-live="polite">
               <strong>{result.breached ? "BREACHED" : "DEFENDED"}</strong>
               <span>
@@ -156,7 +163,33 @@ export function App() {
         </section>
 
         <section className="panel console">
-          <h2>Practice round</h2>
+          <div className="tabs" role="tablist">
+            <button role="tab" aria-selected={mode === "practice"} className={mode === "practice" ? "tab active" : "tab"} onClick={() => setMode("practice")}>
+              Practice
+            </button>
+            <button
+              role="tab"
+              aria-selected={mode === "real"}
+              className={mode === "real" ? "tab active" : "tab"}
+              disabled={!target?.robot}
+              title={target?.robot ? "" : "Real attempts are for robots registered on chain"}
+              onClick={() => setMode("real")}
+            >
+              Real attempt
+            </button>
+          </div>
+          {mode === "real" && health && target?.robot ? (
+            <PlayPanel
+              health={health}
+              robot={target.robot}
+              maxInstruction={arena?.maxInstruction ?? 500}
+              onResult={(t) => {
+                setRealTrace(t);
+                setRunKey((k) => k + 1);
+              }}
+            />
+          ) : (
+          <>
           <p className="muted small">
             Free and off-chain: nothing is signed or recorded. Real attempts start an on-chain session and pay out on a breach.
           </p>
@@ -192,6 +225,8 @@ export function App() {
                 {result.model ? ` · answered by ${result.model}` : " · rule brain"}
               </div>
             </div>
+          )}
+          </>
           )}
         </section>
       </div>
