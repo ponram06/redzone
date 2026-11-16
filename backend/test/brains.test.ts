@@ -81,10 +81,13 @@ describe("llm brain", () => {
       return Response.json({ choices: [{ message: { content: '{"say":"ok","actions":[{"goto":"lab"}]}' } }] });
     }) as typeof fetch;
     const busy = (async () => new Response("busy", { status: 429 })) as typeof fetch;
-    const withFallback = new LlmBrain(["a:free"], "x", { baseUrl: "http://x", apiKey: "k", fetch: busy }, {
-      model: "qwen-local",
-      endpoint: { baseUrl: "http://localhost:11434/v1", apiKey: "", extraBody: { think: false }, fetch: localFetch },
-    });
+    const withFallback = new LlmBrain(["a:free"], "x", { baseUrl: "http://x", apiKey: "k", fetch: busy }, [
+      { model: "groq-model", endpoint: { baseUrl: "http://groq", apiKey: "g", fetch: busy } },
+      {
+        model: "qwen-local",
+        endpoint: { baseUrl: "http://localhost:11434/v1", apiKey: "", extraBody: { think: false }, fetch: localFetch },
+      },
+    ]);
     const fb = await withFallback.plan(FACILITY, "go to lab");
     expect(fb.model).toBe("qwen-local");
     expect(local).toEqual(["qwen-local|false"]);

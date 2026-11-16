@@ -20,23 +20,28 @@ const models = (env.BRAIN_MODEL ?? "")
   .filter(Boolean);
 const endpoint = env.BRAIN_BASE_URL ? { baseUrl: env.BRAIN_BASE_URL, apiKey: env.BRAIN_API_KEY ?? "" } : null;
 
-// Backup model run by the operator (e.g. Ollama), used when every configured model fails.
-const fallback =
-  env.FALLBACK_BASE_URL && env.FALLBACK_MODEL
-    ? {
-        model: env.FALLBACK_MODEL,
-        endpoint: {
-          baseUrl: env.FALLBACK_BASE_URL,
-          apiKey: env.FALLBACK_API_KEY ?? "",
-          timeoutMs: Number(env.FALLBACK_TIMEOUT_MS ?? 180_000),
-          extraBody: env.FALLBACK_EXTRA_BODY ? (JSON.parse(env.FALLBACK_EXTRA_BODY) as Record<string, unknown>) : undefined,
-        },
-      }
-    : null;
+// Backup models (other free providers, local Ollama), tried in order 1..9 when every
+// configured model fails: FALLBACK_<n>_BASE_URL, _MODEL, _API_KEY, _EXTRA_BODY, _TIMEOUT_MS.
+const fallbacks = [];
+for (let n = 1; n <= 9; n++) {
+  const baseUrl = env[`FALLBACK_${n}_BASE_URL`];
+  const model = env[`FALLBACK_${n}_MODEL`];
+  if (!baseUrl || !model) continue;
+  const extra = env[`FALLBACK_${n}_EXTRA_BODY`];
+  fallbacks.push({
+    model,
+    endpoint: {
+      baseUrl,
+      apiKey: env[`FALLBACK_${n}_API_KEY`] ?? "",
+      timeoutMs: Number(env[`FALLBACK_${n}_TIMEOUT_MS`] ?? 120_000),
+      extraBody: extra ? (JSON.parse(extra) as Record<string, unknown>) : undefined,
+    },
+  });
+}
 
 const builtIns: BrainConfig[] = [];
 if (endpoint && models.length) builtIns.push({ kind: "llm", version: 1, models, systemPrompt: DEFAULT_LLM_PROMPT });
-const brains = new BrainRegistry(dataDir, endpoint, builtIns, fallback);
+const brains = new BrainRegistry(dataDir, endpoint, builtIns, fallbacks);
 const store = new Store(dataDir);
 
 const game = new Game({
@@ -76,4 +81,4 @@ await app.listen({ port, host: env.HOST ?? "127.0.0.1" });
 console.log(`RedZone referee on http://${env.HOST ?? "127.0.0.1"}:${port}`);
 console.log(`  brains: ${Object.entries(builtInBrains).map(([k, v]) => `${k}=${v.slice(0, 10)}…`).join(", ")}`);
 console.log(`  llm: ${endpoint ? `${endpoint.baseUrl} (${models.length} model(s))` : "off (rule brain only)"}`);
-console.log(`  fallback: ${fallback ? `${fallback.model} at ${fallback.endpoint.baseUrl}` : "none"}`);
+console.log(`  fallbacks: ${fallbacks.length ? fallbacks.map((f) => `${f.model} at ${new URL(f.endpoint.baseUrl).host}`).join(" -> ") : "none"}`);

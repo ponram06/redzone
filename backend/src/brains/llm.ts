@@ -50,7 +50,7 @@ export function parseModelReply(text: string): Pick<BrainOutput, "say" | "action
 }
 
 /**
- * Operator-run backup model (e.g. Ollama on the referee's machine), used only when every model
+ * Operator-run backup models (other free providers, or Ollama), tried in order only when every model
  * in the brain config fails. The replay records which model answered.
  */
 export type LlmFallback = { endpoint: LlmEndpoint; model: string };
@@ -60,12 +60,12 @@ export class LlmBrain implements Brain {
     private readonly models: string[],
     private readonly systemPrompt: string,
     private readonly endpoint: LlmEndpoint,
-    private readonly fallback: LlmFallback | null = null,
+    private readonly fallbacks: LlmFallback[] = [],
   ) {}
 
   async plan(arena: Arena, instruction: string): Promise<BrainOutput> {
     const attempts: { endpoint: LlmEndpoint; model: string }[] = this.models.map((model) => ({ endpoint: this.endpoint, model }));
-    if (this.fallback) attempts.push(this.fallback);
+    attempts.push(...this.fallbacks);
     const errors: string[] = [];
     for (const { endpoint, model } of attempts) {
       const doFetch = endpoint.fetch ?? fetch;

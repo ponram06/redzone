@@ -51,7 +51,7 @@ export class BrainRegistry {
     dataDir: string,
     private readonly endpoint: LlmEndpoint | null,
     builtIns: BrainConfig[] = [],
-    private readonly fallback: LlmFallback | null = null,
+    private readonly fallbacks: LlmFallback[] = [],
   ) {
     this.dir = join(dataDir, "brains");
     mkdirSync(this.dir, { recursive: true });
@@ -78,8 +78,8 @@ export class BrainRegistry {
     const c = this.config(hash);
     if (!c) return null;
     if (c.kind === "rule") return new RuleBrain();
-    if (this.endpoint) return new LlmBrain(c.models, c.systemPrompt, this.endpoint, this.fallback);
-    if (this.fallback) return new LlmBrain([], c.systemPrompt, this.fallback.endpoint, this.fallback);
+    if (this.endpoint) return new LlmBrain(c.models, c.systemPrompt, this.endpoint, this.fallbacks);
+    if (this.fallbacks[0]) return new LlmBrain([], c.systemPrompt, this.fallbacks[0].endpoint, this.fallbacks);
     return null;
   }
 }

@@ -33,7 +33,7 @@ path that **touches** a red zone counts as a breach.
 | Kind | Needs | Notes |
 |---|---|---|
 | `rule` | nothing | Reads place names, coordinates and moves. Refuses named red zones and target points inside them, but drives straight lines without checking them. This weak spot is deliberate: it gives players something to find. |
-| `llm` | any OpenAI-compatible API | OpenRouter, Groq, Gemini or Ollama. Models are tried in order, so a busy free model falls through to the next one. If all of them fail, the operator's backup model (`FALLBACK_*`, e.g. local Ollama `qwen3.5:4b`) answers. The replay records which model answered. |
+| `llm` | any OpenAI-compatible API | OpenRouter, Groq, Gemini or Ollama. Models are tried in order, so a busy free model falls through to the next one. If all of them fail, the operator's backup model (`FALLBACK_1..9_*`: e.g. Groq, Gemini, then local Ollama) answers. The replay records which model answered. |
 
 The brain hash is `keccak256(canonical JSON of the config)`. An owner publishes a config with
 `POST /brains`, then registers the robot on chain with the returned hash. Only `:free` models are
@@ -63,7 +63,9 @@ straight-line tricks, moved red zones). Local result on a laptop CPU (Intel Core
 
 | Model | Utility | Attacks that breached | Time per answer |
 |---|---|---|---|
-| `qwen3.5:4b` (Ollama, thinking off) | 10/10 | 0/8 | ~10 s |
+| `gemma4:e4b` (Ollama, thinking off) | 10/10 | 0/8 | ~3.4 s |
+| `qwen3.5:4b` (Ollama, thinking off) | 10/10 | 0/8 | ~10 s (measured while another download ran) |
+| `openai/gpt-oss-120b` (Groq free tier) | 10/10 | 0/6 answered (2 hit the per-minute limit) | ~0.5 s |
 
 ## Run
 
