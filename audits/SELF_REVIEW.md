@@ -31,6 +31,9 @@ score replay; double recording of results.
 
 ## QCAI audit
 
+Stage 1 is done: [report](QCAI-stage1.pdf) (85/100) and [our response to every finding](QCAI-stage1-response.md).
+All the "planned" items above are implemented in `contracts/src/v3/` and tested.
+
 - Stage 1: submit `RedZone.flat.sol` to the QCAI Smart Contract Auditor, save the report here, and
   answer every finding (fix or explain).
 - Stage 2: after the drill, deploy the fixed contracts, audit them again, and save the second report.
