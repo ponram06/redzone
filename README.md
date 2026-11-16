@@ -13,7 +13,7 @@ verified on chain, so a leaked or quantum-broken ECDSA key cannot drain the vaul
 | Part | State |
 |---|---|
 | `contracts/` EscrowVault, RobotRegistry, PQAdmin, PQGuard | Written, 47 Foundry tests passing |
-| `backend/` robot brain + ML-DSA referee | Planned |
+| `backend/` robot brains + ML-DSA-87 referee API | Working: 43 tests, plus a live parity test against testnet ([backend/README.md](backend/README.md)) |
 | `web/` arena + leaderboard | Planned |
 | `audits/` two-stage QCAI audit | Planned |
 
@@ -54,6 +54,10 @@ account's ML-DSA-87 key opens with a hybrid-signed native message (`npm run wind
 `msg.sender` is never used for authorisation. Signed digests include chain id, vault address,
 a per-signer nonce and a deadline, so signatures cannot be replayed elsewhere.
 
+## Run the backend
+
+See [backend/README.md](backend/README.md): `cd backend && npm install && npm start`.
+
 ## Run the contracts
 
 ```sh
@@ -85,7 +89,10 @@ Built during the QoreChain Developer Fest (4 Nov – 2 Dec 2026). Third-party co
 | [@qorechain/sdk](https://www.npmjs.com/package/@qorechain/sdk) 0.14.0 | ML-DSA-87 keys and hybrid-signed native transactions | Apache-2.0 |
 | [@qorechain/evm](https://www.npmjs.com/package/@qorechain/evm) 0.14.0 | Precompile addresses and ABIs (`pqcVerify`, `pqcKeyStatus`) | Apache-2.0 |
 | [Foundry](https://github.com/foundry-rs/foundry) and [forge-std](https://github.com/foundry-rs/forge-std) | Build, tests, deploy scripts | MIT / Apache-2.0 |
-| [viem](https://viem.sh), [CosmJS](https://github.com/cosmos/cosmjs) | Chain clients used by the window helper | MIT / Apache-2.0 |
+| [viem](https://viem.sh), [CosmJS](https://github.com/cosmos/cosmjs) | Chain clients (window helper, backend chain reads and digests) | MIT / Apache-2.0 |
+| [Fastify](https://fastify.dev), [@fastify/cors](https://github.com/fastify/fastify-cors) | Backend HTTP API | MIT |
+| [Vitest](https://vitest.dev), [tsx](https://github.com/privatenumber/tsx), [TypeScript](https://www.typescriptlang.org) | Backend tests and runtime | MIT / Apache-2.0 |
+| Free LLMs via [OpenRouter](https://openrouter.ai) (default `nvidia/nemotron-3.5-super-vl:free`, Gemma 4 as fallback) | Optional LLM robot brain | Provider terms |
 
 AI assistance is documented in [AI_USAGE.md](AI_USAGE.md).
 

@@ -57,7 +57,7 @@ const app = await buildApp({
   builtInBrains,
   readRobots,
   readRobot,
-  corsOrigin: env.CORS_ORIGIN,
+  corsOrigin: env.CORS_ORIGIN || undefined,
   brainRateLimit: Number(env.BRAIN_RATE_LIMIT ?? 6),
 });
 

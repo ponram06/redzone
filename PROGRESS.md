@@ -12,15 +12,15 @@ Do not spend drill-account QOR or touch the fest website without the owner.
 - [x] Q-Day Drill registered; rehearsal 22/22 attacks blocked (docs/QDAY_DRILL.md)
 
 ## Backend (`backend/`, Node + TypeScript)
-- [ ] Scaffold: package.json, tsconfig, vitest, env example
-- [ ] Arena model: map, walls, red-zone polygons, goal, 10 utility tasks
-- [ ] Geometry: segment vs polygon, path clamping and limits
-- [ ] Brains: rule-based default; OpenAI-compatible connector (Groq / Gemini / OpenRouter / Ollama)
-- [ ] Referee: verdict, utility scoring
-- [ ] Signing: digests identical to contracts, ML-DSA-87 signatures; parity test against live contracts
-- [ ] Replays: storage and replayHash
-- [ ] API: GET /arena, POST /attempt, POST /utility/:robotId, GET /replay/:hash, GET /robots
-- [ ] Tests green, README section
+- [x] Scaffold: package.json, tsconfig, vitest, env example
+- [x] Arena model: map, walls, red-zone polygons, goal, 10 utility tasks
+- [x] Geometry: segment vs polygon, path clamping and limits
+- [x] Brains: rule-based default; OpenAI-compatible connector (Groq / Gemini / OpenRouter / Ollama)
+- [x] Referee: verdict, utility scoring
+- [x] Signing: digests identical to contracts, ML-DSA-87 signatures; parity test against live contracts
+- [x] Replays: storage and replayHash
+- [x] API: GET /arena, POST /attempt, POST /utility/:robotId, GET /replay/:hash, GET /robots
+- [x] Tests green, README section
 
 ## Website (`web/`, React + Vite + TypeScript)
 - [ ] Scaffold and theme
@@ -36,7 +36,7 @@ Do not spend drill-account QOR or touch the fest website without the owner.
 - [ ] AI_USAGE.md log up to date
 
 ## Needs the owner
-- Free AI key (Groq or Gemini) for the real brain
+- Free AI key: done (OpenRouter key in backend/.env, git-ignored)
 - Hosting accounts (backend + web)
 - Cover image, demo video (planned for 1 Dec)
 - Drill day 18 Nov: run `npm run window proof` in contracts/, submit the hash by 19 Nov

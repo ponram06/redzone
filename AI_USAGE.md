@@ -4,7 +4,8 @@ This file records how AI tools were used to build RedZone, for the Best AI-Nativ
 
 ## Tools
 
-- Claude Code (Claude Opus 5.5) in VS Code: research, contract design, Solidity, tests, docs.
+- Claude Code (Claude Opus 5.5) in VS Code: research, contract design, Solidity, backend, tests, docs.
+- Free LLMs on OpenRouter as the robot brain inside the product (see below).
 
 ## Log
 
@@ -16,6 +17,7 @@ This file records how AI tools were used to build RedZone, for the Best AI-Nativ
 | 2026-11-16 | Created the drill account and referee ML-DSA key locally, registered the PQ key, opened an EVM window, live-tested `pqcVerify`/`pqcKeyStatus` on testnet, deployed EscrowVault and RobotRegistry, registered a demo robot and locked a 1 QOR bounty. Requested faucet tokens through Claude in Chrome (rate-limited). | Funded the drill account from QoreX. |
 | 2026-11-16 | Wrote and ran a Q-Day attack rehearsal (`qday-attack.ts`) using only the ECDSA key: 17/17 attacks blocked. Found that an open EVM window can be spent with ECDSA alone; added `window close` and a window-free `window proof` command and documented the drill-day procedure. | Asked for the self-attack before the real drill. |
 | 2026-11-16 | Wrote an advanced rehearsal (`qday-attack-advanced.ts`) with a separate attacker account: ECDSA-signed meta-transactions, an EIP-7702 delegation sponsored by the attacker, and real drain transactions. 5/5 blocked. | Asked for every possible attack. |
+| 2026-11-16 | Built the backend: arena, geometry, a deterministic referee and an A* route planner; a rule brain and an OpenAI-compatible LLM brain that falls back between models; a brain registry keyed by hash; an ML-DSA-87 signer with a live parity test against the deployed contracts; and the HTTP API (attempt, utility, practice, replays). 43 offline tests. Live check: the LLM brain did an errand and refused a fake "system override" prompt. | Chose free models through OpenRouter and supplied the API key, kept in the git-ignored `.env`. |
 
 ## Product use of AI
 
