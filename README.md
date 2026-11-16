@@ -147,11 +147,14 @@ If the server's data folder is lost, sign-ups, bounties, the leaderboard and rob
 come back from the chain. Only replay files and brain configs need a backup: their hashes are on
 chain, so a restored copy can be checked.
 
-**One leftover from before the Q-Day Drill:** robot #1 (Sentinel-01) was registered before brain
-configs existed. Its `brainHash` is `keccak256("redzone-demo-brain-v1")`, which the server maps to
-the built-in rule brain. After the drill, its owner (the admin account) will call `updateBrain` to
-switch it to the rule brain's real config hash. That isn't done now because it would change a
-drill contract's state before drill day.
+**Robot #1 and the brain fingerprint.** Every robot added through the website gets a brain
+fingerprint (`brainHash`) that anyone can check against its published config, and `updateBrain`
+lets owners change it (both covered by tests). Robot #1 (Sentinel-01) is older than that feature:
+it was the first robot, registered on day one with a placeholder fingerprint
+(`keccak256("redzone-demo-brain-v1")`) that the server maps to the rule brain. Its owner will call
+`updateBrain` to give it the real fingerprint right after the Q-Day Drill. Until then, the drill
+contracts are kept in a deliberate change freeze, so the contracts being attacked are exactly the
+ones registered for the drill.
 
 ## Known limitation: QoreX can't send transactions to contracts yet
 
