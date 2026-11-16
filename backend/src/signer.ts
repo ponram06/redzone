@@ -76,3 +76,14 @@ export function loadRefereeKey(file: string): RefereeKey {
 export function signDigest(key: RefereeKey, digest: Hex): Hex {
   return toHex(pqcSign(key.secretKey, hexToBytes(digest)));
 }
+
+export const START_SESSION_TYPEHASH = typehash("RedZone.StartSession(uint256 robotId,address player,uint256 nonce,uint256 deadline)");
+
+/** RobotRegistryV2.startSessionDigest: what the player authorises (via QoreX) to start a session. */
+export function startSessionDigest(chainId: number, registry: Address, robotId: bigint, player: Address, nonce: bigint, deadline: bigint): Hex {
+  const data = encodeAbiParameters(
+    [{ type: "bytes32" }, { type: "uint256" }, { type: "address" }, { type: "uint256" }, { type: "uint256" }],
+    [START_SESSION_TYPEHASH, robotId, player, nonce, deadline],
+  );
+  return domainDigest(REGISTRY_DOMAIN, chainId, registry, data);
+}

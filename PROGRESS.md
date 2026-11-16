@@ -17,8 +17,8 @@ Overall: about **56%** (each phase's weight is in brackets; last updated 2026-11
 - [x] PQGuard, PQAdmin, EscrowVault, RobotRegistry, 47 Foundry tests
 - [x] Deployed to qorechain-diana (see deployments/testnet.json); demo robot and 1 QOR bounty
 
-## Phase 3. Q-Day Drill (10%): 75%
-- [x] Registered for the drill with both contracts
+## Phase 3. Q-Day Drill (10%): 80%
+- [x] Registered for the drill: vault + RobotRegistryV2 (re-registered 16 Nov after the v2 deploy)
 - [x] Rehearsal: 22/22 attacks blocked, open-window weak spot fixed (docs/QDAY_DRILL.md)
 - [ ] 18 Nov: `npm run window status`, then `npm run window proof` in contracts/
 - [ ] Submit the proof hash on the project page by 19 Nov; check vault and balances afterwards

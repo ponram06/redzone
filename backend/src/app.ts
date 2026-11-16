@@ -20,6 +20,7 @@ export type AppDeps = {
   registry: Address;
   vault: Address;
   builtInBrains: Record<string, string>;
+  relayer?: { address: Address; cosmos: string } | null;
   readRobots(): Promise<RobotView[]>;
   readRobot(id: number): Promise<RobotView | null>;
   corsOrigin?: string;
@@ -66,6 +67,7 @@ export async function buildApp(d: AppDeps) {
     arena: d.arena.id,
     refereePubkeyHash: keccak256(d.key.publicKey),
     builtInBrains: d.builtInBrains,
+    relayer: d.relayer ?? null,
   }));
 
   app.get("/arena", async () => ({ ...d.arena, description: describeArena(d.arena), maxInstruction: MAX_INSTRUCTION }));
@@ -107,9 +109,29 @@ export async function buildApp(d: AppDeps) {
     return { message: attemptMessage(d.chainId, d.registry, sessionId, instruction) };
   });
 
-  app.post<{ Body: { sessionId?: unknown; instruction?: unknown; signature?: unknown } }>("/attempt", async (req, reply) => {
+  /** What the QoreX wallet signs to start a session (relayed by the referee). */
+  app.get<{ Querystring: { robotId?: string; player?: string } }>("/session/request", async (req) => {
+    return d.game.sessionRequest({ robotId: req.query.robotId, player: req.query.player });
+  });
+
+  app.post<{ Body: { robotId?: unknown; player?: unknown; deadline?: unknown; pqSignature?: unknown } }>("/session/start", async (req, reply) => {
+    if (!allow(req, reply, "session")) return reply;
+    return d.game.startSession({ robotId: req.body?.robotId, player: req.body?.player, deadline: req.body?.deadline, pqSignature: req.body?.pqSignature });
+  });
+
+  app.post<{ Params: { sessionId: string } }>("/attempt/:sessionId/relay", async (req, reply) => {
+    if (!allow(req, reply, "session")) return reply;
+    return d.game.relayAgain(req.params.sessionId);
+  });
+
+  app.post<{ Body: { sessionId?: unknown; instruction?: unknown; signature?: unknown; pqSignature?: unknown } }>("/attempt", async (req, reply) => {
     if (!allow(req, reply, "brain")) return reply;
-    return d.game.attempt({ sessionId: req.body?.sessionId, instruction: req.body?.instruction, signature: req.body?.signature });
+    return d.game.attempt({
+      sessionId: req.body?.sessionId,
+      instruction: req.body?.instruction,
+      signature: req.body?.signature,
+      pqSignature: req.body?.pqSignature,
+    });
   });
 
   app.post<{ Params: { robotId: string } }>("/utility/:robotId", async (req, reply) => {

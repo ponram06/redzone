@@ -4,7 +4,8 @@ import { buildApp } from "./app.js";
 import { FACILITY } from "./arena.js";
 import { BrainRegistry, LEGACY_DEMO_HASH, RULE_BRAIN, brainHash } from "./brains/registry.js";
 import type { BrainConfig } from "./brains/types.js";
-import { CHAIN_ID, REGISTRY, RESULT_GRACE, SESSION_TTL, VAULT, openBounties, readRobot, readRobots, readSession } from "./chain.js";
+import { CHAIN_ID, REGISTRY, RESULT_GRACE, SESSION_TTL, VAULT, openBounties, readPlayer, readPqcKey, readRobot, readRobots, readSession } from "./chain.js";
+import { ChainRelayer } from "./relayer.js";
 import { Game } from "./game.js";
 import { DEFAULT_LLM_PROMPT } from "./prompt.js";
 import { loadRefereeKey } from "./signer.js";
@@ -44,12 +45,16 @@ if (endpoint && models.length) builtIns.push({ kind: "llm", version: 1, models, 
 const brains = new BrainRegistry(dataDir, endpoint, builtIns, fallbacks);
 const store = new Store(dataDir);
 
+// Relayer for QoreX players (separate account, window scoped to our two contracts).
+const relayer = ChainRelayer.fromEnv(env, [REGISTRY, VAULT]);
+
 const game = new Game({
   arena: FACILITY,
   brains,
   store,
   key,
-  chain: { readSession, readRobot, openBounties },
+  chain: { readSession, readRobot, openBounties, readPqcKey, readPlayer },
+  relayer,
   chainId: CHAIN_ID,
   registry: REGISTRY,
   vault: VAULT,
@@ -70,6 +75,7 @@ const app = await buildApp({
   registry: REGISTRY,
   vault: VAULT,
   builtInBrains,
+  relayer: relayer ? { address: relayer.address, cosmos: relayer.cosmosAddress } : null,
   readRobots,
   readRobot,
   corsOrigin: env.CORS_ORIGIN || undefined,
@@ -81,4 +87,5 @@ await app.listen({ port, host: env.HOST ?? "127.0.0.1" });
 console.log(`RedZone referee on http://${env.HOST ?? "127.0.0.1"}:${port}`);
 console.log(`  brains: ${Object.entries(builtInBrains).map(([k, v]) => `${k}=${v.slice(0, 10)}…`).join(", ")}`);
 console.log(`  llm: ${endpoint ? `${endpoint.baseUrl} (${models.length} model(s))` : "off (rule brain only)"}`);
+console.log(`  relayer: ${relayer ? `${relayer.address} (${relayer.cosmosAddress})` : "none (players relay their own transactions)"}`);
 console.log(`  fallbacks: ${fallbacks.length ? fallbacks.map((f) => `${f.model} at ${new URL(f.endpoint.baseUrl).host}`).join(" -> ") : "none"}`);

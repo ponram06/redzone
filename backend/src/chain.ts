@@ -1,6 +1,17 @@
 /** Read-only access to the deployed RedZone contracts on qorechain-diana. */
 import { readFileSync } from "node:fs";
-import { createPublicClient, defineChain, http, keccak256, parseAbi, stringToBytes, type Address, type Hex } from "viem";
+import {
+  createPublicClient,
+  decodeFunctionResult,
+  defineChain,
+  encodeFunctionData,
+  http,
+  keccak256,
+  parseAbi,
+  stringToBytes,
+  type Address,
+  type Hex,
+} from "viem";
 
 const deployments = JSON.parse(
   readFileSync(new URL("../../deployments/testnet.json", import.meta.url), "utf8"),
@@ -34,6 +45,11 @@ export const registryAbi = parseAbi([
   "function utilityDigest(uint256 robotId, uint8 tasksPassed, bytes32 replayHash, uint256 nonce, uint256 deadline) view returns (bytes32)",
   "function recordResult(uint256 sessionId, bool breached, bytes32 replayHash, uint256 deadline, bytes refereeSig)",
   "function recordUtility(uint256 robotId, uint8 tasksPassed, bytes32 replayHash, uint256 deadline, bytes refereeSig)",
+  "function nonces(address account) view returns (uint256)",
+  "function attemptsLeftToday(address player) view returns (uint256)",
+  "function startSessionDigest(uint256 robotId, address player, uint256 nonce, uint256 deadline) view returns (bytes32)",
+  "function startSessionFor(uint256 robotId, address player, uint256 deadline, bytes playerSig) returns (uint256)",
+  "event SessionStarted(uint256 indexed sessionId, uint256 indexed robotId, address indexed player, uint256 expiresAt)",
 ]);
 
 export const vaultAbi = parseAbi([
@@ -123,4 +139,27 @@ export async function readSession(id: number): Promise<SessionView | null> {
   });
   if (player === "0x0000000000000000000000000000000000000000") return null;
   return { id, robotId: Number(robotId), player, startedAt: Number(startedAt), outcome };
+}
+
+/** Lower-case on purpose, like PQC_VERIFY. */
+export const PQC_KEY_STATUS = "0x0000000000000000000000000000000000000a02" as Address;
+const keyStatusAbi = parseAbi(["function pqcKeyStatus(address account) view returns (bool registered, uint8 algorithmId, bytes pubkey)"]);
+
+/** The registered ML-DSA-87 key of an account, from the pqcKeyStatus precompile. */
+export async function readPqcKey(account: Address): Promise<{ registered: boolean; algorithmId: number; pubkey: Hex }> {
+  const { data } = await client.call({
+    to: PQC_KEY_STATUS,
+    data: encodeFunctionData({ abi: keyStatusAbi, functionName: "pqcKeyStatus", args: [account] }),
+  });
+  const [registered, algorithmId, pubkey] = decodeFunctionResult({ abi: keyStatusAbi, functionName: "pqcKeyStatus", data: data! });
+  return { registered, algorithmId, pubkey };
+}
+
+/** Per-player state on RobotRegistryV2: request nonce and sessions left today. */
+export async function readPlayer(player: Address): Promise<{ nonce: bigint; attemptsLeft: number }> {
+  const [nonce, left] = await Promise.all([
+    client.readContract({ address: REGISTRY, abi: registryAbi, functionName: "nonces", args: [player] }),
+    client.readContract({ address: REGISTRY, abi: registryAbi, functionName: "attemptsLeftToday", args: [player] }),
+  ]);
+  return { nonce, attemptsLeft: Number(left) };
 }

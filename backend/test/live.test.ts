@@ -7,7 +7,7 @@ import { encodeFunctionData, decodeFunctionResult, parseAbi, type Hex } from "vi
 import { describe, expect, it } from "vitest";
 import { LEGACY_DEMO_HASH } from "../src/brains/registry.js";
 import { CHAIN_ID, PQC_VERIFY, REGISTRY, VAULT, client, registryAbi, robotKey, vaultAbi } from "../src/chain.js";
-import { claimDigest, loadRefereeKey, resultDigest, signDigest, utilityDigest } from "../src/signer.js";
+import { claimDigest, loadRefereeKey, resultDigest, signDigest, startSessionDigest, utilityDigest } from "../src/signer.js";
 
 const key = loadRefereeKey(process.env.REFEREE_KEY_FILE ?? "../contracts/.referee-key.json");
 const H = ("0x" + "cd".repeat(32)) as Hex;
@@ -33,6 +33,8 @@ describe("live contracts", { timeout: 60_000 }, () => {
     expect(utilityDigest(CHAIN_ID, REGISTRY, 1n, 8, H, 3n, deadline)).toBe(onChainUtility);
     const onChainClaim = await client.readContract({ address: VAULT, abi: vaultAbi, functionName: "claimDigest", args: [1n, player, H, deadline] });
     expect(claimDigest(CHAIN_ID, VAULT, 1n, player, H, deadline)).toBe(onChainClaim);
+    const onChainStart = await client.readContract({ address: REGISTRY, abi: registryAbi, functionName: "startSessionDigest", args: [1n, player, 5n, deadline] });
+    expect(startSessionDigest(CHAIN_ID, REGISTRY, 1n, player, 5n, deadline)).toBe(onChainStart);
   });
 
   it("the chain's pqcVerify precompile accepts our signature and rejects a changed digest", async () => {
