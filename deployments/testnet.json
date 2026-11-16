@@ -26,16 +26,26 @@
       "nativeChainId": "qorechain-diana"
     },
     "RobotRegistryV3": {
-      "address": "0x5398b7983ac5c1b9818c51298c4886cf9bef5308",
-      "deployTx": "0x9bdd266425fea598dc45da35c01c37bcae2fb72c930eb42e4118565567a2f373",
-      "deployBlock": 10207941,
+      "address": "0x69564de848d807ea895e1987b53749e1648cadbf",
+      "deployTx": "0xb0677bac9b1786323c168423778a92866e4543231637e1f583bed70a964f694f",
+      "deployBlock": 10209491,
       "nativeChainId": "qorechain-diana"
     },
     "EscrowVaultV2": {
+      "address": "0x16cc5efcda75a788f597dd0c785862db1bdbeb7f",
+      "deployTx": "0xcd95d10297b0b8a9574fbefc1a593769523f60fa9e5269de9b64ced5857ca39d",
+      "deployBlock": 10209494,
+      "registry": "0x69564de848d807ea895e1987b53749e1648cadbf"
+    },
+    "RobotRegistryV3_first": {
+      "address": "0x5398b7983ac5c1b9818c51298c4886cf9bef5308",
+      "deployTx": "0x9bdd266425fea598dc45da35c01c37bcae2fb72c930eb42e4118565567a2f373",
+      "note": "first v3 deploy, superseded the same day after the adversarial audit (M-01); never used"
+    },
+    "EscrowVaultV2_first": {
       "address": "0x26b9e47adf2e8e239729c0e3354998e06aa2c638",
       "deployTx": "0x101c0399a8c2e12f477a574d8ba317887444203f985e304e4d4d32d014d6abda",
-      "deployBlock": 10207970,
-      "registry": "0x5398b7983ac5c1b9818c51298c4886cf9bef5308"
+      "note": "first v3 deploy, superseded; never used"
     }
   },
   "setup": {

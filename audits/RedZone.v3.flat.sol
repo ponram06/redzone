@@ -313,7 +313,7 @@ abstract contract PQAccess {
 
     bytes32 public constant SET_PAUSED_TYPEHASH = keccak256("RedZone.SetPaused(bool paused,uint256 nonce,uint256 deadline)");
     bytes32 public constant TRANSFER_ADMIN_TYPEHASH = keccak256("RedZone.TransferAdmin(address newAdmin,uint256 nonce,uint256 deadline)");
-    bytes32 public constant ACCEPT_ADMIN_TYPEHASH = keccak256("RedZone.AcceptAdmin(address newAdmin,uint256 nonce,uint256 deadline)");
+    bytes32 public constant ACCEPT_ADMIN_TYPEHASH = keccak256("RedZone.AcceptAdmin(address newAdmin,uint256 proposalId,uint256 nonce,uint256 deadline)");
 
     bytes32 public constant DEPLOY_TYPEHASH = keccak256("RedZone.Deploy(bytes32 domainTag,uint256 chainId,address deployer)");
 
@@ -337,6 +337,11 @@ abstract contract PQAccess {
     uint64 public pausedAt;
     /// @notice Time the last pause ended (0 if never paused).
     uint64 public unpausedAt;
+    /// @notice Start time of the most recent pause (kept after it ends).
+    uint64 public lastPauseStart;
+    /// @notice Increases with every admin proposal; an acceptance signature is bound to one proposal,
+    ///         so a cancelled proposal's signature can never be reused for a later one.
+    uint256 public adminProposalId;
     /// @notice Per-signer nonce for signed admin and user actions (replay protection).
     mapping(address => uint256) public nonces;
     /// @notice Every signed digest that has been used (second replay layer on top of nonces).
@@ -425,6 +430,7 @@ abstract contract PQAccess {
         if (paused_) {
             if (unpausedAt != 0 && block.timestamp < uint256(unpausedAt) + PAUSE_COOLDOWN) revert PauseCooldown();
             pausedAt = uint64(block.timestamp);
+            lastPauseStart = uint64(block.timestamp);
         } else {
             uint256 end = uint256(pausedAt) + MAX_PAUSE;
             unpausedAt = uint64(block.timestamp < end ? block.timestamp : end);
@@ -443,6 +449,7 @@ abstract contract PQAccess {
     {
         if (newAdmin != address(0)) MLDSA87.requireKey(newAdmin); // must hold an ML-DSA-87 key
         pendingAdmin = newAdmin;
+        adminProposalId = adminProposalId + 1;
         if (newAdmin == address(0)) emit AdminTransferCancelled(admin);
         else emit AdminTransferStarted(admin, newAdmin);
     }
@@ -452,7 +459,7 @@ abstract contract PQAccess {
     function acceptAdmin(uint256 deadline, bytes calldata newAdminSig) external validDeadline(deadline) {
         address p = pendingAdmin;
         if (p == address(0)) revert NotPendingAdmin();
-        _useUserSig(p, ACTION_ACCEPT_ADMIN, acceptAdminDigest(p, nonces[p], deadline), newAdminSig);
+        _useUserSig(p, ACTION_ACCEPT_ADMIN, acceptAdminDigest(p, adminProposalId, nonces[p], deadline), newAdminSig);
         emit AdminTransferred(admin, p);
         admin = p;
         pendingAdmin = address(0);
@@ -498,8 +505,8 @@ abstract contract PQAccess {
         return _digest(abi.encode(TRANSFER_ADMIN_TYPEHASH, newAdmin, nonce, deadline));
     }
 
-    function acceptAdminDigest(address newAdmin, uint256 nonce, uint256 deadline) public view returns (bytes32) {
-        return _digest(abi.encode(ACCEPT_ADMIN_TYPEHASH, newAdmin, nonce, deadline));
+    function acceptAdminDigest(address newAdmin, uint256 proposalId, uint256 nonce, uint256 deadline) public view returns (bytes32) {
+        return _digest(abi.encode(ACCEPT_ADMIN_TYPEHASH, newAdmin, proposalId, nonce, deadline));
     }
 
     /// @notice The exact bytes the QoreX wallet's ML-DSA key signs for an action.
@@ -623,6 +630,7 @@ contract RobotRegistryV3 is PQAccess {
     bytes32 public constant START_SESSION_TYPEHASH = keccak256("RedZone.StartSession(uint256 robotId,address player,uint256 nonce,uint256 deadline)");
     bytes32 public constant REGISTER_ROBOT_TYPEHASH =
         keccak256("RedZone.RegisterRobot(address owner,bytes32 nameHash,bytes32 brainHash,uint256 nonce,uint256 deadline)");
+    bytes32 public constant CANCEL_REFEREE_TYPEHASH = keccak256("RedZone.CancelReferee(bytes32 pubkeyHash,uint256 nonce,uint256 deadline)");
     bytes32 public constant PROPOSE_REFEREE_TYPEHASH = keccak256("RedZone.ProposeReferee(bytes32 pubkeyHash,uint256 nonce,uint256 deadline)");
 
     string public constant ACTION_START_SESSION = "StartSession";
@@ -644,6 +652,9 @@ contract RobotRegistryV3 is PQAccess {
     uint256 public nextSessionId = 1;
     mapping(uint256 => Robot) internal _robots;
     mapping(uint256 => Session) internal _sessions;
+    /// @dev robotId => Breached session ids in the order they were recorded (the vault pays the
+    ///      earliest eligible one, so nobody can choose which breach wins a bounty).
+    mapping(uint256 => uint256[]) internal _breaches;
     /// @notice player => UTC day number => sessions started that day
     mapping(address => mapping(uint256 => uint256)) public attemptsOnDay;
 
@@ -657,6 +668,7 @@ contract RobotRegistryV3 is PQAccess {
     event UtilityRecorded(uint256 indexed robotId, uint8 tasksPassed, bytes32 replayHash);
     event RefereeProposed(bytes32 indexed pubkeyHash, uint256 activatesAt, bytes pubkey);
     event RefereeUpdated(bytes32 indexed pubkeyHash);
+    event RefereeCancelled(bytes32 indexed pubkeyHash);
 
     // --------------------------------------------------------------------- errors
 
@@ -736,6 +748,23 @@ contract RobotRegistryV3 is PQAccess {
         emit RefereeProposed(h, block.timestamp + REFEREE_DELAY, newPubkey);
     }
 
+    /// @notice Cancel the pending referee proposal. Admin only (ML-DSA signature).
+    function cancelReferee(uint256 deadline, bytes calldata adminSig)
+        external
+        validDeadline(deadline)
+        onlyAdmin(_digest(abi.encode(CANCEL_REFEREE_TYPEHASH, pendingRefereeKeyHash, nonces[admin], deadline)), adminSig)
+    {
+        bytes32 pending = pendingRefereeKeyHash;
+        if (pending == bytes32(0)) revert NoPendingReferee();
+        pendingRefereeKeyHash = bytes32(0);
+        refereeActivatesAt = 0;
+        emit RefereeCancelled(pending);
+    }
+
+    function cancelRefereeDigest(bytes32 pubkeyHash, uint256 nonce, uint256 deadline) external view returns (bytes32) {
+        return _digest(abi.encode(CANCEL_REFEREE_TYPEHASH, pubkeyHash, nonce, deadline));
+    }
+
     /// @notice Make the proposed referee key active once the delay is over. Anyone may call.
     function activateReferee() external {
         bytes32 pending = pendingRefereeKeyHash;
@@ -748,12 +777,6 @@ contract RobotRegistryV3 is PQAccess {
     }
 
     // --------------------------------------------------------------------- robots
-
-    /// @notice Register a robot owned by the sender (the sender needs a registered ML-DSA key).
-    function registerRobot(string calldata name, bytes32 brainHash) external whenNotPaused returns (uint256 robotId) {
-        MLDSA87.requireKey(msg.sender); // sender must hold an ML-DSA-87 key
-        return _register(msg.sender, name, brainHash);
-    }
 
     /// @notice Register a robot for `owner`, authorised by the owner's ML-DSA signature. Anyone may relay.
     function registerRobotFor(address owner, string calldata name, bytes32 brainHash, uint256 deadline, bytes calldata ownerSig)
@@ -789,12 +812,6 @@ contract RobotRegistryV3 is PQAccess {
     }
 
     // ------------------------------------------------------------------- sessions
-
-    /// @notice Start a session as the sender (for wallets that can send EVM transactions).
-    function startSession(uint256 robotId) external whenNotPaused returns (uint256 sessionId) {
-        MLDSA87.requireKey(msg.sender); // sender must hold an ML-DSA-87 key
-        return _startSession(robotId, msg.sender);
-    }
 
     /// @notice Start a session for `player`, authorised by the player's ML-DSA signature.
     ///         Anyone may relay; the session always belongs to `player`. The signature covers the
@@ -853,6 +870,7 @@ contract RobotRegistryV3 is PQAccess {
         if (currentBrain) r.attacks = r.attacks + 1;
         if (breached) {
             s.outcome = Outcome.Breached;
+            _breaches[s.robotId].push(sessionId);
             if (currentBrain) r.breached = r.breached + 1;
             emit Breached(sessionId, s.robotId, s.player, replayHash);
         } else {
@@ -893,6 +911,16 @@ contract RobotRegistryV3 is PQAccess {
     /// @notice Owner of a robot (address(0) if it does not exist).
     function robotOwner(uint256 robotId) external view returns (address) {
         return _robots[robotId].owner;
+    }
+
+    /// @notice Number of recorded breaches of a robot.
+    function breachCount(uint256 robotId) external view returns (uint256) {
+        return _breaches[robotId].length;
+    }
+
+    /// @notice The i-th recorded breach (session id) of a robot, in recording order.
+    function breachAt(uint256 robotId, uint256 i) external view returns (uint256) {
+        return _breaches[robotId][i];
     }
 
     function getSession(uint256 sessionId) external view returns (Session memory) {
@@ -1038,18 +1066,27 @@ contract RobotRegistryV3 is PQAccess {
 /// @title EscrowVaultV2
 /// @notice Holds RedZone bounties in native QOR.
 ///
-/// Who can move money:
-///   - claimBounty   : nobody decides. It pays only if the registry has a recorded *Breached*
-///                     session against the bounty's robot, and always pays that session's player.
-///                     Anyone may trigger it.
-///   - requestWithdraw / finalizeWithdraw : the robot owner, by ML-DSA signature (QoreX), and only
-///                     after WITHDRAW_DELAY, so a win that is already in progress is paid first.
-///   - admin         : can pause (an emergency freeze of deposits, withdrawals and claims of
-///                     results recorded during the pause). The admin can never take, redirect or
-///                     pay out funds. A pause ends by itself after MAX_PAUSE (7 days) and cannot be
-///                     renewed for PAUSE_COOLDOWN (1 day), and after it ends pending wins get
-///                     UNPAUSE_GRACE (1 hour) to be claimed before any withdrawal completes. So the
-///                     admin can delay payouts by at most MAX_PAUSE + UNPAUSE_GRACE.
+/// Who wins a bounty: the EARLIEST eligible breach. The registry keeps every robot's breaches in
+/// the order the referee recorded them. Each bounty has a cursor into that list, starting at the
+/// breaches recorded after its deposit. Nobody chooses which breach is paid:
+///   - claimBounty(bountyId) pays the breach at the cursor if it is eligible, always to that
+///     session's player. Anyone may call it.
+///   - skipBreach(bountyId) moves the cursor past a breach that can never be paid (it started
+///     before the deposit or after a withdrawal cut-off, or its claim window expired). Anyone may call.
+///   A breach must be claimed within CLAIM_WINDOW of its verdict, so an old breach cannot be stored
+///   up and used later to take a bounty from an honest winner.
+///
+/// Withdrawals: the robot owner signs requestWithdraw (ML-DSA, QoreX); finalizeWithdraw pays out
+/// only after WITHDRAW_DELAY and only once every recorded breach has been paid or skipped, so a
+/// win waiting to be claimed always beats the owner. A request that is not finalised within
+/// WITHDRAW_EXPIRY after unlocking lapses, and the bounty is fully winnable again.
+///
+/// Admin: can pause (an emergency freeze of deposits, withdrawals and claims of results recorded
+/// during the pause). The admin can never take, redirect or pay out funds directly. A pause ends by
+/// itself after MAX_PAUSE (7 days) and cannot be renewed for PAUSE_COOLDOWN (1 day); wins recorded
+/// during a pause get a full CLAIM_WINDOW after it ends, and withdrawals wait UNPAUSE_GRACE.
+/// Trust note: the admin also controls who the referee is (2-day time-locked, in the registry);
+/// owners should withdraw if they distrust a proposed referee.
 ///
 /// A bounty always belongs to the robot's on-chain owner, whoever funds it, so a relayer that
 /// deposits for a QoreX user never owns the money.
@@ -1061,9 +1098,18 @@ contract EscrowVaultV2 is PQAccess, ReentrancyGuard {
         Withdrawn
     }
 
+    /// @notice State of the breach at a bounty's cursor.
+    enum Next {
+        None, // no unprocessed breach
+        Claimable, // claimBounty pays it now
+        Skippable, // can never be paid: skipBreach moves past it
+        Waiting // recorded during an active pause: claimable after the pause
+    }
+
     struct Bounty {
         uint256 robotId;
         uint256 amount; // full uint256: no down-casting of msg.value anywhere
+        uint256 breachCursor; // index into the registry's breach list for this robot
         address owner; // robot owner at deposit time (robots cannot change owner)
         uint64 depositedAt;
         uint64 withdrawRequestedAt; // 0 = no withdrawal requested
@@ -1080,10 +1126,15 @@ contract EscrowVaultV2 is PQAccess, ReentrancyGuard {
     ///         At least the registry's MAX_START_TTL (checked in the constructor).
     uint256 public constant START_GRACE = 10 minutes;
     /// @notice Time between a withdrawal request and payout. It covers START_GRACE + SESSION_TTL +
-    ///         RESULT_GRACE (80 min) plus at least an hour to claim, so every breach that could win
-    ///         the bounty is recorded and claimable before the owner is paid.
+    ///         RESULT_GRACE (80 min) plus at least an hour, so every session that can still win the
+    ///         bounty is judged before the owner can be paid.
     uint256 public constant WITHDRAW_DELAY = 3 hours;
-    /// @notice After an unpause, withdrawals wait this long so wins recorded during the pause are paid first.
+    /// @notice A withdrawal request lapses if not finalised within this long after it unlocks.
+    uint256 public constant WITHDRAW_EXPIRY = 7 days;
+    /// @notice A breach must be claimed within this long after its verdict (or after the pause it
+    ///         was recorded in ends). Stops stockpiling old breaches.
+    uint256 public constant CLAIM_WINDOW = 1 days;
+    /// @notice After an unpause, withdrawals wait this long.
     uint256 public constant UNPAUSE_GRACE = 1 hours;
     /// @dev Minimum time left to claim after the latest possible verdict.
     uint256 internal constant MIN_CLAIM_WINDOW = 1 hours;
@@ -1105,6 +1156,7 @@ contract EscrowVaultV2 is PQAccess, ReentrancyGuard {
 
     event BountyDeposited(uint256 indexed bountyId, uint256 indexed robotId, address indexed owner, address funder, uint256 amount);
     event BountyClaimed(uint256 indexed bountyId, uint256 indexed sessionId, address indexed player, bytes32 replayHash, uint256 amount);
+    event BreachSkipped(uint256 indexed bountyId, uint256 indexed sessionId);
     event WithdrawRequested(uint256 indexed bountyId, address indexed to, uint256 unlocksAt);
     event BountyWithdrawn(uint256 indexed bountyId, address indexed to, uint256 amount);
 
@@ -1113,13 +1165,12 @@ contract EscrowVaultV2 is PQAccess, ReentrancyGuard {
     error AmountTooSmall();
     error UnknownRobot();
     error BountyNotOpen();
-    error WrongRobot();
-    error NotBreached();
-    error SessionBeforeBounty();
-    error SessionAfterWithdrawRequest();
-    error ResultDuringPause();
+    error NothingToClaim(Next state);
+    error NothingToSkip(Next state);
     error WithdrawNotRequested();
     error WithdrawLocked();
+    error WithdrawExpired();
+    error WinPending();
     error TransferFailed(address to, uint256 amount);
     error DirectTransferRefused();
     error BadDelays();
@@ -1131,16 +1182,16 @@ contract EscrowVaultV2 is PQAccess, ReentrancyGuard {
         PQAccess("RedZone.EscrowVault.v2", nativeChainId_, deployerProof)
     {
         if (address(registry_) == address(0)) revert ZeroAddress();
-        // The withdrawal delay must outlast the latest moment a started session can be judged.
         if (START_GRACE < registry_.MAX_START_TTL()) revert BadDelays();
         if (WITHDRAW_DELAY < START_GRACE + registry_.SESSION_TTL() + registry_.RESULT_GRACE() + MIN_CLAIM_WINDOW) revert BadDelays();
+        if (CLAIM_WINDOW < MIN_CLAIM_WINDOW) revert BadDelays();
         registry = registry_;
     }
 
     // ------------------------------------------------------------------- deposits
 
     /// @notice Lock native QOR as a bounty on a registered robot. The robot's owner owns the
-    ///         bounty, whoever sends the QOR.
+    ///         bounty, whoever sends the QOR. Only breaches recorded after this deposit can win it.
     function depositBounty(uint256 robotId) external payable whenNotPaused nonReentrant returns (uint256 bountyId) {
         if (msg.value < MIN_BOUNTY) revert AmountTooSmall();
         address owner = registry.robotOwner(robotId);
@@ -1150,6 +1201,7 @@ contract EscrowVaultV2 is PQAccess, ReentrancyGuard {
         bounties[bountyId] = Bounty({
             robotId: robotId,
             amount: msg.value,
+            breachCursor: registry.breachCount(robotId),
             owner: owner,
             depositedAt: uint64(block.timestamp),
             withdrawRequestedAt: 0,
@@ -1162,40 +1214,55 @@ contract EscrowVaultV2 is PQAccess, ReentrancyGuard {
 
     // --------------------------------------------------------------------- claims
 
-    /// @notice Pay a bounty to the player of a recorded breach. Anyone may call.
-    /// @dev Requirements, all read from the registry:
-    ///        - the session is Breached and against the bounty's robot;
-    ///        - it started after the bounty was deposited (no old wins on new money);
-    ///        - it started no later than START_GRACE after a pending withdrawal request;
-    ///        - while the vault is paused, only results recorded before the pause are paid.
-    ///      One breach wins every open bounty on the robot (each bounty is paid once, then closed):
-    ///      that is the game's rule, not a double claim. Effects happen before the transfer, and
-    ///      the call is guarded against re-entry. The payee is always the session's player.
-    function claimBounty(uint256 bountyId, uint256 sessionId) external nonReentrant {
+    /// @notice Pay the bounty to the earliest eligible breach (the one at the cursor). Anyone may
+    ///         call; the payee is always that session's player.
+    /// @dev Effects happen before the single value transfer, under ReentrancyGuard.
+    function claimBounty(uint256 bountyId) external nonReentrant {
         Bounty storage b = bounties[bountyId];
         if (b.status != Status.Open) revert BountyNotOpen();
-
-        RobotRegistryV3.Session memory s = registry.getSession(sessionId);
-        if (s.robotId != b.robotId) revert WrongRobot();
-        if (s.outcome != RobotRegistryV3.Outcome.Breached) revert NotBreached();
-        if (s.startedAt < b.depositedAt) revert SessionBeforeBounty();
-        if (b.withdrawRequestedAt != 0 && s.startedAt > b.withdrawRequestedAt + START_GRACE) revert SessionAfterWithdrawRequest();
-        if (isPaused() && s.resultAt >= pausedAt) revert ResultDuringPause();
+        (Next state, uint256 sessionId, RobotRegistryV3.Session memory s) = _next(b);
+        if (state != Next.Claimable) revert NothingToClaim(state);
 
         uint256 amount = b.amount;
         b.status = Status.Claimed;
         b.amount = 0;
+        b.breachCursor = b.breachCursor + 1;
         totalLocked -= amount;
         emit BountyClaimed(bountyId, sessionId, s.player, s.replayHash, amount);
         _send(s.player, amount);
     }
 
+    /// @notice Move a bounty's cursor past a breach that can never be paid. Anyone may call.
+    function skipBreach(uint256 bountyId) external {
+        Bounty storage b = bounties[bountyId];
+        if (b.status != Status.Open) revert BountyNotOpen();
+        (Next state, uint256 sessionId,) = _next(b);
+        if (state != Next.Skippable) revert NothingToSkip(state);
+        b.breachCursor = b.breachCursor + 1;
+        emit BreachSkipped(bountyId, sessionId);
+    }
+
+    /// @notice What happens next for a bounty: the state of the breach at its cursor.
+    function nextBreach(uint256 bountyId) external view returns (Next state, uint256 sessionId) {
+        Bounty storage b = bounties[bountyId];
+        if (b.status != Status.Open) return (Next.None, 0);
+        (state, sessionId,) = _next(b);
+    }
+
+    /// @notice Last second a breach recorded at `resultAt` can be claimed. A breach recorded during
+    ///         the most recent pause gets a full window after that pause ends.
+    function claimDeadline(uint256 resultAt) public view returns (uint256) {
+        uint256 unpause = lastUnpausedAt();
+        uint256 start = lastPauseStart;
+        if (unpause != 0 && resultAt >= start && resultAt < unpause) return unpause + CLAIM_WINDOW;
+        return resultAt + CLAIM_WINDOW;
+    }
+
     // ---------------------------------------------------------------- withdrawals
 
     /// @notice Step 1: the robot owner asks for the bounty back, signed with their ML-DSA key.
-    ///         The bounty stays claimable by sessions starting up to START_GRACE later. Asking again
-    ///         replaces the destination and restarts the delay (e.g. if the first address rejects
-    ///         payment). Allowed while paused; the payout itself waits for the unpause.
+    ///         The bounty stays winnable by sessions starting up to START_GRACE later. Asking again
+    ///         replaces the destination and restarts the delay. Allowed while paused.
     function requestWithdraw(uint256 bountyId, address to, uint256 deadline, bytes calldata ownerSig) external validDeadline(deadline) {
         if (to == address(0)) revert ZeroAddress();
         Bounty storage b = bounties[bountyId];
@@ -1210,15 +1277,19 @@ contract EscrowVaultV2 is PQAccess, ReentrancyGuard {
     }
 
     /// @notice Step 2: after WITHDRAW_DELAY, pay the bounty to the address the owner signed for.
-    ///         Anyone may call; the destination is fixed by the owner's signature.
+    ///         Anyone may call. Refused while any recorded breach on this bounty is still claimable
+    ///         or waiting (skip the ones that can never be paid first).
     function finalizeWithdraw(uint256 bountyId) external whenNotPaused nonReentrant {
         Bounty storage b = bounties[bountyId];
         if (b.status != Status.Open) revert BountyNotOpen();
         uint256 requestedAt = b.withdrawRequestedAt;
         if (requestedAt == 0) revert WithdrawNotRequested();
         if (block.timestamp < requestedAt + WITHDRAW_DELAY) revert WithdrawLocked();
+        if (block.timestamp > requestedAt + WITHDRAW_DELAY + WITHDRAW_EXPIRY) revert WithdrawExpired();
         uint256 lastUnpause = lastUnpausedAt();
         if (lastUnpause != 0 && block.timestamp < lastUnpause + UNPAUSE_GRACE) revert WithdrawLocked();
+        (Next state,,) = _next(b);
+        if (state != Next.None) revert WinPending();
 
         address to = b.withdrawTo;
         uint256 amount = b.amount;
@@ -1237,10 +1308,32 @@ contract EscrowVaultV2 is PQAccess, ReentrancyGuard {
 
     // ------------------------------------------------------------------- internal
 
-    /// @dev Sends native QOR and reverts the whole transaction if the transfer fails, so a bounty is
-    ///      never marked paid without the money arriving. The return value is always checked.
+    /// @dev A withdrawal request is live from the request until WITHDRAW_EXPIRY after it unlocks.
+    function _withdrawLive(Bounty storage b) internal view returns (bool) {
+        uint256 r = b.withdrawRequestedAt;
+        return r != 0 && block.timestamp <= r + WITHDRAW_DELAY + WITHDRAW_EXPIRY;
+    }
+
+    /// @dev Classify the breach at the bounty's cursor.
+    function _next(Bounty storage b) internal view returns (Next, uint256 sessionId, RobotRegistryV3.Session memory s) {
+        if (b.breachCursor >= registry.breachCount(b.robotId)) return (Next.None, 0, s);
+        sessionId = registry.breachAt(b.robotId, b.breachCursor);
+        s = registry.getSession(sessionId);
+        if (s.startedAt < b.depositedAt) return (Next.Skippable, sessionId, s);
+        if (_withdrawLive(b) && s.startedAt > uint256(b.withdrawRequestedAt) + START_GRACE) return (Next.Skippable, sessionId, s);
+        if (isPaused() && s.resultAt >= pausedAt) return (Next.Waiting, sessionId, s);
+        if (block.timestamp > claimDeadline(s.resultAt)) return (Next.Skippable, sessionId, s);
+        return (Next.Claimable, sessionId, s);
+    }
+
+    /// @dev Sends native QOR without copying return data (a payee cannot grief with a huge
+    ///      return payload) and reverts the whole transaction if the transfer fails, so a bounty is
+    ///      never marked paid without the money arriving.
     function _send(address to, uint256 amount) internal {
-        (bool success,) = payable(to).call{value: amount}("");
+        bool success;
+        assembly ("memory-safe") {
+            success := call(gas(), to, amount, 0, 0, 0, 0)
+        }
         require(success, TransferFailed(to, amount));
     }
 
