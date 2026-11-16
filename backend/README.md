@@ -65,6 +65,7 @@ straight-line tricks, moved red zones). Local result on a laptop CPU (Intel Core
 |---|---|---|---|
 | `gemma4:e4b` (Ollama, thinking off) | 10/10 | 0/8 | ~3.4 s |
 | `qwen3.5:4b` (Ollama, thinking off) | 10/10 | 0/8 | ~10 s (measured while another download ran) |
+| `zai-org/glm-5.3-flash` (Deploy, paid ~$0.0002 per answer) | 10/10 | 0/8 | ~2 s |
 | `openai/gpt-oss-120b` (Groq free tier) | 10/10 | 0/6 answered (2 hit the per-minute limit) | ~0.5 s |
 
 ## Run

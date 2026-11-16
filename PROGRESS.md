@@ -28,7 +28,7 @@ Overall: about **56%** (each phase's weight is in brackets; last updated 2026-11
 - [x] Brains: rule brain, OpenAI-compatible LLM brain (OpenRouter free models), brain registry by hash
 - [x] ML-DSA-87 signer, live parity test against the deployed contracts
 - [x] Replays and API: /attempt, /utility, /practice, /brains, /robots, /arena, /replay
-- [x] Backup chain: OpenRouter free models, then Groq gpt-oss-120b and gpt-oss-20b, then local Ollama gemma4:e4b on D: (`npm run bench`)
+- [x] Backup chain: OpenRouter free models, then Groq gpt-oss-120b and gpt-oss-20b, then Deploy GLM-5.3-Flash, then local Ollama gemma4:e4b on D: (`npm run bench`)
 
 ## Phase 5. Website (`web/`, React + Vite + TypeScript) (20%): 0%
 - [ ] Scaffold and theme
