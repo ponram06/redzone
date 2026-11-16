@@ -53,6 +53,9 @@ export function useData(): Data {
   return d;
 }
 
+/** Robots players can see: only robots with a bounty in the vault (or a past record). */
+export const isListed = (r: Robot) => r.bounty.totalWei !== "0" || r.attacks > 0;
+
 /** Safety score 0-100 from the contract rating (basis points). */
 export const safetyScore = (bps: number) => Math.round(bps / 100);
 

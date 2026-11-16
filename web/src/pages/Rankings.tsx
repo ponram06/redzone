@@ -2,7 +2,7 @@ import { useAccount } from "../account";
 import { useEffect, useState } from "react";
 import { api, formatQor, type LeaderRow, type Robot } from "../api";
 import { shortAddress } from "../account";
-import { TIER_TEXT, safetyScore, useData } from "../data";
+import { TIER_TEXT, isListed, safetyScore, useData } from "../data";
 
 /** Highest safety score first; untested robots last; ties by attacks blocked. */
 export const byRank = (a: Robot, b: Robot) =>
@@ -42,7 +42,7 @@ function Players() {
       {!rows && !error && <p className="note">Loading…</p>}
       {rows && rows.length === 0 && (
         <div className="panel empty">
-          <p>No prize rounds played yet. Be the first name on the board.</p>
+          <p>No bounty rounds played yet. Be the first name on the board.</p>
           <a className="btn primary" href="#/play">
             Start playing
           </a>
@@ -57,7 +57,7 @@ function Players() {
                 <th>Player</th>
                 <th>Robots tricked</th>
                 <th>Rounds played</th>
-                <th>Prizes won</th>
+                <th>Bounties won</th>
               </tr>
             </thead>
             <tbody>
@@ -83,7 +83,7 @@ function Players() {
 
 function Rankings() {
   const { robots, robotsLoaded } = useData();
-  const sorted = [...robots].sort(byRank);
+  const sorted = robots.filter(isListed).sort(byRank);
 
   return (
     <>
@@ -103,7 +103,7 @@ function Rankings() {
                 <th>Safety score</th>
                 <th>Attacks blocked</th>
                 <th>Everyday tasks</th>
-                <th>Prize</th>
+                <th>Bounty</th>
               </tr>
             </thead>
             <tbody>
@@ -188,7 +188,7 @@ export function RobotPage({ id }: { id: number }) {
           <span>{r.utilityScore ? `${r.utilityScore}/10` : "–"}</span>Everyday tasks passed
         </div>
         <div>
-          <span>{r.bounty.totalWei !== "0" ? formatQor(r.bounty.totalWei) : "–"}</span>Prize for beating it
+          <span>{r.bounty.totalWei !== "0" ? formatQor(r.bounty.totalWei) : "–"}</span>Bounty for beating it
         </div>
       </div>
       <p>

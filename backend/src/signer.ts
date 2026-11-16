@@ -110,3 +110,14 @@ export function updateBrainDigest(chainId: number, registry: Address, robotId: b
   );
   return domainDigest(REGISTRY_DOMAIN, chainId, registry, data);
 }
+
+export const WITHDRAW_TYPEHASH = typehash("RedZone.Withdraw(uint256 bountyId,address to,uint256 nonce,uint256 deadline)");
+
+/** EscrowVault.withdrawDigest: what the bounty owner signs to take a bounty back. */
+export function withdrawDigest(chainId: number, vault: Address, bountyId: bigint, to: Address, nonce: bigint, deadline: bigint): Hex {
+  const data = encodeAbiParameters(
+    [{ type: "bytes32" }, { type: "uint256" }, { type: "address" }, { type: "uint256" }, { type: "uint256" }],
+    [WITHDRAW_TYPEHASH, bountyId, to, nonce, deadline],
+  );
+  return domainDigest(VAULT_DOMAIN, chainId, vault, data);
+}

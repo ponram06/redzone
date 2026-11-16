@@ -2,16 +2,16 @@
  * Game logic: judge an attack session, score utility, run practice rounds.
  * Chain reads are injected so tests run offline.
  */
-import { decodeEventLog, encodeFunctionData, verifyMessage, type Address, type Hex } from "viem";
+import { decodeEventLog, encodeAbiParameters, encodeFunctionData, keccak256, verifyMessage, type Address, type Hex } from "viem";
 import type { Arena } from "./arena.js";
 import { actionsToWaypoints } from "./brains/actions.js";
 import type { BrainRegistry } from "./brains/registry.js";
 import type { BrainOutput } from "./brains/types.js";
-import { registryAbi, vaultAbi, type NativeTransfer, type RobotView, type SessionView } from "./chain.js";
+import { registryAbi, robotKey, vaultAbi, type BountyView, type NativeTransfer, type RobotView, type SessionView } from "./chain.js";
 import { SIGNUP_MEMO, decodePqSignature, toEvmAddress, toQorAddress, verifyWalletSignature, walletText } from "./qorex.js";
 import { simulate, taskPassed, type Trace } from "./referee.js";
 import type { Relayer } from "./relayer.js";
-import { claimDigest, registerRobotDigest, resultDigest, signDigest, startSessionDigest, updateBrainDigest, utilityDigest, type RefereeKey } from "./signer.js";
+import { claimDigest, registerRobotDigest, resultDigest, signDigest, startSessionDigest, updateBrainDigest, utilityDigest, withdrawDigest, type RefereeKey } from "./signer.js";
 import type { Store } from "./store.js";
 
 /** A signed StartSession request is valid for this long (the contract allows at most 1 hour). */
@@ -37,7 +37,41 @@ export type ChainReader = {
   readPqcKey(account: Address): Promise<{ registered: boolean; algorithmId: number; pubkey: Hex }>;
   readPlayer(player: Address): Promise<{ nonce: bigint; attemptsLeft: number }>;
   readNativeTransfer(txHash: string): Promise<NativeTransfer | null>;
+  readBounty(id: number): Promise<BountyView>;
+  readNextBountyId(): Promise<number>;
+  readVaultNonce(account: Address): Promise<bigint>;
 };
+
+/** Makers pay prizes to the relayer (QoreX can't call contracts yet); the relayer locks them in the vault. */
+export type PrizeConfig = { minUqor: bigint; payTo: string };
+export const prizeMemo = (robotId: number) => `RedZone bounty #${robotId}`;
+/** 10,000 QOR: a sanity cap on a single prize. */
+const MAX_PRIZE_UQOR = 10_000n * 1_000_000n;
+
+export type PrizeRecord = {
+  txHash: string;
+  robotId: number;
+  owner: Address;
+  uqor: string;
+  /** paid: payment checked, not locked yet. locked: in the vault. withdrawn: back with the maker. */
+  status: "paid" | "locked" | "withdrawn";
+  firstBountyId: number;
+  bountyId?: number;
+  depositTx?: Hex;
+  withdrawTx?: Hex;
+  error?: string;
+  at: number;
+};
+
+/** What the maker signs (off chain, checked by the referee) to take a prize back. */
+export function prizeBackDigest(chainId: number, vault: Address, bountyId: number, owner: Address, deadline: number): Hex {
+  return keccak256(
+    encodeAbiParameters(
+      [{ type: "string" }, { type: "uint256" }, { type: "address" }, { type: "uint256" }, { type: "address" }, { type: "uint256" }],
+      ["RedZone.TakePrizeBack", BigInt(chainId), vault, BigInt(bountyId), owner, BigInt(deadline)],
+    ),
+  );
+}
 
 /** One-time sign-up: the player pays `feeUqor` once, with a QoreX (hybrid-signed) transfer to `payTo`. */
 export type SignupConfig = { feeUqor: bigint; payTo: string };
@@ -58,6 +92,8 @@ export type GameDeps = {
   relayer?: Relayer | null;
   /** When set, players pay a small one-time fee before their first session. */
   signup?: SignupConfig | null;
+  /** When set (with a relayer), makers can add prizes paid from QoreX. */
+  prize?: PrizeConfig | null;
   now?: () => number;
 };
 
@@ -421,6 +457,181 @@ export class Game {
         }
       }
       throw new GameError(502, `session started but no SessionStarted event found (${r.hash})`);
+    });
+  }
+
+  // ---------------------------------------------------------- prizes (paid in QoreX, locked by the relayer)
+  //
+  // QoreX can't call contracts yet, so a maker can't call EscrowVault.depositBounty themselves.
+  // Instead they pay the prize to the relayer with a normal QoreX transfer (hybrid-signed), with the
+  // memo "RedZone prize #<robotId>". The referee checks that payment and the relayer deposits exactly
+  // that amount into the vault for the robot. On chain the relayer is the bounty owner, so only its
+  // ML-DSA-87 key can withdraw; the referee does that only for the maker who paid, back to them.
+
+  private prizeKey(txHash: string): string {
+    return `prize-${txHash}`;
+  }
+
+  /** Lock a maker's prize payment in the vault for their robot. Idempotent per payment. */
+  async addPrize(input: { robotId: unknown; owner: unknown; txHash: unknown }): Promise<PrizeRecord> {
+    if (!this.d.prize || !this.d.relayer) throw new GameError(503, "bounties can't be added on this referee");
+    const robotId = Number(input.robotId);
+    if (!Number.isSafeInteger(robotId) || robotId < 1) throw new GameError(400, "bad robotId");
+    const owner = toEvmAddress(input.owner);
+    if (!owner) throw new GameError(400, "bad owner address");
+    if (typeof input.txHash !== "string" || !/^(0x)?[0-9a-fA-F]{64}$/.test(input.txHash)) throw new GameError(400, "bad txHash");
+    const txHash = input.txHash.replace(/^0x/, "").toUpperCase();
+    const key = this.prizeKey(txHash);
+
+    return this.once(key, async () => {
+      const done = this.d.store.getVerdict<PrizeRecord>(key);
+      if (done?.status === "locked") {
+        if (done.owner.toLowerCase() !== owner.toLowerCase() || done.robotId !== robotId) throw new GameError(409, "this payment was already used");
+        return done;
+      }
+      const robot = await this.d.chain.readRobot(robotId);
+      if (!robot) throw new GameError(404, "robot not found");
+      if (robot.owner.toLowerCase() !== owner.toLowerCase()) throw new GameError(403, "only the robot's owner can add its bounty");
+
+      let record = done;
+      if (!record) {
+        const tx = await this.d.chain.readNativeTransfer(txHash);
+        if (!tx) throw new GameError(404, "payment not found on chain yet: wait a few seconds and try again");
+        if (tx.code !== 0) throw new GameError(400, "that transaction failed on chain");
+        if (tx.from !== toQorAddress(owner)) throw new GameError(400, "the payment was not sent from this account");
+        if (tx.to !== this.d.prize!.payTo) throw new GameError(400, "the payment went to the wrong address");
+        if (tx.memo.trim() !== prizeMemo(robotId)) throw new GameError(400, `the payment memo must be "${prizeMemo(robotId)}"`);
+        if (tx.uqor < this.d.prize!.minUqor) throw new GameError(400, "the bounty is smaller than the minimum");
+        if (tx.uqor > MAX_PRIZE_UQOR) throw new GameError(400, "the bounty is too large");
+        record = {
+          txHash,
+          robotId,
+          owner,
+          uqor: tx.uqor.toString(),
+          status: "paid",
+          // Bounties created from here on can only be ours: lets a retry see a deposit that
+          // landed even if we never got its receipt, so a prize is never locked twice.
+          firstBountyId: await this.d.chain.readNextBountyId(),
+          at: this.now(),
+        };
+        this.d.store.saveVerdict(key, record);
+      }
+
+      const valueWei = BigInt(record.uqor) * 10n ** 12n;
+      const landed = await this.findDeposit(record, valueWei);
+      if (landed) return this.savePrize(key, { ...record, status: "locked", bountyId: landed, error: undefined });
+
+      try {
+        const r = await this.d.relayer!.send(
+          this.d.vault,
+          encodeFunctionData({ abi: vaultAbi, functionName: "depositBounty", args: [robotKey(robotId)] }),
+          valueWei,
+        );
+        if (r.status !== "success") throw new Error(`depositBounty reverted (${r.hash})`);
+        let bountyId: number | undefined;
+        for (const log of r.logs) {
+          try {
+            const ev = decodeEventLog({ abi: vaultAbi, data: log.data, topics: log.topics });
+            if (ev.eventName === "BountyDeposited") bountyId = Number(ev.args.bountyId);
+          } catch {
+            // not our event
+          }
+        }
+        if (!bountyId) throw new Error(`deposit sent but no BountyDeposited event (${r.hash})`);
+        return this.savePrize(key, { ...record, status: "locked", bountyId, depositTx: r.hash, error: undefined });
+      } catch (e) {
+        this.savePrize(key, { ...record, error: (e as Error).message.slice(0, 300) });
+        throw new GameError(502, "your payment arrived, but locking the bounty failed. Try again in a minute (you won't pay twice)");
+      }
+    });
+  }
+
+  private savePrize(key: string, r: PrizeRecord): PrizeRecord {
+    this.d.store.saveVerdict(key, r);
+    this.prizeIndex = null;
+    return r;
+  }
+
+  /** A deposit for this payment that already reached the vault (same robot, amount and relayer). */
+  private async findDeposit(r: PrizeRecord, valueWei: bigint): Promise<number | null> {
+    const next = await this.d.chain.readNextBountyId();
+    const taken = new Set(this.allPrizes().filter((p) => p.bountyId).map((p) => p.bountyId));
+    for (let id = r.firstBountyId; id < next; id++) {
+      if (taken.has(id)) continue;
+      const b = await this.d.chain.readBounty(id);
+      if (b.robotKey === robotKey(r.robotId) && b.amountWei === valueWei && b.owner.toLowerCase() === this.d.relayer!.address.toLowerCase()) return id;
+    }
+    return null;
+  }
+
+  private prizeIndex: PrizeRecord[] | null = null;
+  private allPrizes(): PrizeRecord[] {
+    this.prizeIndex ??= this.d.store.listVerdicts<PrizeRecord>("prize-");
+    return this.prizeIndex;
+  }
+
+  /** The maker's prizes, with whether each is still in the vault. */
+  async ownerPrizes(ownerRaw: unknown) {
+    const owner = toEvmAddress(ownerRaw);
+    if (!owner) throw new GameError(400, "bad owner address");
+    const mine = this.allPrizes().filter((p) => p.owner.toLowerCase() === owner.toLowerCase() && p.status !== "paid");
+    return Promise.all(
+      mine.map(async (p) => {
+        const open = p.status === "locked" && p.bountyId ? (await this.d.chain.readBounty(p.bountyId)).status === 1 : false;
+        return { robotId: p.robotId, bountyId: p.bountyId ?? null, uqor: p.uqor, status: p.status, open, withdrawTx: p.withdrawTx ?? null };
+      }),
+    );
+  }
+
+  private prizeByBounty(bountyId: number): PrizeRecord | undefined {
+    return this.allPrizes().find((p) => p.bountyId === bountyId && (p.status === "locked" || p.status === "withdrawn"));
+  }
+
+  /** What the maker's wallet signs to take a prize back (checked here; the vault checks the relayer's signature). */
+  async prizeBackRequest(input: { bountyId: unknown; owner: unknown }) {
+    const bountyId = Number(input.bountyId);
+    const owner = toEvmAddress(input.owner);
+    if (!Number.isSafeInteger(bountyId) || bountyId < 1 || !owner) throw new GameError(400, "bad request");
+    const p = this.prizeByBounty(bountyId);
+    if (!p || p.owner.toLowerCase() !== owner.toLowerCase()) throw new GameError(403, "this bounty wasn't added by you");
+    if (p.status !== "locked") throw new GameError(409, "this bounty was already taken back");
+    const deadline = this.now() + REQUEST_TTL;
+    const digest = prizeBackDigest(this.d.chainId, this.d.vault, bountyId, owner, deadline);
+    return { bountyId, owner, deadline, digest, text: walletText("TakeBountyBack", digest) };
+  }
+
+  /** Withdraw a prize to the maker who paid it, after checking their QoreX ML-DSA signature. */
+  async takePrizeBack(input: { bountyId: unknown; owner: unknown; deadline: unknown; pqSignature: unknown }) {
+    if (!this.d.relayer?.pqSign) throw new GameError(503, "no relayer configured");
+    const bountyId = Number(input.bountyId);
+    const owner = toEvmAddress(input.owner);
+    const deadline = this.checkDeadline(input.deadline);
+    const sig = decodePqSignature(input.pqSignature);
+    if (!Number.isSafeInteger(bountyId) || bountyId < 1 || !owner) throw new GameError(400, "bad request");
+    if (!sig) throw new GameError(400, "pqSignature missing or malformed");
+
+    return this.once(`bounty-${bountyId}`, async () => {
+      const p = this.prizeByBounty(bountyId);
+      if (!p || p.owner.toLowerCase() !== owner.toLowerCase()) throw new GameError(403, "this bounty wasn't added by you");
+      if (p.status !== "locked") throw new GameError(409, "this bounty was already taken back");
+      const key = await this.d.chain.readPqcKey(owner);
+      if (!key.registered) throw new GameError(409, "no ML-DSA-87 key registered for this account");
+      if (!verifyWalletSignature(key.pubkey, walletText("TakeBountyBack", prizeBackDigest(this.d.chainId, this.d.vault, bountyId, owner, deadline)), sig)) {
+        throw new GameError(401, "signature does not match this request");
+      }
+      const b = await this.d.chain.readBounty(bountyId);
+      if (b.status !== 1) throw new GameError(409, b.status === 2 ? "a player already won this bounty" : "this bounty is no longer in the vault");
+
+      const vaultDeadline = BigInt(this.now() + 600);
+      const nonce = await this.d.chain.readVaultNonce(this.d.relayer!.address);
+      const relayerSig = this.d.relayer!.pqSign!(withdrawDigest(this.d.chainId, this.d.vault, BigInt(bountyId), owner, nonce, vaultDeadline));
+      const r = await this.d.relayer!.send(
+        this.d.vault,
+        encodeFunctionData({ abi: vaultAbi, functionName: "withdrawBounty", args: [BigInt(bountyId), owner, vaultDeadline, relayerSig] }),
+      );
+      if (r.status !== "success") throw new GameError(502, `withdrawBounty reverted (${r.hash})`);
+      this.savePrize(this.prizeKey(p.txHash), { ...p, status: "withdrawn", withdrawTx: r.hash });
+      return { bountyId, tx: r.hash, uqor: p.uqor };
     });
   }
 

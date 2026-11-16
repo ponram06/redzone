@@ -6,9 +6,11 @@ import { PracticePanel } from "../components/PracticePanel";
 import { RobotCard } from "../components/RobotCard";
 import { useData } from "../data";
 
-/** Pick a robot, look at the map, practise for free or play a prize round. */
+/** Pick a robot, look at the map, practise for free or play a bounty round. */
 export function Play({ robotId }: { robotId?: number }) {
-  const { health, arena, robots, robotsLoaded, reloadRobots } = useData();
+  const { health, arena, robots: all, robotsLoaded, reloadRobots } = useData();
+  // Only robots with a bounty can be played.
+  const robots = all.filter((r) => r.bounty.totalWei !== "0");
   const [chosen, setChosen] = useState<number | undefined>(robotId);
   const [mode, setMode] = useState<"practice" | "real">("practice");
   const [trace, setTrace] = useState<Trace | null>(null);
@@ -59,7 +61,7 @@ export function Play({ robotId }: { robotId?: number }) {
                   Free practice
                 </button>
                 <button role="tab" aria-selected={mode === "real"} className={mode === "real" ? "on" : ""} onClick={() => setMode("real")}>
-                  Play for the prize
+                  Play for the bounty
                 </button>
               </div>
               {mode === "practice" ? (

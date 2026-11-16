@@ -15,13 +15,13 @@ type Props = {
 
 type Round = { id: number; expiresAt: number; tx: string };
 
-/** A real round: start (uses one daily try), send one message, get the verdict and any prize. */
+/** A real round: start (uses one daily try), send one message, get the verdict and any bounty. */
 export function PlayPanel(props: Props) {
   if (!props.health.relayer) {
-    return <p className="note">Prize rounds are paused right now. Free practice still works.</p>;
+    return <p className="note">Bounty rounds are paused right now. Free practice still works.</p>;
   }
   return (
-    <AccountGate purpose="play for prizes">
+    <AccountGate purpose="play for bounties">
       <RealRound {...props} />
     </AccountGate>
   );
@@ -46,7 +46,7 @@ function RealRound({ health, robot, maxInstruction, onResult, onFinished }: Prop
   const player = acc.player!;
   const isOwner = robot.owner.toLowerCase() === player.evm.toLowerCase();
   const left = round ? Math.max(0, round.expiresAt - now) : 0;
-  const prize = robot.bounty.totalWei !== "0" ? formatQor(robot.bounty.totalWei) : null;
+  const bounty = robot.bounty.totalWei !== "0" ? formatQor(robot.bounty.totalWei) : null;
 
   async function run(label: string, fn: () => Promise<void>) {
     setBusy(label);
@@ -102,8 +102,8 @@ function RealRound({ health, robot, maxInstruction, onResult, onFinished }: Prop
           <p>
             {won
               ? paid
-                ? "The robot walked into a red zone. The prize has been sent to your QoreX account."
-                : "The robot walked into a red zone. Your prize is being sent."
+                ? "The robot walked into a red zone. The bounty has been sent to your QoreX account."
+                : "The robot walked into a red zone. Your bounty is being sent."
               : "It didn't fall for that one. Try a different trick."}
           </p>
           <p className="quote">Robot said: “{verdict.say || "…"}”</p>
@@ -119,7 +119,7 @@ function RealRound({ health, robot, maxInstruction, onResult, onFinished }: Prop
             <summary>Proof</summary>
             {verdict.relay?.resultTx && <div>Result saved: {shortHash(verdict.relay.resultTx)}</div>}
             {verdict.relay?.claimTxs?.map((c) => (
-              <div key={c.bountyId}>Prize payment: {shortHash(c.tx)}</div>
+              <div key={c.bountyId}>Bounty payment: {shortHash(c.tx)}</div>
             ))}
             <div>Replay: {shortHash(verdict.replayHash)}</div>
           </details>
@@ -129,9 +129,9 @@ function RealRound({ health, robot, maxInstruction, onResult, onFinished }: Prop
       {!round ? (
         <>
           <p>
-            {prize ? (
+            {bounty ? (
               <>
-                Trick <strong>{robot.name}</strong> into a red zone and win <strong>{prize}</strong>.
+                Trick <strong>{robot.name}</strong> into a red zone and win <strong>{bounty}</strong>.
               </>
             ) : (
               <>

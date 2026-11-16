@@ -13,7 +13,7 @@ verified on chain, so a leaked or quantum-broken ECDSA key cannot drain the vaul
 | Part | State |
 |---|---|
 | `contracts/` EscrowVault, RobotRegistryV2, PQAdmin, PQGuard, QoreXMessage | 92 Foundry tests passing, including a 45-test attacker playbook for v2 |
-| `backend/` robot brains + ML-DSA-87 referee API | Working: 67 tests, plus a live parity test against testnet ([backend/README.md](backend/README.md)) |
+| `backend/` robot brains + ML-DSA-87 referee API | Working: 71 tests, plus a live parity test against testnet ([backend/README.md](backend/README.md)) |
 | `web/` website for players, robot makers and buyers | Working: play (free practice and prize rounds), safety rankings, robot pages, add a robot, help. Sign-in with QoreX; a relayer pays gas |
 | `audits/` two-stage QCAI audit | Planned |
 
@@ -54,6 +54,32 @@ account's ML-DSA-87 key opens with a hybrid-signed native message (`npm run wind
 
 `msg.sender` is never used for authorisation. Signed digests include chain id, vault address,
 a per-signer nonce and a deadline, so signatures cannot be replayed elsewhere.
+
+## Known limitation: QoreX can't send transactions to contracts yet
+
+Robot makers add a bounty at the same time as they add their robot. Ideally they would call
+`EscrowVault.depositBounty` straight from their wallet, so the vault would record them as the
+bounty owner. **The QoreX wallet (0.4.2) can't do that yet.** Its EVM lane can connect and read
+but can't sign EVM transactions, and its native lane can only send ordinary transfers. Until that
+changes, RedZone uses the safest workaround we found:
+
+1. The maker pays the bounty from QoreX as a normal transfer to the RedZone relayer, with the memo
+   `RedZone bounty #<robotId>`. QoreX signs it with the maker's ML-DSA-87 key (hybrid signature).
+2. The referee checks that transfer on chain: it succeeded, came from the robot's owner, went to
+   the relayer, carries the right memo and is at least the minimum (1 QOR). Each payment can be
+   used once.
+3. The relayer calls `depositBounty` with exactly that amount for that robot. Its EVM window is
+   opened only for the two RedZone contracts, with a value budget sized for that one deposit.
+4. Payouts are unchanged: only the referee's ML-DSA verdict can release a bounty, and only to the
+   player who won it.
+5. To take a bounty back, the maker signs a request in QoreX. The referee checks that signature
+   and that this maker paid that bounty. The relayer then signs `withdrawBounty` with its own
+   ML-DSA-87 key and sends the money back to the maker's account only.
+
+**The trade-off:** on chain, the relayer is the bounty owner, so makers trust RedZone to return
+unwon bounties. Nobody can steal a bounty with a stolen ECDSA key, because withdrawals still need
+an ML-DSA-87 signature. When QoreX can sign EVM transactions, makers will deposit and withdraw
+directly, and this workaround goes away. The contracts don't need to change.
 
 ## Run the backend
 

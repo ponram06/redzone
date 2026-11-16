@@ -32,7 +32,7 @@ export function AccountGate({ children, purpose }: { children: ReactNode; purpos
       1,
       "Get the QoreX wallet",
       <>
-        <p>RedZone uses the free QoreX browser extension as your account. It keeps your prizes safe, even from future quantum computers.</p>
+        <p>RedZone uses the free QoreX browser extension as your account. It keeps your bounties safe, even from future quantum computers.</p>
         <p className="note">Install QoreX in Chrome, create an account, switch it to the testnet, then reload this page.</p>
         <button className="btn" onClick={() => location.reload()}>
           I've installed it, reload

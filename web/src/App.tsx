@@ -87,7 +87,7 @@ function Shell() {
         )}
       </main>
       <footer className="footer">
-        RedZone · a safety arena for robot brains · prizes protected by quantum-safe signatures · <a href="#/help">Help</a>
+        RedZone · a safety arena for robot brains · bounties protected by quantum-safe signatures · <a href="#/help">Help</a>
       </footer>
     </>
   );

@@ -64,6 +64,12 @@ export const vaultAbi = parseAbi([
   "function refereePubkey() view returns (bytes)",
   "function claimDigest(uint256 bountyId, address claimer, bytes32 replayHash, uint256 deadline) view returns (bytes32)",
   "function claimBounty(uint256 bountyId, address claimer, bytes32 replayHash, uint256 deadline, bytes refereeSig)",
+  "function depositBounty(bytes32 robotId) payable returns (uint256)",
+  "function nonces(address account) view returns (uint256)",
+  "function withdrawDigest(uint256 bountyId, address to, uint256 nonce, uint256 deadline) view returns (bytes32)",
+  "function withdrawBounty(uint256 bountyId, address to, uint256 deadline, bytes ownerSig)",
+  "event BountyDeposited(uint256 indexed bountyId, bytes32 indexed robotId, address indexed owner, uint256 amount)",
+  "event BountyWithdrawn(uint256 indexed bountyId, address indexed to, uint256 amount)",
 ]);
 
 export const SESSION_TTL = 600;
@@ -132,6 +138,22 @@ export async function openBounties(robotId: number): Promise<{ id: number; amoun
     if (rk === key && status === 1) out.push({ id: Number(i), amountWei: amount.toString() });
   }
   return out;
+}
+
+export type BountyView = { id: number; owner: Address; robotKey: Hex; amountWei: bigint; status: number };
+
+/** status: 0 none, 1 open, 2 claimed, 3 withdrawn. */
+export async function readBounty(id: number): Promise<BountyView> {
+  const [owner, rk, amount, status] = await client.readContract({ address: VAULT, abi: vaultAbi, functionName: "bounties", args: [BigInt(id)] });
+  return { id, owner, robotKey: rk, amountWei: amount, status };
+}
+
+export async function readNextBountyId(): Promise<number> {
+  return Number(await client.readContract({ address: VAULT, abi: vaultAbi, functionName: "nextBountyId" }));
+}
+
+export async function readVaultNonce(account: Address): Promise<bigint> {
+  return client.readContract({ address: VAULT, abi: vaultAbi, functionName: "nonces", args: [account] });
 }
 
 export type SessionView = { id: number; robotId: number; player: Address; startedAt: number; outcome: number };

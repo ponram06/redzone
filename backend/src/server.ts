@@ -5,7 +5,23 @@ import { FACILITY } from "./arena.js";
 import { KeyVault } from "./brains/keys.js";
 import { BrainRegistry, LEGACY_DEMO_HASH, RULE_BRAIN, brainHash } from "./brains/registry.js";
 import type { BrainConfig } from "./brains/types.js";
-import { CHAIN_ID, REGISTRY, RESULT_GRACE, SESSION_TTL, VAULT, openBounties, readNativeTransfer, readPlayer, readPqcKey, readRobot, readRobots, readSession } from "./chain.js";
+import {
+  CHAIN_ID,
+  REGISTRY,
+  RESULT_GRACE,
+  SESSION_TTL,
+  VAULT,
+  openBounties,
+  readBounty,
+  readNativeTransfer,
+  readNextBountyId,
+  readPlayer,
+  readPqcKey,
+  readRobot,
+  readRobots,
+  readSession,
+  readVaultNonce,
+} from "./chain.js";
 import { ChainRelayer } from "./relayer.js";
 import { Game } from "./game.js";
 import { DEFAULT_LLM_PROMPT } from "./prompt.js";
@@ -50,14 +66,27 @@ const store = new Store(dataDir);
 
 // Relayer for QoreX players (separate account, window scoped to our two contracts).
 const relayer = ChainRelayer.fromEnv(env, [REGISTRY, VAULT]);
+const prize = relayer ? { minUqor: BigInt(env.PRIZE_MIN_UQOR ?? "1000000"), payTo: relayer.cosmosAddress } : null;
 
 const game = new Game({
   arena: FACILITY,
   brains,
   store,
   key,
-  chain: { readSession, readRobot, openBounties, readPqcKey, readPlayer, readNativeTransfer: (h) => readNativeTransfer(h) },
+  chain: {
+    readSession,
+    readRobot,
+    openBounties,
+    readPqcKey,
+    readPlayer,
+    readNativeTransfer: (h) => readNativeTransfer(h),
+    readBounty,
+    readNextBountyId,
+    readVaultNonce,
+  },
   relayer,
+  // Prizes are paid to the relayer from QoreX and locked in the vault by it (PRIZE_MIN_UQOR, default 1 QOR).
+  prize,
   // One-time sign-up fee, paid to the relayer so it funds gas (0 turns sign-up off).
   signup: relayer && BigInt(env.SIGNUP_FEE_UQOR ?? "100000") > 0n ? { feeUqor: BigInt(env.SIGNUP_FEE_UQOR ?? "100000"), payTo: relayer.cosmosAddress } : null,
   chainId: CHAIN_ID,
@@ -81,6 +110,7 @@ const app = await buildApp({
   vault: VAULT,
   builtInBrains,
   relayer: relayer ? { address: relayer.address, cosmos: relayer.cosmosAddress } : null,
+  prize,
   readRobots,
   readRobot,
   corsOrigin: env.CORS_ORIGIN || undefined,

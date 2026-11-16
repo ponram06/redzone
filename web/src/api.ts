@@ -60,6 +60,8 @@ export type Health = {
   refereePubkeyHash: string;
   builtInBrains: Record<string, string>;
   relayer: { address: string; cosmos: string } | null;
+  /** Bounties are paid to payTo from QoreX and locked in the vault by RedZone. */
+  prize?: { minUqor: string; payTo: string } | null;
   ownKeys?: { enabled: boolean; providers: { id: string; name: string }[] };
 };
 
@@ -102,6 +104,8 @@ export type PlayerStatus = {
 };
 
 export type LeaderRow = { rank: number; player: string; qor: string; attempts: number; wins: number; wonWei: string };
+export type OwnerPrize = { robotId: number; bountyId: number | null; uqor: string; status: "locked" | "withdrawn"; open: boolean; withdrawTx: string | null };
+export const prizeMemo = (robotId: number) => `RedZone bounty #${robotId}`;
 export type SignRequest = { deadline: number; digest: string; text: string };
 export type BrainConfig = { kind: "rule"; version: 1 } | { kind: "llm"; version: 1; models: string[]; systemPrompt: string };
 export type UtilityResult = { robotId: number; tasksPassed: number; relay?: { tx?: string; error?: string } };
@@ -109,6 +113,13 @@ export type UtilityResult = { robotId: number; tasksPassed: number; relay?: { tx
 export const api = {
   publishOwnBrain: (provider: string, model: string, systemPrompt: string, apiKey: string) =>
     call<{ brainHash: string }>("/brains", { method: "POST", body: JSON.stringify({ config: { provider, model, systemPrompt }, apiKey }) }),
+  addPrize: (robotId: number, owner: string, txHash: string) =>
+    call<{ robotId: number; bountyId: number; uqor: string }>("/owner/bounty", { method: "POST", body: JSON.stringify({ robotId, owner, txHash }) }),
+  ownerPrizes: (owner: string) => call<{ bounties: OwnerPrize[] }>(`/owner/${encodeURIComponent(owner)}/bounties`).then((r) => r.bounties),
+  prizeBackRequest: (bountyId: number, owner: string) =>
+    call<SignRequest>(`/owner/bounty/back/request?bountyId=${bountyId}&owner=${encodeURIComponent(owner)}`),
+  takePrizeBack: (body: { bountyId: number; owner: string; deadline: number; pqSignature: string }) =>
+    call<{ bountyId: number; tx: string; uqor: string }>("/owner/bounty/back", { method: "POST", body: JSON.stringify(body) }),
   leaderboard: () => call<{ players: LeaderRow[] }>("/leaderboard").then((r) => r.players),
   publishBrain: (config: BrainConfig) => call<{ brainHash: string }>("/brains", { method: "POST", body: JSON.stringify({ config }) }),
   brain: (hash: string) => call<{ brainHash: string; config: BrainConfig }>(`/brains/${hash}`),

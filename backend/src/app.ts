@@ -22,6 +22,7 @@ export type AppDeps = {
   vault: Address;
   builtInBrains: Record<string, string>;
   relayer?: { address: Address; cosmos: string } | null;
+  prize?: { minUqor: bigint; payTo: string } | null;
   readRobots(): Promise<RobotView[]>;
   readRobot(id: number): Promise<RobotView | null>;
   corsOrigin?: string;
@@ -69,11 +70,31 @@ export async function buildApp(d: AppDeps) {
     refereePubkeyHash: keccak256(d.key.publicKey),
     builtInBrains: d.builtInBrains,
     relayer: d.relayer ?? null,
+    prize: d.prize ? { minUqor: d.prize.minUqor.toString(), payTo: d.prize.payTo } : null,
     ownKeys: {
       enabled: d.brains.keysEnabled,
       providers: Object.entries(PROVIDERS).map(([id, p]) => ({ id, name: p.name })),
     },
   }));
+
+  /** Prizes: the maker pays in QoreX, then posts the payment here; the relayer locks it in the vault. */
+  app.post<{ Body: { robotId?: unknown; owner?: unknown; txHash?: unknown } }>("/owner/prize", async (req, reply) => {
+    if (!allow(req, reply, "session")) return reply;
+    const r = await d.game.addPrize({ robotId: req.body?.robotId, owner: req.body?.owner, txHash: req.body?.txHash });
+    return { robotId: r.robotId, bountyId: r.bountyId, uqor: r.uqor, depositTx: r.depositTx ?? null };
+  });
+
+  app.get<{ Params: { owner: string } }>("/owner/:owner/prizes", async (req) => ({ prizes: await d.game.ownerPrizes(req.params.owner) }));
+
+  app.get<{ Querystring: { bountyId?: string; owner?: string } }>("/owner/prize/back/request", async (req) =>
+    d.game.prizeBackRequest({ bountyId: req.query.bountyId, owner: req.query.owner }),
+  );
+
+  app.post<{ Body: { bountyId?: unknown; owner?: unknown; deadline?: unknown; pqSignature?: unknown } }>("/owner/prize/back", async (req, reply) => {
+    if (!allow(req, reply, "session")) return reply;
+    const b = req.body ?? {};
+    return d.game.takePrizeBack({ bountyId: b.bountyId, owner: b.owner, deadline: b.deadline, pqSignature: b.pqSignature });
+  });
 
   /** Top players, from the referee's own finished verdicts. */
   app.get("/leaderboard", async () => ({ players: d.game.leaderboard() }));

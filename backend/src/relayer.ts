@@ -4,8 +4,11 @@
  * signature checked inside the contract, so the relayer cannot forge or redirect anything.
  *
  * Its EVM window is opened with `allowedTargets` = [RobotRegistryV2, EscrowVault] (chain v3.2.3):
- * even with the relayer's ECDSA key, nothing can be sent anywhere else, and value transfers to
- * those contracts are refused by them. The account should hold only a few QOR for gas.
+ * even with the relayer's ECDSA key, nothing can be sent anywhere else. Value is only sent for
+ * prizes: makers pay the prize to this account with QoreX (QoreX can't call contracts yet), and the
+ * relayer locks it in the vault with depositBounty. The window's value budget is sized per deposit.
+ * As bounty owner on chain, only this account's ML-DSA-87 key can withdraw a prize, and the
+ * referee only does that for the maker who paid it.
  *
  * This account must NOT be the Q-Day Drill account (whose window must stay closed).
  */
@@ -19,7 +22,8 @@ import {
   unifiedAccountFromSeed,
   type UnifiedAccount,
 } from "@qorechain/sdk";
-import { createWalletClient, http, type Address, type Hex, type Log } from "viem";
+import { pqcSign } from "@qorechain/sdk";
+import { bytesToHex, createWalletClient, hexToBytes, http, type Address, type Hex, type Log } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { client, qorechain } from "./chain.js";
 
@@ -27,7 +31,9 @@ export type RelayReceipt = { hash: Hex; status: "success" | "reverted"; logs: Lo
 
 export interface Relayer {
   readonly address: Address;
-  send(to: Address, data: Hex): Promise<RelayReceipt>;
+  send(to: Address, data: Hex, valueWei?: bigint): Promise<RelayReceipt>;
+  /** ML-DSA-87 signature over a 32-byte digest with the relayer's own PQC key (vault withdrawals). */
+  pqSign?(digest: Hex): Hex;
 }
 
 const WINDOW_BLOCKS = 3000n;
@@ -64,40 +70,51 @@ export class ChainRelayer implements Relayer {
   }
 
   /** One transaction at a time, so nonces never collide. */
-  send(to: Address, data: Hex): Promise<RelayReceipt> {
+  send(to: Address, data: Hex, valueWei = 0n): Promise<RelayReceipt> {
     if (!this.targets.some((t) => t.toLowerCase() === to.toLowerCase())) {
       return Promise.reject(new Error(`relayer refuses target ${to}`));
     }
-    const run = this.queue.then(() => this.sendNow(to, data));
+    if (valueWei < 0n || valueWei % 10n ** 12n !== 0n) return Promise.reject(new Error("value must be whole uqor"));
+    const run = this.queue.then(() => this.sendNow(to, data, valueWei));
     this.queue = run.catch(() => {});
     return run;
   }
 
-  private async sendNow(to: Address, data: Hex): Promise<RelayReceipt> {
-    await this.ensureWindow();
+  pqSign(digest: Hex): Hex {
+    return bytesToHex(pqcSign(this.acc.pqc.secretKey, hexToBytes(digest)));
+  }
+
+  private async sendNow(to: Address, data: Hex, valueWei: bigint): Promise<RelayReceipt> {
+    await this.ensureWindow(valueWei / 10n ** 12n);
     const wallet = createWalletClient({ account: privateKeyToAccount(this.privateKey), chain: qorechain, transport: http() });
-    const estimate = await client.estimateGas({ account: this.address, to, data });
+    const estimate = await client.estimateGas({ account: this.address, to, data, value: valueWei });
     const gas = (estimate * 13n) / 10n;
     if (gas > MAX_GAS) throw new Error(`relay gas ${gas} above cap`);
     const gasPrice = ((await client.getGasPrice()) * 12n) / 10n;
-    const hash = await wallet.sendTransaction({ to, data, gas, gasPrice, type: "legacy" });
+    const hash = await wallet.sendTransaction({ to, data, gas, gasPrice, value: valueWei, type: "legacy" });
     const receipt = await client.waitForTransactionReceipt({ hash, timeout: 90_000 });
     return { hash, status: receipt.status, logs: receipt.logs };
   }
 
-  /** Open a fresh window, scoped to our contracts, when the current one is missing or nearly used up. */
-  private async ensureWindow(): Promise<void> {
+  /**
+   * Open a fresh window, scoped to our contracts, when the current one is missing, nearly used up,
+   * or can't cover `valueUqor` (a prize deposit) plus fees. The value budget is the gas budget plus
+   * exactly that prize, so the window never allows more value than the deposit needs.
+   */
+  private async ensureWindow(valueUqor = 0n): Promise<void> {
     const w = await fetchEvmWindow({ rest: this.net.endpoints.rest, address: this.acc.cosmos });
     const height = await client.getBlockNumber();
-    const fresh = w.found && w.live && w.maxTxs - w.usedTxs >= 2n && w.expiryHeight > height + 20n;
-    if (fresh) return;
     const gasPrice = await client.getGasPrice();
     const perTxUqor = (MAX_GAS * ((gasPrice * 15n) / 10n)) / 10n ** 12n + 1n;
+    const remainingValue = BigInt(w.maxValue ?? 0) - BigInt(w.usedValue ?? 0);
+    const fresh =
+      w.found && w.live && w.maxTxs - w.usedTxs >= 2n && w.expiryHeight > height + 20n && remainingValue >= valueUqor + perTxUqor * 2n;
+    if (fresh) return;
     const msg = openEvmWindowMsg({
       sender: this.acc.cosmos,
       blocks: WINDOW_BLOCKS,
       maxTxs: WINDOW_TXS,
-      maxValue: perTxUqor * WINDOW_TXS,
+      maxValue: perTxUqor * WINDOW_TXS + valueUqor,
       allowedTargets: this.targets,
     });
     await this.broadcastNative([msg]);

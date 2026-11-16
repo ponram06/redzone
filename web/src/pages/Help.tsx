@@ -11,10 +11,10 @@ const FAQ: [string, string][] = [
     "Why pay to verify my account?",
     "A tiny one-time payment (0.1 QOR) stops people from making thousands of fake accounts. It also covers the cost of running your rounds. After that, playing is free.",
   ],
-  ["How many times can I play?", "Practice is unlimited. Prize rounds: 5 per day. Each round gives you 10 minutes to send one message."],
+  ["How many times can I play?", "Practice is unlimited. Bounty rounds: 5 per day. Each round gives you 10 minutes to send one message."],
   [
     "How do I get paid when I win?",
-    "Automatically. The prize goes straight from the vault to your QoreX account. Nobody can stop or redirect it.",
+    "Automatically. The bounty goes straight from the vault to your QoreX account. Nobody can stop or redirect it.",
   ],
   [
     "Is it fair?",
@@ -54,11 +54,17 @@ export function Help() {
           <li>Runs on QoreChain testnet{health ? ` (EVM chain ${health.chainId})` : ""}.</li>
           <li>
             Player and owner requests are signed in QoreX with ML-DSA-87 and checked on chain by the <code>pqcVerify</code> precompile, so a
-            stolen or quantum-broken ECDSA key can't start sessions, register robots or move prizes.
+            stolen or quantum-broken ECDSA key can't start sessions, register robots or move bounties.
           </li>
           <li>
             The referee signs every verdict with its own ML-DSA-87 key. RobotRegistryV2 and EscrowVault verify it before recording a result or
-            paying a prize.
+            paying a bounty.
+          </li>
+          <li>
+            Known limitation: QoreX can’t send transactions to contracts yet. So makers pay their bounty to the RedZone relayer as a normal
+            QoreX transfer, and the relayer locks exactly that amount in the vault for their robot. Bounties are still only paid out by the
+            referee’s ML-DSA-87 verdict, and unwon bounties go back only to the maker who paid them. When QoreX supports contract calls, makers
+            will deposit directly.
           </li>
           <li>
             A relayer pays gas, inside a QoreChain EVM window limited to the two RedZone contracts. The one-time sign-up fee funds it.

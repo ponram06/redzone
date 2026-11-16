@@ -8,11 +8,11 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { buildApp } from "../src/app.js";
 import { FACILITY } from "../src/arena.js";
 import { BrainRegistry, LEGACY_DEMO_HASH } from "../src/brains/registry.js";
-import { registryAbi, vaultAbi, type RobotView, type SessionView } from "../src/chain.js";
+import { registryAbi, robotKey, vaultAbi, type RobotView, type SessionView } from "../src/chain.js";
 import { toQorAddress, walletMessage } from "../src/qorex.js";
 import type { NativeTransfer } from "../src/chain.js";
 import type { RelayReceipt, Relayer } from "../src/relayer.js";
-import { Game, attemptMessage } from "../src/game.js";
+import { Game, attemptMessage, prizeBackDigest } from "../src/game.js";
 import { claimDigest, registerRobotDigest, resultDigest, startSessionDigest, updateBrainDigest, utilityDigest } from "../src/signer.js";
 import { pqcSign } from "@qorechain/sdk";
 import { Store } from "../src/store.js";
@@ -29,15 +29,25 @@ const playerPq = generatePqcKeypair();
 const strangerPq = generatePqcKeypair();
 const qorexSign = (secret: Uint8Array, text: string) => Buffer.from(pqcSign(secret, walletMessage(text))).toString("base64");
 
+type FakeBounty = { id: number; owner: Address; robotKey: Hex; amountWei: bigint; status: number };
+let vault: { next: number; bounties: Map<number, FakeBounty> };
+
 /** Records what would go on chain; answers startSessionFor with a SessionStarted log. */
 class FakeRelayer implements Relayer {
   readonly address = "0x00000000000000000000000000000000000000aa" as Address;
   sent: { to: Address; fn: string; args: readonly unknown[] }[] = [];
   failNext = 0;
-  async send(to: Address, data: Hex): Promise<RelayReceipt> {
+  /** Simulate "the deposit landed but we never got the receipt". */
+  loseReceipt = 0;
+  values: bigint[] = [];
+  pqSign(digest: Hex): Hex {
+    return ("0x" + digest.slice(2).repeat(2)) as Hex;
+  }
+  async send(to: Address, data: Hex, value = 0n): Promise<RelayReceipt> {
     const abi = to.toLowerCase() === VAULT ? vaultAbi : registryAbi;
     const call = decodeFunctionData({ abi, data });
     this.sent.push({ to, fn: call.functionName, args: call.args ?? [] });
+    this.values.push(value);
     if (this.failNext > 0) {
       this.failNext--;
       throw new Error("network down");
@@ -50,6 +60,23 @@ class FakeRelayer implements Relayer {
         topics: encodeEventTopics({ abi: registryAbi, eventName: "SessionStarted", args: { sessionId: 77n, robotId, player: who } }),
         data: encodeAbiParameters([{ type: "uint256" }], [BigInt(NOW + 600)]),
       } as unknown as Log);
+    }
+    if (call.functionName === "depositBounty") {
+      const id = vault.next++;
+      vault.bounties.set(id, { id, owner: this.address, robotKey: (call.args as unknown as [Hex])[0], amountWei: value, status: 1 });
+      if (this.loseReceipt > 0) {
+        this.loseReceipt--;
+        throw new Error("receipt timeout");
+      }
+      logs.push({
+        address: VAULT,
+        topics: encodeEventTopics({ abi: vaultAbi, eventName: "BountyDeposited", args: { bountyId: BigInt(id), robotId: (call.args as unknown as [Hex])[0], owner: this.address } }),
+        data: encodeAbiParameters([{ type: "uint256" }], [value]),
+      } as unknown as Log);
+    }
+    if (call.functionName === "withdrawBounty") {
+      const b = vault.bounties.get(Number((call.args as unknown as [bigint])[0]));
+      if (b) b.status = 3;
     }
     if (call.functionName === "registerRobotFor") {
       const [owner, , brainHash] = call.args as unknown as [Address, string, Hex];
@@ -124,7 +151,11 @@ beforeEach(async () => {
     },
     readPlayer: async (a: Address) => ({ nonce: nonces[a.toLowerCase()] ?? 0n, attemptsLeft: 5 }),
     readNativeTransfer: async (h: string) => txs[h.replace(/^0x/, "").toUpperCase()] ?? null,
+    readBounty: async (id: number) => vault.bounties.get(id) ?? { id, owner: "0x0000000000000000000000000000000000000000" as Address, robotKey: ("0x" + "00".repeat(32)) as Hex, amountWei: 0n, status: 0 },
+    readNextBountyId: async () => vault.next,
+    readVaultNonce: async () => 0n,
   };
+  vault = { next: 2, bounties: new Map([[1, { id: 1, owner: robot.owner as Address, robotKey: robotKey(1), amountWei: 10n ** 18n, status: 1 }]]) };
   txs = {
     [txHash(1)]: { code: 0, from: toQorAddress(player.address), to: PAY_TO, uqor: FEE, memo: "RedZone signup", height: 10 },
     [txHash(2)]: { code: 0, from: toQorAddress(stranger.address), to: PAY_TO, uqor: FEE, memo: "RedZone signup", height: 11 },
@@ -132,8 +163,13 @@ beforeEach(async () => {
     [txHash(4)]: { code: 0, from: toQorAddress(player.address), to: PAY_TO, uqor: FEE, memo: "hello", height: 13 },
     [txHash(5)]: { code: 0, from: toQorAddress(player.address), to: toQorAddress(stranger.address), uqor: FEE, memo: "RedZone signup", height: 14 },
     [txHash(6)]: { code: 5, from: toQorAddress(player.address), to: PAY_TO, uqor: FEE, memo: "RedZone signup", height: 15 },
+    [txHash(20)]: { code: 0, from: toQorAddress(player.address), to: PAY_TO, uqor: 2_000_000n, memo: "RedZone bounty #2", height: 20 },
+    [txHash(21)]: { code: 0, from: toQorAddress(player.address), to: PAY_TO, uqor: 2_000_000n, memo: "RedZone bounty #1", height: 21 },
+    [txHash(22)]: { code: 0, from: toQorAddress(player.address), to: PAY_TO, uqor: 999_999n, memo: "RedZone bounty #2", height: 22 },
+    [txHash(23)]: { code: 0, from: toQorAddress(stranger.address), to: PAY_TO, uqor: 2_000_000n, memo: "RedZone bounty #2", height: 23 },
+    [txHash(24)]: { code: 0, from: toQorAddress(player.address), to: PAY_TO, uqor: 3_000_000n, memo: "RedZone bounty #2", height: 24 },
   };
-  const game = new Game({ arena: FACILITY, brains, store, key, chain, chainId: 9800, registry: REG, vault: VAULT, sessionTtl: 600, resultGrace: 3600, relayer, signup: { feeUqor: FEE, payTo: PAY_TO }, now: () => NOW });
+  const game = new Game({ arena: FACILITY, brains, store, key, chain, chainId: 9800, registry: REG, vault: VAULT, sessionTtl: 600, resultGrace: 3600, relayer, signup: { feeUqor: FEE, payTo: PAY_TO }, prize: { minUqor: 1_000_000n, payTo: PAY_TO }, now: () => NOW });
   app = await buildApp({
     game,
     arena: FACILITY,
@@ -438,6 +474,66 @@ describe("QoreX players and the relayer", () => {
       expect(relayer.sent.at(-1)?.fn).toBe("updateBrain");
       // The stranger cannot change robot 2.
       expect((await app.inject({ url: `/owner/brain/request?robotId=2&owner=${stranger.address}&brainHash=${RULE}` })).statusCode).toBe(403);
+    });
+  });
+
+  describe("prizes", () => {
+    const addPrize = (n: number, robotId = 2, owner: string = player.address) =>
+      app.inject({ method: "POST", url: "/owner/prize", payload: { robotId, owner, txHash: txHash(n) } });
+
+    it("a maker's QoreX payment is locked in the vault for their robot, exactly once", async () => {
+      const r = await addPrize(20);
+      expect(r.statusCode).toBe(200);
+      expect(r.json()).toMatchObject({ robotId: 2, bountyId: 2, uqor: "2000000" });
+      expect(relayer.sent.at(-1)?.fn).toBe("depositBounty");
+      expect(relayer.values.at(-1)).toBe(2n * 10n ** 18n);
+      expect(relayer.sent.at(-1)?.args[0]).toBe(robotKey(2));
+      // The same payment again: no second deposit.
+      const n = relayer.sent.length;
+      expect((await addPrize(20)).json().bountyId).toBe(2);
+      expect(relayer.sent.length).toBe(n);
+    });
+
+    it("refuses payments that don't match the robot, owner, minimum or sender", async () => {
+      expect((await addPrize(21, 1)).statusCode).toBe(403); // robot 1 isn't the player's
+      expect((await addPrize(21, 2)).statusCode).toBe(400); // memo is for robot 1
+      expect((await addPrize(22)).statusCode).toBe(400); // under 1 QOR
+      expect((await addPrize(23)).statusCode).toBe(400); // paid by the stranger, not the owner
+      expect((await addPrize(23, 2, stranger.address)).statusCode).toBe(403); // the stranger doesn't own robot 2
+      expect((await addPrize(99)).statusCode).toBe(404); // not on chain yet
+      expect(relayer.sent.filter((x) => x.fn === "depositBounty")).toHaveLength(0);
+    });
+
+    it("a deposit that landed without a receipt is found on retry, never locked twice", async () => {
+      relayer.loseReceipt = 1;
+      expect((await addPrize(24)).statusCode).toBe(502);
+      const again = await addPrize(24);
+      expect(again.statusCode).toBe(200);
+      expect(again.json().bountyId).toBe(2);
+      expect(relayer.sent.filter((x) => x.fn === "depositBounty")).toHaveLength(1);
+    });
+
+    it("only the maker who paid can take a prize back, to their own account", async () => {
+      await addPrize(20);
+      // Robot 1's original bounty wasn't added through RedZone, so nobody can take it here.
+      expect((await app.inject({ url: `/owner/prize/back/request?bountyId=1&owner=${player.address}` })).statusCode).toBe(403);
+      expect((await app.inject({ url: `/owner/prize/back/request?bountyId=2&owner=${stranger.address}` })).statusCode).toBe(403);
+      const q = (await app.inject({ url: `/owner/prize/back/request?bountyId=2&owner=${player.address}` })).json();
+      expect(q.digest).toBe(prizeBackDigest(9800, VAULT, 2, player.address, q.deadline));
+      // A signature from someone else is refused before any gas is spent.
+      const before = relayer.sent.length;
+      const forged = await app.inject({ method: "POST", url: "/owner/prize/back", payload: { bountyId: 2, owner: player.address, deadline: q.deadline, pqSignature: qorexSign(strangerPq.secretKey, q.text) } });
+      expect(forged.statusCode).toBe(401);
+      expect(relayer.sent.length).toBe(before);
+      const ok = await app.inject({ method: "POST", url: "/owner/prize/back", payload: { bountyId: 2, owner: player.address, deadline: q.deadline, pqSignature: qorexSign(playerPq.secretKey, q.text) } });
+      expect(ok.statusCode).toBe(200);
+      const w = relayer.sent.at(-1)!;
+      expect(w.fn).toBe("withdrawBounty");
+      expect((w.args[1] as string).toLowerCase()).toBe(player.address.toLowerCase());
+      // Not twice.
+      expect((await app.inject({ url: `/owner/prize/back/request?bountyId=2&owner=${player.address}` })).statusCode).toBe(409);
+      const list = (await app.inject({ url: `/owner/${player.address}/prizes` })).json().prizes;
+      expect(list).toEqual([expect.objectContaining({ robotId: 2, bountyId: 2, status: "withdrawn", open: false })]);
     });
   });
 });

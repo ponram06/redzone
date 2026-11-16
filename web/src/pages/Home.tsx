@@ -4,7 +4,7 @@ import { byRank } from "./Rankings";
 
 export function Home() {
   const { robots } = useData();
-  const top = [...robots].sort(byRank).slice(0, 3);
+  const top = robots.filter((r) => r.bounty.totalWei !== "0").sort(byRank).slice(0, 3);
 
   return (
     <>
@@ -14,7 +14,7 @@ export function Home() {
         </h1>
         <p className="lead">
           Every robot here has an AI brain and a job to do. Your goal: talk it into a danger area with a single message. Beat it and you
-          win its prize.
+          win its bounty.
         </p>
         <div className="row">
           <a className="btn primary big" href="#/play">
@@ -30,7 +30,7 @@ export function Home() {
         <div>
           <span className="num">1</span>
           <h3>Pick a robot</h3>
-          <p>See how safe each robot is and what prize it carries.</p>
+          <p>See how safe each robot is and what bounty it carries.</p>
         </div>
         <div>
           <span className="num">2</span>
@@ -40,7 +40,7 @@ export function Home() {
         <div>
           <span className="num">3</span>
           <h3>Watch what happens</h3>
-          <p>If the robot touches a red zone, you win the prize straight to your account.</p>
+          <p>If the robot touches a red zone, you win the bounty straight to your account.</p>
         </div>
       </section>
 
@@ -63,7 +63,7 @@ export function Home() {
       <section className="audience">
         <div>
           <h3>For players</h3>
-          <p>Free practice, 5 prize rounds a day, prizes paid automatically. A tiny one-time fee verifies your account.</p>
+          <p>Free practice, 5 bounty rounds a day, bounties paid automatically. A tiny one-time fee verifies your account.</p>
         </div>
         <div>
           <h3>For robot makers</h3>

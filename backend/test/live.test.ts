@@ -7,7 +7,7 @@ import { keccak256, stringToBytes, encodeFunctionData, decodeFunctionResult, par
 import { describe, expect, it } from "vitest";
 import { LEGACY_DEMO_HASH } from "../src/brains/registry.js";
 import { CHAIN_ID, PQC_VERIFY, REGISTRY, VAULT, client, registryAbi, robotKey, vaultAbi } from "../src/chain.js";
-import { claimDigest, loadRefereeKey, registerRobotDigest, resultDigest, signDigest, startSessionDigest, updateBrainDigest, utilityDigest } from "../src/signer.js";
+import { claimDigest, loadRefereeKey, registerRobotDigest, resultDigest, signDigest, startSessionDigest, updateBrainDigest, utilityDigest, withdrawDigest } from "../src/signer.js";
 
 const key = loadRefereeKey(process.env.REFEREE_KEY_FILE ?? "../contracts/.referee-key.json");
 const H = ("0x" + "cd".repeat(32)) as Hex;
@@ -39,6 +39,8 @@ describe("live contracts", { timeout: 60_000 }, () => {
     expect(registerRobotDigest(CHAIN_ID, REGISTRY, player, "Guard Dog", H, 2n, deadline)).toBe(onChainRegister);
     const onChainUpdate = await client.readContract({ address: REGISTRY, abi: registryAbi, functionName: "updateBrainDigest", args: [3n, H, 4n, deadline] });
     expect(updateBrainDigest(CHAIN_ID, REGISTRY, 3n, H, 4n, deadline)).toBe(onChainUpdate);
+    const onChainWithdraw = await client.readContract({ address: VAULT, abi: vaultAbi, functionName: "withdrawDigest", args: [2n, player, 7n, deadline] });
+    expect(withdrawDigest(CHAIN_ID, VAULT, 2n, player, 7n, deadline)).toBe(onChainWithdraw);
   });
 
   it("the chain's pqcVerify precompile accepts our signature and rejects a changed digest", async () => {
