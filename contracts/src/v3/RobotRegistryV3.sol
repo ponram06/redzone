@@ -150,9 +150,16 @@ contract RobotRegistryV3 is PQAccess {
 
     // ---------------------------------------------------------------- constructor
 
-    constructor(bytes memory refereePubkey_, bytes memory nativeChainId_) PQAccess("RedZone.RobotRegistry.v3", nativeChainId_) {
+    /// @param deployerProof Deployer's ML-DSA-87 signature over deployDigest("RedZone.RobotRegistry.v3", deployer).
+    /// @param refereeProof  Referee key's ML-DSA-87 signature over the same digest, proving the
+    ///                      referee key works with the live precompile before any game starts.
+    constructor(bytes memory refereePubkey_, bytes memory nativeChainId_, bytes memory deployerProof, bytes memory refereeProof)
+        PQAccess("RedZone.RobotRegistry.v3", nativeChainId_, deployerProof)
+    {
         if (refereePubkey_.length == 0) revert EmptyPubkey();
         MLDSA87.checkPubkey(refereePubkey_);
+        bytes32 proofDigest = keccak256(abi.encode(DEPLOY_TYPEHASH, keccak256("RedZone.RobotRegistry.v3"), block.chainid, msg.sender));
+        if (!MLDSA87.verify(refereePubkey_, refereeProof, abi.encodePacked(proofDigest))) revert PQGuard.PQCSignatureInvalid();
         refereePubkey = refereePubkey_;
         emit RefereeUpdated(keccak256(refereePubkey_));
     }
@@ -161,13 +168,17 @@ contract RobotRegistryV3 is PQAccess {
 
     /// @notice Propose a new referee key. Admin only (ML-DSA signature). It can be activated by
     ///         anyone after REFEREE_DELAY. A new proposal replaces the old one and restarts the delay.
-    function proposeReferee(bytes calldata newPubkey, uint256 deadline, bytes calldata adminSig)
+    ///         The new key must also sign the proposal (`newRefereeSig`), proving it is a working
+    ///         ML-DSA-87 key before it can ever be activated.
+    function proposeReferee(bytes calldata newPubkey, uint256 deadline, bytes calldata adminSig, bytes calldata newRefereeSig)
         external
         validDeadline(deadline)
         onlyAdmin(proposeRefereeDigest(keccak256(newPubkey), nonces[admin], deadline), adminSig)
     {
         if (newPubkey.length == 0) revert EmptyPubkey();
         MLDSA87.checkPubkey(newPubkey);
+        bytes32 proof = proposeRefereeDigest(keccak256(newPubkey), nonces[admin] - 1, deadline);
+        if (!MLDSA87.verify(newPubkey, newRefereeSig, abi.encodePacked(proof))) revert PQGuard.PQCSignatureInvalid();
         pendingRefereePubkey = newPubkey;
         uint256 activatesAt = block.timestamp + REFEREE_DELAY;
         refereeActivatesAt = uint64(activatesAt);

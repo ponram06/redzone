@@ -97,7 +97,10 @@ contract EscrowVaultV2 is PQAccess, ReentrancyGuard {
 
     // ---------------------------------------------------------------- constructor
 
-    constructor(RobotRegistryV3 registry_, bytes memory nativeChainId_) PQAccess("RedZone.EscrowVault.v2", nativeChainId_) {
+    /// @param deployerProof Deployer's ML-DSA-87 signature over deployDigest("RedZone.EscrowVault.v2", deployer).
+    constructor(RobotRegistryV3 registry_, bytes memory nativeChainId_, bytes memory deployerProof)
+        PQAccess("RedZone.EscrowVault.v2", nativeChainId_, deployerProof)
+    {
         if (address(registry_) == address(0)) revert ZeroAddress();
         // The withdrawal delay must outlast the latest moment a started session can be judged.
         if (START_GRACE < registry_.MAX_START_TTL()) revert BadDelays();

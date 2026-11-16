@@ -18,14 +18,29 @@ The updated bundle is [`RedZone.v3.flat.sol`](RedZone.v3.flat.sol). It contains 
 | 4 | Missing input validation for chain id | Low | **No.** `QoreXMessage.checkChainId` already limited it to 1–64 characters. | v3 also has a named constant, `MAX_CHAIN_ID_LENGTH = 64`, with an explicit check in the constructor (`BadChainId`). | `test_Stage2_ChainIdLength` (0 and 65 refused, 64 accepted) |
 | 5 | Precompile availability assumption | Info | **Intended.** Verification fails closed. Falling back to ECDSA, or skipping the check, would remove the quantum safety. | NatSpec says so. A new `isPQAvailable()` view never reverts, so frontends can show a clear message. | `test_Stage2_PrecompileAvailability`, `test_Attack_PrecompileMissingFailsClosed` |
 
+## Independent review of these changes (third pass)
+
+No new exploitable bug was found. One deployment risk was found and is now closed.
+
+**The risk:** if the strict ML-DSA-87 format checks did not match what the chain really produces, deposits would still work but every signed exit would fail, and funds could be locked.
+
+**The fix:**
+- **Deploy-time proof:** both contracts now verify a real ML-DSA-87 signature from the deployer in the constructor, and the registry also verifies one from the referee key, against the live precompile. If the format were wrong, deployment itself fails, before any QOR can be deposited.
+- **New referee keys:** a new referee key must also sign its own proposal.
+- **Tests:** `test_Deploy_NeedsWorkingDeployerKey` (including a 4595-byte round-3 Dilithium5 signature), `test_Deploy_NeedsWorkingRefereeKey`, `test_Deploy_ProofBoundToDeployerAndChain`, `test_ProposeReferee_NewKeyMustProveItself`.
+
+**Invariant testing was also extended:**
+- Rounds are now judged in separate random steps, interleaved with pauses, withdrawal requests and time jumps.
+- A new invariant, `invariant_WinsAreNeverBeatenByWithdrawal`, checks that the owner is never paid while a round that could win the bounty is unjudged, or within an hour of a winning verdict.
+
 ## Full test results (16 Nov 2026)
 
 | Check | Result |
 |---|---|
-| Foundry tests | **154 passed, 0 failed** (5 suites: the deployed contracts' 92 tests, plus 62 v3 tests) |
+| Foundry tests | **158 passed, 0 failed** (5 suites: the deployed contracts' 92 tests, plus 66 v3 tests) |
 | Fuzzing | 5,000 runs per fuzz test, all passing |
-| Invariant testing | 4 invariants × 1,000 runs × 100 random calls = **100,000 calls**, 0 violations. Random sequences of deposits, rounds, verdicts, claims, withdrawals, pauses and time jumps (up to 8 days) were checked for:<br>• the vault balance always covers `totalLocked`;<br>• money in = money locked + money paid out;<br>• `totalLocked` = the sum of open bounties;<br>• no bounty is paid twice.<br>A sanity test confirms the random calls really reach both payout paths. |
-| Coverage of `src/v3` | **99.66% of lines** (295/296), 97.6% of statements, 86.6% of branches, 98.4% of functions |
+| Invariant testing | 4 invariants × 1,000 runs × 100 random calls = **100,000 calls**, 0 violations. Random sequences of deposits, rounds, verdicts, claims, withdrawals, pauses and time jumps (up to 8 days) were checked for:<br>• the vault balance always covers `totalLocked`;<br>• money in = money locked + money paid out;<br>• `totalLocked` = the sum of open bounties;<br>• a win is never beaten by the owner's withdrawal.<br>A sanity test confirms the random calls really reach both payout paths. |
+| Coverage of `src/v3` | **99.68% of lines** (309/310), 97.2% of statements, 84.7% of branches, 98.5% of functions |
 | Slither 0.11.6 | No High or Medium findings. The remaining notices are by design: `arbitrary-send-eth` (payees come from the registry or the owner's signature), `timestamp`, `low-level-calls` (native QOR payment), `incorrect-equality` (exact brain-version comparison), and `pragma`. |
 | Backend tests | 73 passed (unchanged; the deployed contracts are untouched) |
 

@@ -38,6 +38,8 @@ abstract contract PQAccess {
     bytes32 public constant TRANSFER_ADMIN_TYPEHASH = keccak256("RedZone.TransferAdmin(address newAdmin,uint256 nonce,uint256 deadline)");
     bytes32 public constant ACCEPT_ADMIN_TYPEHASH = keccak256("RedZone.AcceptAdmin(address newAdmin,uint256 nonce,uint256 deadline)");
 
+    bytes32 public constant DEPLOY_TYPEHASH = keccak256("RedZone.Deploy(bytes32 domainTag,uint256 chainId,address deployer)");
+
     string public constant ACTION_ACCEPT_ADMIN = "AcceptAdmin";
 
     // ---------------------------------------------------------------------- state
@@ -115,12 +117,20 @@ abstract contract PQAccess {
 
     // ---------------------------------------------------------------- constructor
 
-    /// @dev The deployer becomes admin and must already have a registered ML-DSA key.
-    constructor(string memory domainTag, bytes memory nativeChainId_) {
-        MLDSA87.requireKey(msg.sender); // deployer must hold an ML-DSA-87 key
+    /// @dev The deployer becomes admin and must already have a registered ML-DSA-87 key.
+    ///      `deployerProof` is the deployer's ML-DSA-87 signature over deployDigest(...). Verifying
+    ///      it here, against the live precompile, proves that the key and signature formats this
+    ///      contract enforces really match the chain. If they did not, the deployment itself fails,
+    ///      before any QOR can be deposited, instead of locking funds later.
+    constructor(string memory domainTag, bytes memory nativeChainId_, bytes memory deployerProof) {
+        bytes32 tag = keccak256(bytes(domainTag));
+        bytes32 proofDigest = keccak256(abi.encode(DEPLOY_TYPEHASH, tag, block.chainid, msg.sender));
+        if (!MLDSA87.verify(MLDSA87.accountKey(msg.sender), deployerProof, abi.encodePacked(proofDigest))) {
+            revert PQGuard.PQCSignatureInvalid();
+        }
         if (nativeChainId_.length == 0 || nativeChainId_.length > MAX_CHAIN_ID_LENGTH) revert BadChainId();
         QoreXMessage.checkChainId(nativeChainId_); // character set check
-        _domainTag = keccak256(bytes(domainTag));
+        _domainTag = tag;
         nativeChainId = nativeChainId_;
         admin = msg.sender;
         emit AdminTransferred(address(0), msg.sender);
@@ -173,13 +183,13 @@ abstract contract PQAccess {
 
     // ---------------------------------------------------------------------- views
 
-    /// @notice True while a pause is in force (a pause older than MAX_PAUSE has expired).
     /// @notice True when the post-quantum precompiles respond. Never reverts, so a frontend can
     ///         show a clear message; every signed action fails closed when this is false.
     function isPQAvailable() external view returns (bool) {
         return MLDSA87.available();
     }
 
+    /// @notice True while a pause is in force (a pause older than MAX_PAUSE has expired).
     function isPaused() public view returns (bool) {
         return paused && block.timestamp < uint256(pausedAt) + MAX_PAUSE;
     }
@@ -196,6 +206,12 @@ abstract contract PQAccess {
 
     // -------------------------------------------------------------------- digests
     // The 32-byte digest is the exact message the ML-DSA key signs.
+
+    /// @notice What the deployer (and, for the registry, the referee) signs at deployment.
+    ///         Computable before deployment: it does not depend on the contract address.
+    function deployDigest(string calldata domainTag, address deployer) external view returns (bytes32) {
+        return keccak256(abi.encode(DEPLOY_TYPEHASH, keccak256(bytes(domainTag)), block.chainid, deployer));
+    }
 
     function setPausedDigest(bool paused_, uint256 nonce, uint256 deadline) public view returns (bytes32) {
         return _digest(abi.encode(SET_PAUSED_TYPEHASH, paused_, nonce, deadline));

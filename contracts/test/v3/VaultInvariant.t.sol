@@ -70,10 +70,47 @@ contract VaultHandler is Test {
         try reg.startSessionFor(robotId, players[i], d, _sig(playerPks[i], dg)) returns (uint256 sid) {
             sessionIds.push(sid);
             vm.warp(block.timestamp + bound(uint256(thinkTime), 0, 80 minutes));
-            uint256 rd = block.timestamp + 1;
-            bytes32 rdg = reg.resultDigest(sid, robotId, players[i], breach, keccak256(abi.encode(sid)), rd);
-            try reg.recordResult(sid, breach, keccak256(abi.encode(sid)), rd, _sig(refereePk, rdg)) {} catch {}
+            _judge(sid, breach);
         } catch {}
+    }
+
+    /// Start a round now and judge it later (another handler call), so verdicts interleave with
+    /// pauses, withdrawal requests and time jumps.
+    function startOnly(uint8 who) external {
+        uint256 i = who % 3;
+        uint256 d = block.timestamp + 5 minutes;
+        bytes32 dg = reg.startSessionDigest(robotId, players[i], reg.nonces(players[i]), d);
+        try reg.startSessionFor(robotId, players[i], d, _sig(playerPks[i], dg)) returns (uint256 sid) {
+            sessionIds.push(sid);
+        } catch {}
+    }
+
+    function judgeLater(uint8 seed, bool breach) external {
+        if (sessionIds.length == 0) return;
+        _judge(sessionIds[uint256(seed) % sessionIds.length], breach);
+    }
+
+    function _judge(uint256 sid, bool breach) internal {
+        address p = reg.getSession(sid).player;
+        uint256 rd = block.timestamp + 1;
+        bytes32 rdg = reg.resultDigest(sid, robotId, p, breach, keccak256(abi.encode(sid)), rd);
+        try reg.recordResult(sid, breach, keccak256(abi.encode(sid)), rd, _sig(refereePk, rdg)) {} catch {}
+    }
+
+    /// Set when a withdrawal completed although a breach that could win the bounty was still
+    /// unjudged, or had been judged less than an hour earlier (no fair chance to claim).
+    bool public winBeatenByWithdrawal;
+
+    function _winnableBreachPending(uint256 b) internal view returns (bool) {
+        (uint256 bRobot,,, uint64 depositedAt, uint64 requestedAt,,) = vault.bounties(b);
+        for (uint256 k = 0; k < sessionIds.length; k++) {
+            RobotRegistryV3.Session memory s = reg.getSession(sessionIds[k]);
+            if (s.robotId != bRobot || s.startedAt < depositedAt) continue;
+            if (s.startedAt > uint256(requestedAt) + vault.START_GRACE()) continue;
+            if (s.outcome == RobotRegistryV3.Outcome.None && block.timestamp <= reg.resultDeadline(sessionIds[k])) return true; // could still be a breach
+            if (s.outcome == RobotRegistryV3.Outcome.Breached && block.timestamp < uint256(s.resultAt) + 1 hours) return true;
+        }
+        return false;
     }
 
     function claim(uint8 bountySeed, uint8 sessionSeed) external {
@@ -102,8 +139,10 @@ contract VaultHandler is Test {
         if (n == 1) return;
         uint256 b = 1 + (uint256(bountySeed) % (n - 1));
         uint256 before = owner.balance;
+        bool pending = _winnableBreachPending(b);
         try vault.finalizeWithdraw(b) {
             paidToOwner += owner.balance - before;
+            if (pending) winBeatenByWithdrawal = true;
         } catch {}
     }
 
@@ -132,6 +171,10 @@ contract VaultInvariantTest is Test {
         for (uint256 i = 0; i < seed.length; i++) pk[i] = seed[i];
     }
 
+    function _sig(bytes memory pk, bytes32 digest) internal pure returns (bytes memory) {
+        return abi.encodePacked(keccak256(abi.encode(pk, abi.encodePacked(digest))), new bytes(MLDSA87.SIGNATURE_LENGTH - 32));
+    }
+
     function setUp() public {
         vm.warp(1_700_000_000);
         MockPQC87 impl = new MockPQC87();
@@ -150,9 +193,12 @@ contract VaultInvariantTest is Test {
         bytes[3] memory pks = [_key(hex"d0"), _key(hex"d1"), _key(hex"d2")];
         for (uint256 i = 0; i < 3; i++) keys.setKey(ps[i], pks[i]);
 
+        bytes32 td = keccak256("RedZone.Deploy(bytes32 domainTag,uint256 chainId,address deployer)");
+        bytes32 rd = keccak256(abi.encode(td, keccak256("RedZone.RobotRegistry.v3"), block.chainid, admin));
+        bytes32 vd = keccak256(abi.encode(td, keccak256("RedZone.EscrowVault.v2"), block.chainid, admin));
         vm.startPrank(admin);
-        reg = new RobotRegistryV3(refereePk, "qorechain-diana");
-        vault = new EscrowVaultV2(reg, "qorechain-diana");
+        reg = new RobotRegistryV3(refereePk, "qorechain-diana", _sig(adminPk, rd), _sig(refereePk, rd));
+        vault = new EscrowVaultV2(reg, "qorechain-diana", _sig(adminPk, vd));
         vm.stopPrank();
 
         vm.prank(owner);
@@ -184,9 +230,10 @@ contract VaultInvariantTest is Test {
         assertEq(sum, vault.totalLocked());
     }
 
-    /// No bounty is ever paid twice: payouts never exceed deposits.
-    function invariant_NoDoublePay() public view {
-        assertLe(handler.paidToPlayers() + handler.paidToOwner(), handler.deposited());
+    /// A breach that could win a bounty is never beaten by the owner's withdrawal: the owner is
+    /// paid only after every eligible round is judged and each win had at least an hour to claim.
+    function invariant_WinsAreNeverBeatenByWithdrawal() public view {
+        assertFalse(handler.winBeatenByWithdrawal());
     }
 
     /// Sanity: the handler really reaches payouts (so the invariants are not vacuous).

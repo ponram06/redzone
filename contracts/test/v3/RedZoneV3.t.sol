@@ -87,8 +87,8 @@ contract RedZoneV3Test is Test {
         keys.setKey(attacker, attackerPk);
 
         vm.startPrank(admin);
-        reg = new RobotRegistryV3(refereePk, CHAIN);
-        vault = new EscrowVaultV2(reg, CHAIN);
+        reg = _newReg(refereePk, CHAIN);
+        vault = _newVault(reg, CHAIN);
         vm.stopPrank();
 
         vm.deal(relayer, 1000 ether);
@@ -97,6 +97,22 @@ contract RedZoneV3Test is Test {
     }
 
     // -------------------------------------------------------------- helpers
+
+    bytes32 internal constant DEPLOY_TYPEHASH = keccak256("RedZone.Deploy(bytes32 domainTag,uint256 chainId,address deployer)");
+
+    function _deployDigest(string memory tag, address deployer) internal view returns (bytes32) {
+        return keccak256(abi.encode(DEPLOY_TYPEHASH, keccak256(bytes(tag)), block.chainid, deployer));
+    }
+
+    /// @dev Deploy the registry as `admin` with real deploy-time proofs.
+    function _newReg(bytes memory refPk, bytes memory chain) internal returns (RobotRegistryV3) {
+        bytes32 dg = _deployDigest("RedZone.RobotRegistry.v3", admin);
+        return new RobotRegistryV3(refPk, chain, _sig(adminPk, dg), _sig(refPk, dg));
+    }
+
+    function _newVault(RobotRegistryV3 r, bytes memory chain) internal returns (EscrowVaultV2) {
+        return new EscrowVaultV2(r, chain, _sig(adminPk, _deployDigest("RedZone.EscrowVault.v2", admin)));
+    }
 
     /// @dev A 2592-byte test public key derived from a short seed.
     function _key(bytes memory seed) internal pure returns (bytes memory pk) {
@@ -487,7 +503,7 @@ contract RedZoneV3Test is Test {
 
         dg = reg.proposeRefereeDigest(keccak256(attackerPk), reg.nonces(admin), d);
         vm.expectRevert(PQGuard.PQCSignatureInvalid.selector);
-        reg.proposeReferee(attackerPk, d, _sig(attackerPk, dg));
+        reg.proposeReferee(attackerPk, d, _sig(attackerPk, dg), _sig(attackerPk, dg));
     }
 
     function test_Attack_AdminSigReplay() public {
@@ -534,7 +550,7 @@ contract RedZoneV3Test is Test {
         uint256 d = _dl();
         bytes memory newPk = _key(hex"7777");
         bytes32 dg = reg.proposeRefereeDigest(keccak256(newPk), reg.nonces(admin), d);
-        reg.proposeReferee(newPk, d, _sig(adminPk, dg));
+        reg.proposeReferee(newPk, d, _sig(adminPk, dg), _sig(newPk, dg));
 
         // the new key can't record anything yet
         uint256 sid = _start(player, playerPk);
@@ -759,10 +775,10 @@ contract RedZoneV3Test is Test {
         bytes memory shortKey = hex"7777";
         bytes32 dg = reg.proposeRefereeDigest(keccak256(shortKey), reg.nonces(admin), d);
         vm.expectRevert(abi.encodeWithSelector(MLDSA87.BadPubkeyLength.selector, 2));
-        reg.proposeReferee(shortKey, d, _sig(adminPk, dg));
+        reg.proposeReferee(shortKey, d, _sig(adminPk, dg), "");
         vm.prank(admin);
         vm.expectRevert(abi.encodeWithSelector(MLDSA87.BadPubkeyLength.selector, 3));
-        new RobotRegistryV3(hex"5e5e5e", CHAIN);
+        new RobotRegistryV3(hex"5e5e5e", CHAIN, _sig(adminPk, _deployDigest("RedZone.RobotRegistry.v3", admin)), "");
     }
 
     /// MEDIUM reentrancy: OpenZeppelin ReentrancyGuard blocks re-entry into any guarded function.
@@ -826,12 +842,12 @@ contract RedZoneV3Test is Test {
         for (uint256 i = 0; i < 65; i++) longId[i] = "a";
         vm.startPrank(admin);
         vm.expectRevert(PQAccess.BadChainId.selector);
-        new RobotRegistryV3(refereePk, longId);
+        _newReg(refereePk, longId);
         vm.expectRevert(PQAccess.BadChainId.selector);
-        new RobotRegistryV3(refereePk, "");
+        _newReg(refereePk, "");
         bytes memory maxId = new bytes(64);
         for (uint256 i = 0; i < 64; i++) maxId[i] = "a";
-        new RobotRegistryV3(refereePk, maxId); // exactly 64 is fine
+        _newReg(refereePk, maxId); // exactly 64 is fine
         vm.stopPrank();
     }
 
@@ -925,5 +941,56 @@ contract RedZoneV3Test is Test {
         dg = reg.updateBrainDigest(robotId, keccak256("b"), reg.nonces(owner), d);
         vm.expectRevert(PQGuard.PQCSignatureInvalid.selector);
         reg.updateBrain(robotId, keccak256("b"), d, _sig(attackerPk, dg));
+    }
+
+    // ================================================ deploy-time format proof
+
+    /// A bad deployer proof fails the deployment (nothing can ever be deposited).
+    function test_Deploy_NeedsWorkingDeployerKey() public {
+        bytes32 dg = _deployDigest("RedZone.RobotRegistry.v3", admin);
+        vm.startPrank(admin);
+        vm.expectRevert(PQGuard.PQCSignatureInvalid.selector);
+        new RobotRegistryV3(refereePk, CHAIN, _sig(attackerPk, dg), _sig(refereePk, dg));
+        bytes memory wrongLength = new bytes(4595); // e.g. a round-3 Dilithium5 signature
+        vm.expectRevert(abi.encodeWithSelector(MLDSA87.BadSignatureLength.selector, 4595));
+        new RobotRegistryV3(refereePk, CHAIN, wrongLength, _sig(refereePk, dg));
+        vm.expectRevert(PQGuard.PQCSignatureInvalid.selector);
+        new EscrowVaultV2(reg, CHAIN, _sig(adminPk, dg)); // a registry proof is not a vault proof
+        vm.stopPrank();
+    }
+
+    /// The referee key must prove it works at deployment.
+    function test_Deploy_NeedsWorkingRefereeKey() public {
+        bytes32 dg = _deployDigest("RedZone.RobotRegistry.v3", admin);
+        vm.prank(admin);
+        vm.expectRevert(PQGuard.PQCSignatureInvalid.selector);
+        new RobotRegistryV3(refereePk, CHAIN, _sig(adminPk, dg), _sig(attackerPk, dg));
+    }
+
+    /// A deployer proof can't be reused by another deployer or on another chain.
+    function test_Deploy_ProofBoundToDeployerAndChain() public {
+        bytes32 dg = _deployDigest("RedZone.RobotRegistry.v3", admin);
+        bytes memory p = _sig(adminPk, dg);
+        vm.prank(owner); // owner has a key, but the proof was for admin
+        vm.expectRevert(PQGuard.PQCSignatureInvalid.selector);
+        new RobotRegistryV3(refereePk, CHAIN, p, _sig(refereePk, dg));
+        vm.chainId(1);
+        vm.prank(admin);
+        vm.expectRevert(PQGuard.PQCSignatureInvalid.selector);
+        new RobotRegistryV3(refereePk, CHAIN, p, _sig(refereePk, dg));
+        assertEq(reg.deployDigest("RedZone.RobotRegistry.v3", admin), _deployDigest("RedZone.RobotRegistry.v3", admin));
+    }
+
+    /// A new referee key must sign its own proposal.
+    function test_ProposeReferee_NewKeyMustProveItself() public {
+        uint256 d = _dl();
+        bytes memory newPk = _key(hex"7777");
+        bytes32 dg = reg.proposeRefereeDigest(keccak256(newPk), reg.nonces(admin), d);
+        vm.expectRevert(PQGuard.PQCSignatureInvalid.selector);
+        reg.proposeReferee(newPk, d, _sig(adminPk, dg), _sig(attackerPk, dg));
+        vm.expectRevert(abi.encodeWithSelector(MLDSA87.BadSignatureLength.selector, 0));
+        reg.proposeReferee(newPk, d, _sig(adminPk, dg), "");
+        reg.proposeReferee(newPk, d, _sig(adminPk, dg), _sig(newPk, dg));
+        assertEq(reg.pendingRefereePubkey(), newPk);
     }
 }
