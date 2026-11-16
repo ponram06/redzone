@@ -53,8 +53,11 @@ Overall: about **80%** (each phase's weight is in brackets; last updated 2026-11
 - [ ] Utility score recorded on chain for the demo robot(s)
 - [ ] Second demo robot with the LLM brain and a small bounty
 
-## Phase 7. QCAI two-stage audit (8%): 0%
-- [ ] Find out how the QCAI audit works (category requirement)
+## Phase 7. QCAI two-stage audit (8%): 25%
+- [x] Found it: QCAI Smart Contract Auditor at dashboard.qorechain.io/audit, a main requirement of the Post-Quantum dApp bounty; 150 QOR per audit
+- [x] Self-review before paying (audits/SELF_REVIEW.md); one-file bundle audits/RedZone.flat.sol so one run covers both contracts
+- [x] Server fix for finding 1: no bounty take-back while a win can still be recorded or paid
+- [ ] Get 150+ QOR per stage (account has ~87): ask organizers about audit credits or a faucet
 - [ ] Stage 1 audit, fix findings
 - [ ] Stage 2 audit, publish reports in `audits/`
 

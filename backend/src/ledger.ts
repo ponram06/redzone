@@ -12,13 +12,15 @@ import type { NativeTransfer } from "./chain.js";
 
 const CHUNK = 10_000n;
 
-export type ResultEvent = { sessionId: number; robotId: number; player: Address; breached: boolean; tx: Hex; block: bigint };
+export type ResultEvent = { sessionId: number; robotId: number; player: Address; breached: boolean; replayHash: Hex; tx: Hex; block: bigint };
+export type SessionEvent = { sessionId: number; robotId: number; player: Address; expiresAt: number };
 export type DepositEvent = { bountyId: number; robotKey: Hex; owner: Address; amountWei: bigint; tx: Hex };
-export type ClaimEvent = { bountyId: number; claimer: Address; amountWei: bigint; tx: Hex };
+export type ClaimEvent = { bountyId: number; claimer: Address; amountWei: bigint; replayHash: Hex; tx: Hex };
 export type Transfer = NativeTransfer & { txHash: string };
 
 const EV = {
   breached: parseAbiItem("event Breached(uint256 indexed sessionId, uint256 indexed robotId, address indexed player, bytes32 replayHash)"),
+  started: parseAbiItem("event SessionStarted(uint256 indexed sessionId, uint256 indexed robotId, address indexed player, uint256 expiresAt)"),
   defended: parseAbiItem("event Defended(uint256 indexed sessionId, uint256 indexed robotId, address indexed player, bytes32 replayHash)"),
   deposited: parseAbiItem("event BountyDeposited(uint256 indexed bountyId, bytes32 indexed robotId, address indexed owner, uint256 amount)"),
   claimed: parseAbiItem("event BountyClaimed(uint256 indexed bountyId, address indexed claimer, bytes32 replayHash, uint256 amount)"),
@@ -28,6 +30,7 @@ const EV = {
 export interface LedgerReader {
   sync(): Promise<void>;
   results(): ResultEvent[];
+  sessions(): SessionEvent[];
   deposits(): DepositEvent[];
   claims(): ClaimEvent[];
   /** Successful native transfers from `from` to `to`, newest first. */
@@ -36,6 +39,7 @@ export interface LedgerReader {
 
 export class ChainLedger implements LedgerReader {
   private readonly res: ResultEvent[] = [];
+  private readonly ses: SessionEvent[] = [];
   private readonly dep: DepositEvent[] = [];
   private readonly clm: ClaimEvent[] = [];
   private regFrom: bigint;
@@ -57,6 +61,9 @@ export class ChainLedger implements LedgerReader {
   results() {
     return this.res;
   }
+  sessions() {
+    return this.ses;
+  }
   deposits() {
     return this.dep;
   }
@@ -74,10 +81,14 @@ export class ChainLedger implements LedgerReader {
     const latest = await this.client.getBlockNumber();
     while (this.regFrom <= latest) {
       const to = minB(this.regFrom + CHUNK - 1n, latest);
-      const [b, d] = await Promise.all([
+      const [b, d, st] = await Promise.all([
         this.client.getLogs({ address: this.registry, event: EV.breached, fromBlock: this.regFrom, toBlock: to }),
         this.client.getLogs({ address: this.registry, event: EV.defended, fromBlock: this.regFrom, toBlock: to }),
+        this.client.getLogs({ address: this.registry, event: EV.started, fromBlock: this.regFrom, toBlock: to }),
       ]);
+      for (const l of st) {
+        this.ses.push({ sessionId: Number(l.args.sessionId), robotId: Number(l.args.robotId), player: l.args.player!, expiresAt: Number(l.args.expiresAt) });
+      }
       for (const [logs, breached] of [
         [b, true],
         [d, false],
@@ -88,6 +99,7 @@ export class ChainLedger implements LedgerReader {
             robotId: Number(l.args.robotId),
             player: l.args.player!,
             breached,
+            replayHash: l.args.replayHash!,
             tx: l.transactionHash!,
             block: l.blockNumber!,
           });
@@ -105,7 +117,7 @@ export class ChainLedger implements LedgerReader {
         this.dep.push({ bountyId: Number(l.args.bountyId), robotKey: l.args.robotId!, owner: l.args.owner!, amountWei: l.args.amount!, tx: l.transactionHash! });
       }
       for (const l of clm) {
-        this.clm.push({ bountyId: Number(l.args.bountyId), claimer: l.args.claimer!, amountWei: l.args.amount!, tx: l.transactionHash! });
+        this.clm.push({ bountyId: Number(l.args.bountyId), claimer: l.args.claimer!, amountWei: l.args.amount!, replayHash: l.args.replayHash!, tx: l.transactionHash! });
       }
       this.vaultFrom = to + 1n;
     }

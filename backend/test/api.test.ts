@@ -13,7 +13,7 @@ import { toQorAddress, walletMessage } from "../src/qorex.js";
 import type { NativeTransfer } from "../src/chain.js";
 import type { RelayReceipt, Relayer } from "../src/relayer.js";
 import { Game, attemptMessage, bountyBackDigest } from "../src/game.js";
-import type { LedgerReader } from "../src/ledger.js";
+import type { LedgerReader, ResultEvent, SessionEvent } from "../src/ledger.js";
 import { claimDigest, registerRobotDigest, resultDigest, startSessionDigest, updateBrainDigest, utilityDigest } from "../src/signer.js";
 import { pqcSign } from "@qorechain/sdk";
 import { Store } from "../src/store.js";
@@ -106,6 +106,8 @@ let relayer: FakeRelayer;
 const PAY_TO = "qor19n2e0wjparavk47wevc8mag90ce8nzysd8lp2d";
 const FEE = 100000n;
 let txs: Record<string, NativeTransfer>;
+let extraSessions: SessionEvent[];
+let extraResults: ResultEvent[];
 let payments: Record<string, NativeTransfer>;
 const pay = (n: number) => {
   txs[txHash(n)] = payments[txHash(n)]!;
@@ -175,15 +177,17 @@ beforeEach(async () => {
       relayer.sent
         .filter((x) => x.fn === "recordResult")
         .map((x) => {
-          const [sid, breached] = x.args as [bigint, boolean];
-          return { sessionId: Number(sid), robotId: 1, player: sessions[Number(sid)]!.player, breached, tx: "0x" as Hex, block: 1n };
-        }),
+          const [sid, breached, replayHash] = x.args as [bigint, boolean, Hex];
+          return { sessionId: Number(sid), robotId: 1, player: sessions[Number(sid)]!.player, breached, replayHash, tx: "0x" as Hex, block: 1n };
+        })
+        .concat(extraResults),
+    sessions: () => extraSessions,
     deposits: () =>
       [...vault.bounties.values()].filter((b) => b.indexed).map((b) => ({ bountyId: b.id, robotKey: b.robotKey, owner: b.owner, amountWei: b.amountWei, tx: b.tx })),
     claims: () =>
       relayer.sent
         .filter((x) => x.fn === "claimBounty")
-        .map((x) => ({ bountyId: Number(x.args[0]), claimer: x.args[1] as Address, amountWei: vault.bounties.get(Number(x.args[0]))!.amountWei, tx: "0x" as Hex })),
+        .map((x) => ({ bountyId: Number(x.args[0]), claimer: x.args[1] as Address, amountWei: vault.bounties.get(Number(x.args[0]))!.amountWei, replayHash: x.args[2] as Hex, tx: "0x" as Hex })),
     transfers: async (from: string, to: string) =>
       Object.entries(txs)
         .filter(([, t]) => t.code === 0 && t.from === from && t.to === to)
@@ -194,6 +198,8 @@ beforeEach(async () => {
     bounties: new Map([[1, { id: 1, owner: robot.owner as Address, robotKey: robotKey(1), amountWei: 10n ** 18n, status: 1, tx: ("0x" + "01".repeat(32)) as Hex, indexed: true }]]),
   };
   txs = {};
+  extraSessions = [];
+  extraResults = [];
   payments = {
     [txHash(1)]: { code: 0, from: toQorAddress(player.address), to: PAY_TO, uqor: FEE, memo: "RedZone signup", height: 10 },
     [txHash(2)]: { code: 0, from: toQorAddress(stranger.address), to: PAY_TO, uqor: FEE, memo: "RedZone signup", height: 11 },
@@ -584,6 +590,20 @@ describe("QoreX players and the relayer", () => {
       expect((w.args[1] as string).toLowerCase()).toBe(player.address.toLowerCase());
       expect((await app.inject({ url: `/owner/bounty/back/request?bountyId=2&owner=${player.address}` })).statusCode).toBe(409);
       expect((await app.inject({ url: `/owner/${player.address}/bounties` })).json().bounties).toEqual([]);
+    });
+
+    it("a bounty can't be taken back while a player may still win it", async () => {
+      await addBounty(20);
+      const ask = () => app.inject({ url: `/owner/bounty/back/request?bountyId=2&owner=${player.address}` });
+      // A round against robot 2 is running.
+      extraSessions.push({ sessionId: 50, robotId: 2, player: stranger.address, expiresAt: NOW + 300 });
+      expect((await ask()).statusCode).toBe(409);
+      // The round ended in a breach whose payout hasn't gone through yet.
+      extraResults.push({ sessionId: 50, robotId: 2, player: stranger.address, breached: true, replayHash: ("0x" + "ab".repeat(32)) as Hex, tx: "0x" as Hex, block: 1n });
+      expect((await ask()).statusCode).toBe(409);
+      // A defended round doesn't block it.
+      extraResults[0] = { ...extraResults[0]!, breached: false };
+      expect((await ask()).statusCode).toBe(200);
     });
   });
 });

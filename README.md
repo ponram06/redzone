@@ -13,9 +13,9 @@ verified on chain, so a leaked or quantum-broken ECDSA key cannot drain the vaul
 | Part | State |
 |---|---|
 | `contracts/` EscrowVault, RobotRegistryV2, PQAdmin, PQGuard, QoreXMessage | 92 Foundry tests passing, including a 45-test attacker playbook for v2 |
-| `backend/` robot brains + ML-DSA-87 referee API | Working: 72 tests, plus a live parity test against testnet ([backend/README.md](backend/README.md)) |
+| `backend/` robot brains + ML-DSA-87 referee API | Working: 73 tests, plus a live parity test against testnet ([backend/README.md](backend/README.md)) |
 | `web/` website for players, robot makers and buyers | Working: play (free practice and prize rounds), safety rankings, robot pages, add a robot, help. Sign-in with QoreX; a relayer pays gas |
-| `audits/` two-stage QCAI audit | Planned |
+| `audits/` two-stage QCAI audit | Self-review done ([audits/SELF_REVIEW.md](audits/SELF_REVIEW.md)); QCAI stage 1 next |
 
 ## Deployed on testnet
 

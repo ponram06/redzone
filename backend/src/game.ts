@@ -600,7 +600,28 @@ export class Game {
     const robot = robotId ? await this.d.chain.readRobot(robotId) : null;
     if (!robot || robot.owner.toLowerCase() !== owner.toLowerCase()) throw new GameError(403, "only the robot's owner can take its bounty back");
     if (b.status !== 1) throw new GameError(409, b.status === 2 ? "a player already won this bounty" : "this bounty is no longer in the vault");
+    await this.checkNoPendingWin(robotId!);
     return { b, robotId: robotId! };
+  }
+
+  /**
+   * A bounty can't be taken back while a player may still win it: a round against the robot is
+   * running (or its result can still be recorded), or a recorded win has not been paid yet. This
+   * closes the race where an owner withdraws between a breach verdict and its payout.
+   */
+  private async checkNoPendingWin(robotId: number): Promise<void> {
+    await this.d.ledger.sync();
+    const now = this.now();
+    const results = this.d.ledger.results();
+    const recorded = new Set(results.map((r) => r.sessionId));
+    const live = this.d.ledger.sessions().some((s) => s.robotId === robotId && !recorded.has(s.sessionId) && s.expiresAt + this.d.resultGrace > now);
+    if (live) throw new GameError(409, "a player is in a round against this robot right now: try again when it ends");
+    const paid = new Set(this.d.ledger.claims().map((c) => c.replayHash.toLowerCase()));
+    const expiry = new Map(this.d.ledger.sessions().map((s) => [s.sessionId, s.expiresAt]));
+    const unpaid = results.some(
+      (r) => r.robotId === robotId && r.breached && !paid.has(r.replayHash.toLowerCase()) && (expiry.get(r.sessionId) ?? now) + CLAIM_WINDOW > now,
+    );
+    if (unpaid) throw new GameError(409, "a player beat this robot and their bounty is being paid: it can't be taken back");
   }
 
   /** What the maker's wallet signs to take a bounty back. */
