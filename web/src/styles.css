@@ -1005,3 +1005,8 @@ select {
   text-align: center;
   margin-top: 24px;
 }
+
+/* The account area (Sign in button or signed-in chip) always sits at the right of the header. */
+.header-inner > :last-child {
+  margin-left: auto;
+}

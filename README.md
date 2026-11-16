@@ -8,6 +8,75 @@ the robot into a forbidden "red zone". A confirmed breach pays the bounty; every
 the robot's public safety rating. Every action that moves money needs an ML-DSA-87 signature
 verified on chain, so a leaked or quantum-broken ECDSA key cannot drain the vault.
 
+## How to use it
+
+**Players**
+1. Open the website and sign in with the QoreX wallet (testnet).
+2. Pick a robot and try free practice rounds. Nothing is paid or saved.
+3. To play for the bounty, verify your account once with a 0.1 QOR payment from QoreX.
+4. Start a round. You get 10 minutes and one message. QoreX asks you to approve the start and
+   your message.
+5. If the robot touches a red zone, the result is recorded on chain and the bounty is paid to
+   your account automatically.
+
+**Robot makers**
+1. Write your robot's rules in plain words, or connect your own AI account.
+2. Try to trick it yourself for free.
+3. Name it, set a bounty (at least 1 QOR) and add it. QoreX asks you to approve the robot and the
+   bounty payment.
+4. Your robot gets its everyday-tasks score straight away, and its safety score grows with every
+   attack it blocks. You can take an unwon bounty back.
+
+**Robot buyers** check the leaderboard: every score comes from public attacks recorded on chain.
+
+## How it works
+
+```mermaid
+flowchart LR
+    subgraph Browser
+        W[Website<br/>React + Vite]
+        Q[QoreX wallet<br/>ML-DSA-87 + ECDSA]
+    end
+    subgraph Server["RedZone server (Node + Fastify)"]
+        B[Robot brain<br/>LLM or rule]
+        R[Referee<br/>simulator + ML-DSA-87 key]
+        L[Relayer<br/>scoped EVM window]
+        G[Ledger<br/>reads chain history]
+    end
+    subgraph QoreChain["QoreChain testnet"]
+        REG[RobotRegistryV2]
+        V[EscrowVault]
+        P[pqcVerify / pqcKeyStatus<br/>precompiles]
+    end
+    W -- "sign request / message" --> Q
+    Q -- "ML-DSA signature" --> W
+    W -- "signed request" --> R
+    R -- "instruction" --> B
+    B -- "planned route" --> R
+    R -- "signed verdict" --> L
+    L -- "startSessionFor / recordResult" --> REG
+    L -- "depositBounty / claimBounty" --> V
+    REG -- "verify signatures" --> P
+    V -- "verify signatures" --> P
+    Q -- "sign-up fee, bounty payment<br/>(native transfers)" --> L
+    G -- "events" --> REG
+    G -- "events" --> V
+```
+
+1. **QoreX signs everything with ML-DSA-87.** Players and makers never send EVM transactions
+   themselves: QoreX can't sign them yet. Instead they sign a request in QoreX.
+2. **The relayer sends it.** It forwards the request to the contract, which checks the user's
+   ML-DSA-87 signature with the `pqcVerify` precompile against the key registered on chain
+   (`pqcKeyStatus`). The relayer can't forge or change anything. Its EVM window allows only the two
+   RedZone contracts.
+3. **The robot answers and the referee judges.** The robot's brain turns the player's message into
+   a route. The referee replays that route in a fixed simulation, decides "breached" or "defended",
+   saves the replay, and signs the verdict with its own ML-DSA-87 key.
+4. **The contracts check that signature** before recording the result or paying a bounty. Payouts
+   always go to the player bound into the signed verdict.
+5. **Everything shown on the website comes from the chain**: robots, scores, bounties, the
+   leaderboard, sign-ups (see "Where the data comes from").
+
 ## Status
 
 | Part | State |
