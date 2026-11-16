@@ -1,18 +1,92 @@
 import { useAccount } from "../account";
-import { formatQor, type Robot } from "../api";
+import { useEffect, useState } from "react";
+import { api, formatQor, type LeaderRow, type Robot } from "../api";
+import { shortAddress } from "../account";
 import { TIER_TEXT, safetyScore, useData } from "../data";
 
 /** Highest safety score first; untested robots last; ties by attacks blocked. */
 export const byRank = (a: Robot, b: Robot) =>
   b.ratingBps - a.ratingBps || b.defended - a.defended || Number(b.attacks > 0) - Number(a.attacks > 0) || a.id - b.id;
 
-export function Rankings() {
+/** Leaderboard: safest robots and best players, as two tabs (#/robots and #/players). */
+export function Leaderboard({ tab }: { tab: "robots" | "players" }) {
+  return (
+    <>
+      <h1 className="page-title">Leaderboard</h1>
+      <div className="segmented narrow" role="tablist" aria-label="Leaderboard">
+        <a role="tab" aria-selected={tab === "robots"} className={tab === "robots" ? "on" : ""} href="#/robots">
+          Safest robots
+        </a>
+        <a role="tab" aria-selected={tab === "players"} className={tab === "players" ? "on" : ""} href="#/players">
+          Top players
+        </a>
+      </div>
+      {tab === "robots" ? <Rankings /> : <Players />}
+    </>
+  );
+}
+
+function Players() {
+  const acc = useAccount();
+  const [rows, setRows] = useState<LeaderRow[] | null>(null);
+  const [error, setError] = useState(false);
+  useEffect(() => {
+    api.leaderboard().then(setRows, () => setError(true));
+  }, []);
+  const me = acc.player?.evm.toLowerCase();
+
+  return (
+    <>
+      <p className="lead">The players who tricked the most robots. Wins count only when the referee confirmed the robot entered a red zone.</p>
+      {error && <p className="error-text">We couldn't load the leaderboard. Please try again later.</p>}
+      {!rows && !error && <p className="note">Loading…</p>}
+      {rows && rows.length === 0 && (
+        <div className="panel empty">
+          <p>No prize rounds played yet. Be the first name on the board.</p>
+          <a className="btn primary" href="#/play">
+            Start playing
+          </a>
+        </div>
+      )}
+      {rows && rows.length > 0 && (
+        <div className="table-wrap">
+          <table className="rank">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Player</th>
+                <th>Robots tricked</th>
+                <th>Rounds played</th>
+                <th>Prizes won</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr key={r.player} className={r.player.toLowerCase() === me ? "me" : ""}>
+                  <td>{r.rank <= 3 ? ["🥇", "🥈", "🥉"][r.rank - 1] : r.rank}</td>
+                  <td title={r.qor}>
+                    {shortAddress(r.qor)}
+                    {r.player.toLowerCase() === me && <span className="badge"> you</span>}
+                  </td>
+                  <td>{r.wins}</td>
+                  <td>{r.attempts}</td>
+                  <td>{r.wonWei !== "0" ? formatQor(r.wonWei) : "–"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </>
+  );
+}
+
+function Rankings() {
   const { robots, robotsLoaded } = useData();
   const sorted = [...robots].sort(byRank);
 
   return (
     <>
-      <h1 className="page-title">Safety rankings</h1>
       <p className="lead">
         Every robot here is attacked in public by real players. The safety score combines how many attacks it blocked with how well it still
         does its everyday job. A robot that refuses to move isn't safe, it's useless.
@@ -98,7 +172,7 @@ export function RobotPage({ id }: { id: number }) {
   return (
     <>
       <a href="#/robots" className="back">
-        ← All robots
+        ← Leaderboard
       </a>
       <h1 className="page-title">
         {r.name} <span className={`badge tier-${r.tier.toLowerCase()}`}>{TIER_TEXT[r.tier]}</span>

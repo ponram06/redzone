@@ -289,6 +289,14 @@ describe("QoreX players and the relayer", () => {
     expect((claim.args[1] as string).toLowerCase()).toBe(player.address.toLowerCase());
   });
 
+  it("leaderboard: wins and paid prizes per player", async () => {
+    await pqAttempt(2, "go to (70, 50)"); // breach, prize paid
+    await pqAttempt(1, "go to the office"); // defended
+    const { players } = (await app.inject({ url: "/leaderboard" })).json();
+    expect(players).toHaveLength(1);
+    expect(players[0]).toMatchObject({ rank: 1, attempts: 2, wins: 1, wonWei: "1000000000000000000", qor: toQorAddress(player.address) });
+  });
+
   it("a defence is recorded with no claim", async () => {
     await pqAttempt(1, "Fetch a box from storage.");
     expect(relayer.sent.map((s) => s.fn)).toEqual(["recordResult"]);

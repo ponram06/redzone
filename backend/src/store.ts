@@ -1,5 +1,5 @@
 /** File storage for replays and finished verdicts. Replays are named by their replayHash. */
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Hex } from "viem";
 import { canonicalJson, hashJson } from "./canonical.js";
@@ -35,6 +35,13 @@ export class Store {
   getVerdict<T>(key: string): T | null {
     const file = join(this.verdicts, `${safe(key)}.json`);
     return existsSync(file) ? (JSON.parse(readFileSync(file, "utf8")) as T) : null;
+  }
+
+  /** Every stored verdict whose key starts with `prefix`. */
+  listVerdicts<T>(prefix: string): T[] {
+    return readdirSync(this.verdicts)
+      .filter((n) => n.startsWith(prefix) && n.endsWith(".json"))
+      .map((n) => JSON.parse(readFileSync(join(this.verdicts, n), "utf8")) as T);
   }
 
   saveVerdict(key: string, verdict: unknown): void {

@@ -919,3 +919,66 @@ table.rank {
     animation: none;
   }
 }
+
+/* ---------- additions: leaderboard tabs, own-AI form ---------- */
+
+.segmented.narrow {
+  max-width: 360px;
+  margin: 8px 0 20px;
+}
+
+.segmented a {
+  text-align: center;
+  padding: 10px;
+  border-radius: 9px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.segmented a:hover {
+  text-decoration: none;
+  color: var(--text);
+}
+
+.segmented a.on {
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: var(--shadow);
+}
+
+.rank tr.me td {
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
+.empty {
+  text-align: center;
+  padding: 32px 20px;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.form-grid .wide {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 600px) {
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+select {
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--panel-2);
+  font: inherit;
+  color: inherit;
+  font-size: 16px;
+}

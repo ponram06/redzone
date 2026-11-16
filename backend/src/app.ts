@@ -4,6 +4,7 @@ import Fastify, { type FastifyReply, type FastifyRequest } from "fastify";
 import { keccak256, type Address } from "viem";
 import type { Arena } from "./arena.js";
 import { describeArena } from "./arena.js";
+import { PROVIDERS } from "./brains/keys.js";
 import { brainHash, validateConfig, type BrainRegistry } from "./brains/registry.js";
 import { Game, GameError, attemptMessage, MAX_INSTRUCTION } from "./game.js";
 import type { RobotView } from "./chain.js";
@@ -68,7 +69,14 @@ export async function buildApp(d: AppDeps) {
     refereePubkeyHash: keccak256(d.key.publicKey),
     builtInBrains: d.builtInBrains,
     relayer: d.relayer ?? null,
+    ownKeys: {
+      enabled: d.brains.keysEnabled,
+      providers: Object.entries(PROVIDERS).map(([id, p]) => ({ id, name: p.name })),
+    },
   }));
+
+  /** Top players, from the referee's own finished verdicts. */
+  app.get("/leaderboard", async () => ({ players: d.game.leaderboard() }));
 
   app.get("/arena", async () => ({ ...d.arena, description: describeArena(d.arena), maxInstruction: MAX_INSTRUCTION }));
 
@@ -84,7 +92,18 @@ export async function buildApp(d: AppDeps) {
   });
 
   /** Owners publish a brain config here, then register the robot on chain with the returned hash. */
-  app.post<{ Body: { config?: unknown } }>("/brains", async (req) => {
+  app.post<{ Body: { config?: unknown; apiKey?: unknown } }>("/brains", async (req, reply) => {
+    // "Bring your own AI": { config: { provider, model, systemPrompt }, apiKey }. The key is stored
+    // encrypted and never returned; the reply is the public config (provider + keyId, no key).
+    if (req.body?.apiKey !== undefined) {
+      if (!allow(req, reply, "brain")) return reply;
+      const c = (req.body.config ?? {}) as Record<string, unknown>;
+      try {
+        return await d.brains.publishKeyed({ provider: c.provider, model: c.model, systemPrompt: c.systemPrompt }, req.body.apiKey, d.arena);
+      } catch (e) {
+        throw new GameError(400, (e as Error).message);
+      }
+    }
     let config;
     try {
       config = validateConfig(req.body?.config);

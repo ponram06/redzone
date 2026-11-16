@@ -60,6 +60,7 @@ export type Health = {
   refereePubkeyHash: string;
   builtInBrains: Record<string, string>;
   relayer: { address: string; cosmos: string } | null;
+  ownKeys?: { enabled: boolean; providers: { id: string; name: string }[] };
 };
 
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
@@ -100,11 +101,15 @@ export type PlayerStatus = {
   signup: { feeUqor: string; payTo: string; memo: string } | null;
 };
 
+export type LeaderRow = { rank: number; player: string; qor: string; attempts: number; wins: number; wonWei: string };
 export type SignRequest = { deadline: number; digest: string; text: string };
 export type BrainConfig = { kind: "rule"; version: 1 } | { kind: "llm"; version: 1; models: string[]; systemPrompt: string };
 export type UtilityResult = { robotId: number; tasksPassed: number; relay?: { tx?: string; error?: string } };
 
 export const api = {
+  publishOwnBrain: (provider: string, model: string, systemPrompt: string, apiKey: string) =>
+    call<{ brainHash: string }>("/brains", { method: "POST", body: JSON.stringify({ config: { provider, model, systemPrompt }, apiKey }) }),
+  leaderboard: () => call<{ players: LeaderRow[] }>("/leaderboard").then((r) => r.players),
   publishBrain: (config: BrainConfig) => call<{ brainHash: string }>("/brains", { method: "POST", body: JSON.stringify({ config }) }),
   brain: (hash: string) => call<{ brainHash: string; config: BrainConfig }>(`/brains/${hash}`),
   robotRequest: (owner: string, name: string, brainHash: string) =>

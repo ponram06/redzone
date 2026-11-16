@@ -2,6 +2,7 @@
 import { resolve } from "node:path";
 import { buildApp } from "./app.js";
 import { FACILITY } from "./arena.js";
+import { KeyVault } from "./brains/keys.js";
 import { BrainRegistry, LEGACY_DEMO_HASH, RULE_BRAIN, brainHash } from "./brains/registry.js";
 import type { BrainConfig } from "./brains/types.js";
 import { CHAIN_ID, REGISTRY, RESULT_GRACE, SESSION_TTL, VAULT, openBounties, readNativeTransfer, readPlayer, readPqcKey, readRobot, readRobots, readSession } from "./chain.js";
@@ -42,7 +43,9 @@ for (let n = 1; n <= 9; n++) {
 
 const builtIns: BrainConfig[] = [];
 if (endpoint && models.length) builtIns.push({ kind: "llm", version: 1, models, systemPrompt: DEFAULT_LLM_PROMPT });
-const brains = new BrainRegistry(dataDir, endpoint, builtIns, fallbacks);
+// Owners who bring their own AI key: keys are encrypted with BRAIN_KEY_SECRET (64 hex chars).
+const keys = env.BRAIN_KEY_SECRET ? new KeyVault(dataDir, env.BRAIN_KEY_SECRET) : null;
+const brains = new BrainRegistry(dataDir, endpoint, builtIns, fallbacks, keys);
 const store = new Store(dataDir);
 
 // Relayer for QoreX players (separate account, window scoped to our two contracts).
@@ -90,4 +93,5 @@ console.log(`RedZone referee on http://${env.HOST ?? "127.0.0.1"}:${port}`);
 console.log(`  brains: ${Object.entries(builtInBrains).map(([k, v]) => `${k}=${v.slice(0, 10)}…`).join(", ")}`);
 console.log(`  llm: ${endpoint ? `${endpoint.baseUrl} (${models.length} model(s))` : "off (rule brain only)"}`);
 console.log(`  relayer: ${relayer ? `${relayer.address} (${relayer.cosmosAddress})` : "none (players relay their own transactions)"}`);
+console.log(`  own AI keys: ${keys ? "on" : "off (set BRAIN_KEY_SECRET)"}`);
 console.log(`  fallbacks: ${fallbacks.length ? fallbacks.map((f) => `${f.model} at ${new URL(f.endpoint.baseUrl).host}`).join(" -> ") : "none"}`);

@@ -47,7 +47,7 @@ export function Home() {
       <section>
         <div className="section-head">
           <h2>Robots in the arena</h2>
-          <a href="#/robots">See all rankings →</a>
+          <a href="#/robots">See the leaderboard →</a>
         </div>
         {top.length ? (
           <div className="cards">

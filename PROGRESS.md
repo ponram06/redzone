@@ -6,7 +6,7 @@ the first unchecked item of the earliest unfinished phase.
 Rules: no Claude co-author line in commits. Never commit `.env`, `.referee-key.json`, `.attacker.json`.
 Do not spend drill-account QOR or touch the fest website without the owner.
 
-Overall: about **74%** (each phase's weight is in brackets; last updated 2026-11-16).
+Overall: about **76%** (each phase's weight is in brackets; last updated 2026-11-16).
 
 ## Phase 1. Setup and registration (5%): done
 - [x] Hackathon registration, Post-Quantum dApp category, project page on build.qorechain.io
@@ -40,6 +40,8 @@ Overall: about **74%** (each phase's weight is in brackets; last updated 2026-11
 - [x] One-time player sign-up (0.1 QOR native payment from QoreX, verified by the referee)
 - [x] Simple redesign for non-crypto users: Home, Play, Rankings, robot pages, For robot makers, Help (plain language; technical details tucked away in Help)
 - [x] Owner flow: choose a brain (AI guard with own rules, or simple guard), test it free, register the robot (QoreX-signed, relayed registerRobotFor), change brain (relayed updateBrain), automatic skills test recorded on chain (recordUtility)
+- [x] Leaderboard: safest robots and top players (wins, rounds, prizes won)
+- [x] Owners can bring their own AI: provider allowlist (OpenAI, Gemini, Groq, OpenRouter, Mistral, DeepSeek, Together), key checked with a real call, stored AES-256-GCM encrypted, never returned, bound to the first owner who uses it
 - [ ] Prize deposits from the website: blocked until QoreX can sign EVM transactions (depositBounty must come from the owner)
 
 ## Phase 6. Integration on testnet (5%): 0%

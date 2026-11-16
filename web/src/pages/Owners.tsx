@@ -8,7 +8,18 @@ import { RobotCard } from "../components/RobotCard";
 import { useData } from "../data";
 import { explainQorexError, signPq } from "../qorex";
 
-type Kind = "rule" | "ai";
+type Kind = "rule" | "ai" | "own";
+
+/** A sensible default model per provider; owners can type any model their key can use. */
+const DEFAULT_MODEL: Record<string, string> = {
+  openai: "gpt-4o-mini",
+  groq: "llama-3.3-70b-versatile",
+  gemini: "gemini-2.5-flash",
+  openrouter: "openai/gpt-4o-mini",
+  mistral: "mistral-small-latest",
+  deepseek: "deepseek-chat",
+  together: "meta-llama/Llama-3.3-70B-Instruct-Turbo",
+};
 
 /** Robot makers: choose a brain, test it, put the robot in the arena, manage robots. */
 export function Owners() {
@@ -17,6 +28,10 @@ export function Owners() {
   const [kind, setKind] = useState<Kind>("ai");
   const [aiBase, setAiBase] = useState<Extract<BrainConfig, { kind: "llm" }> | null>(null);
   const [rules, setRules] = useState("");
+  const [provider, setProvider] = useState("openai");
+  const [model, setModel] = useState(DEFAULT_MODEL.openai!);
+  const [apiKey, setApiKey] = useState("");
+  const ownKeys = health?.ownKeys;
   const [brainHash, setBrainHash] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [brainError, setBrainError] = useState<string | null>(null);
@@ -39,7 +54,7 @@ export function Owners() {
   }, [sentinelHash]);
 
   // Any change to the choice means the brain must be saved again.
-  useEffect(() => setBrainHash(null), [kind, rules]);
+  useEffect(() => setBrainHash(null), [kind, rules, provider, model]);
 
   async function saveBrain(): Promise<string | null> {
     if (brainHash) return brainHash;
@@ -49,6 +64,12 @@ export function Owners() {
       let hash: string;
       if (kind === "rule") {
         hash = health!.builtInBrains.rule!;
+      } else if (kind === "own") {
+        if (!apiKey.trim() || !model.trim()) throw new Error("Enter your API key and model name.");
+        setSaving(true);
+        hash = (await api.publishOwnBrain(provider, model.trim(), rules, apiKey.trim())).brainHash;
+        // The key now lives encrypted on the server; forget it here.
+        setApiKey("");
       } else {
         if (!aiBase) throw new Error("The AI brain isn't available right now.");
         hash = (await api.publishBrain({ kind: "llm", version: 1, models: aiBase.models, systemPrompt: rules })).brainHash;
@@ -82,16 +103,66 @@ export function Owners() {
             <strong>AI guard</strong>
             <span>Understands everyday language. You write its safety rules in plain words.</span>
           </button>
+          {ownKeys?.enabled && (
+            <button className={kind === "own" ? "option on" : "option"} onClick={() => setKind("own")} aria-pressed={kind === "own"}>
+              <strong>Your own AI</strong>
+              <span>Use your company's AI account (OpenAI, Gemini, Groq…) with your own API key.</span>
+            </button>
+          )}
           <button className={kind === "rule" ? "option on" : "option"} onClick={() => setKind("rule")} aria-pressed={kind === "rule"}>
             <strong>Simple guard</strong>
             <span>Follows fixed rules. Fast and predictable, but easier to trick.</span>
           </button>
         </div>
-        {kind === "ai" && (
+        {kind === "own" && ownKeys && (
+          <div className="form-grid">
+            <div className="stack">
+              <label htmlFor="provider">AI provider</label>
+              <select
+                id="provider"
+                value={provider}
+                onChange={(e) => {
+                  setProvider(e.target.value);
+                  setModel(DEFAULT_MODEL[e.target.value] ?? "");
+                }}
+              >
+                {ownKeys.providers.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="stack">
+              <label htmlFor="model">Model name</label>
+              <input id="model" value={model} maxLength={100} onChange={(e) => setModel(e.target.value)} />
+            </div>
+            <div className="stack wide">
+              <label htmlFor="apikey">API key</label>
+              <input
+                id="apikey"
+                type="password"
+                autoComplete="off"
+                spellCheck={false}
+                value={apiKey}
+                placeholder={brainHash ? "Saved securely ✓" : "Paste your key"}
+                onChange={(e) => setApiKey(e.target.value)}
+              />
+              <p className="note">
+                Your key is encrypted on our server, only sent to {ownKeys.providers.find((p) => p.id === provider)?.name}, only used for your robot,
+                and never shown again. Tip: create a separate key with a monthly spending limit. Every practice round, attack and skills test
+                against your robot uses it.
+              </p>
+            </div>
+          </div>
+        )}
+        {(kind === "ai" || kind === "own") && (
           <>
             <label htmlFor="rules">Safety rules for your robot</label>
             <textarea id="rules" className="tall" value={rules} maxLength={4000} onChange={(e) => setRules(e.target.value)} />
-            <p className="note">Tell it what it must never do, and how to handle tricks. Runs on free AI models.</p>
+            <p className="note">
+              Tell it what it must never do, and how to handle tricks.{kind === "ai" && " Runs on free AI models, no key needed."}
+            </p>
           </>
         )}
       </section>
@@ -119,7 +190,7 @@ export function Owners() {
                 />
               ) : (
                 <button className="btn primary" disabled={saving} onClick={saveBrain}>
-                  {saving ? "Getting your brain ready…" : "Start testing"}
+                  {saving ? (kind === "own" ? "Checking your key…" : "Getting your brain ready…") : "Start testing"}
                 </button>
               )}
               {brainError && <p className="error-text">{brainError}</p>}

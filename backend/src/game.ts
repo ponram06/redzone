@@ -107,6 +107,7 @@ function cleanInstruction(raw: unknown): string {
 
 export class Game {
   private readonly locks = new Map<string, Promise<unknown>>();
+  private board: { at: number; rows: { rank: number; player: Address; qor: string; attempts: number; wins: number; wonWei: string }[] } | null = null;
   private readonly now: () => number;
 
   constructor(private readonly d: GameDeps) {
@@ -423,6 +424,35 @@ export class Game {
     });
   }
 
+  // ---------------------------------------------------------- leaderboard
+
+  /**
+   * Players ranked by wins, then prize won, then fewest attempts. Built from finished verdicts;
+   * a prize counts once its claim transaction was sent. Cached for 30 seconds.
+   */
+  leaderboard(limit = 50) {
+    const at = this.now();
+    if (this.board && this.board.at > at - 30) return this.board.rows.slice(0, limit);
+    const by = new Map<string, { player: Address; qor: string; attempts: number; wins: number; wonWei: bigint }>();
+    for (const v of this.d.store.listVerdicts<AttemptVerdict>("session-")) {
+      if (!v?.player) continue;
+      const k = v.player.toLowerCase();
+      const row = by.get(k) ?? { player: v.player, qor: toQorAddress(v.player), attempts: 0, wins: 0, wonWei: 0n };
+      row.attempts++;
+      if (v.breached) {
+        row.wins++;
+        const paid = new Set((v.relay?.claimTxs ?? []).map((c) => c.bountyId));
+        for (const c of v.claims ?? []) if (paid.has(c.bountyId)) row.wonWei += BigInt(c.amountWei);
+      }
+      by.set(k, row);
+    }
+    const rows = [...by.values()]
+      .sort((a, b) => b.wins - a.wins || (b.wonWei > a.wonWei ? 1 : b.wonWei < a.wonWei ? -1 : 0) || a.attempts - b.attempts)
+      .map((r, i) => ({ rank: i + 1, player: r.player, qor: r.qor, attempts: r.attempts, wins: r.wins, wonWei: r.wonWei.toString() }));
+    this.board = { at, rows };
+    return rows.slice(0, limit);
+  }
+
   // ---------------------------------------------------------- owners (QoreX + relayer)
 
   /** Names the contract accepts: printable ASCII, no leading/trailing space, 1 to 64 bytes. */
@@ -440,6 +470,11 @@ export class Game {
     const hash = raw.toLowerCase() as Hex;
     if (!this.d.brains.config(hash)) throw new GameError(404, "unknown brain: publish it first (POST /brains)");
     return hash;
+  }
+
+  /** A brain with an owner's API key can only go on robots of the owner who first used it. */
+  private checkBrainOwner(brain: Hex, owner: Address): void {
+    if (!this.d.brains.canUse(brain, owner)) throw new GameError(403, "this brain uses someone else's API key: create your own brain");
   }
 
   /** Checks shared by every owner request: valid address, PQ key, signed up. */
@@ -479,6 +514,7 @@ export class Game {
     const name = this.cleanName(input.name);
     const brain = this.knownBrain(input.brainHash);
     const { owner, nonce } = await this.ownerReady(input.owner);
+    this.checkBrainOwner(brain, owner);
     const deadline = this.now() + REQUEST_TTL;
     const digest = registerRobotDigest(this.d.chainId, this.d.registry, owner, name, brain, nonce, BigInt(deadline));
     return { owner, name, brainHash: brain, nonce: nonce.toString(), deadline, digest, text: walletText("RegisterRobot", digest) };
@@ -496,12 +532,15 @@ export class Game {
     if (!pre) throw new GameError(400, "bad owner address");
     return this.once(`nonce-${pre.toLowerCase()}`, async () => {
       const { owner, nonce, pubkey } = await this.ownerReady(pre);
+      this.checkBrainOwner(brain, owner);
       const digest = registerRobotDigest(this.d.chainId, this.d.registry, owner, name, brain, nonce, BigInt(deadline));
       if (!verifyWalletSignature(pubkey, walletText("RegisterRobot", digest), sig)) {
         throw new GameError(401, "signature does not match this request (it may be used already: request a new one)");
       }
       const data = encodeFunctionData({ abi: registryAbi, functionName: "registerRobotFor", args: [owner, name, brain, BigInt(deadline), sig] });
-      return { ...(await this.relayRegistry(data, "RobotRegistered")), owner, name, brainHash: brain };
+      const out = await this.relayRegistry(data, "RobotRegistered");
+      this.d.brains.bindOwner(brain, owner);
+      return { ...out, owner, name, brainHash: brain };
     });
   }
 
@@ -515,6 +554,7 @@ export class Game {
     if (!robot) throw new GameError(404, "robot not found");
     if (robot.owner.toLowerCase() !== owner.toLowerCase()) throw new GameError(403, "only the robot's owner can change its brain");
     if (robot.brainHash.toLowerCase() === brain) throw new GameError(409, "the robot already uses this brain");
+    this.checkBrainOwner(brain, owner);
     const deadline = this.now() + REQUEST_TTL;
     const digest = updateBrainDigest(this.d.chainId, this.d.registry, BigInt(robotId), brain, nonce, BigInt(deadline));
     return { robotId, owner, brainHash: brain, nonce: nonce.toString(), deadline, digest, text: walletText("UpdateBrain", digest) };
@@ -536,12 +576,15 @@ export class Game {
       const robot = await this.d.chain.readRobot(robotId);
       if (!robot) throw new GameError(404, "robot not found");
       if (robot.owner.toLowerCase() !== owner.toLowerCase()) throw new GameError(403, "only the robot's owner can change its brain");
+      this.checkBrainOwner(brain, owner);
       const digest = updateBrainDigest(this.d.chainId, this.d.registry, BigInt(robotId), brain, nonce, BigInt(deadline));
       if (!verifyWalletSignature(pubkey, walletText("UpdateBrain", digest), sig)) {
         throw new GameError(401, "signature does not match this request (it may be used already: request a new one)");
       }
       const data = encodeFunctionData({ abi: registryAbi, functionName: "updateBrain", args: [BigInt(robotId), brain, BigInt(deadline), sig] });
-      return { ...(await this.relayRegistry(data, "BrainUpdated")), brainHash: brain };
+      const out = await this.relayRegistry(data, "BrainUpdated");
+      this.d.brains.bindOwner(brain, owner);
+      return { ...out, brainHash: brain };
     });
   }
 

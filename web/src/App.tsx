@@ -6,7 +6,7 @@ import { Help } from "./pages/Help";
 import { Home } from "./pages/Home";
 import { Owners } from "./pages/Owners";
 import { Play } from "./pages/Play";
-import { Rankings, RobotPage } from "./pages/Rankings";
+import { Leaderboard, RobotPage } from "./pages/Rankings";
 
 /** Tiny hash router: #/, #/play, #/play/2, #/robots, #/robots/2, #/owners, #/help */
 function useRoute(): string[] {
@@ -36,7 +36,7 @@ export function App() {
 const NAV = [
   ["", "Home"],
   ["play", "Play"],
-  ["robots", "Rankings"],
+  ["robots", "Leaderboard"],
   ["owners", "For robot makers"],
   ["help", "Help"],
 ] as const;
@@ -49,7 +49,8 @@ function Shell() {
   let content;
   if (page === "play") content = <Play key={id ?? 0} robotId={id} />;
   else if (page === "robots" && id) content = <RobotPage id={id} />;
-  else if (page === "robots") content = <Rankings />;
+  else if (page === "robots") content = <Leaderboard tab="robots" />;
+  else if (page === "players") content = <Leaderboard tab="players" />;
   else if (page === "owners") content = <Owners />;
   else if (page === "help") content = <Help />;
   else content = <Home />;
@@ -67,7 +68,7 @@ function Shell() {
           </a>
           <nav className="nav" aria-label="Main">
             {NAV.map(([path, label]) => (
-              <a key={path} href={`#/${path}`} className={(page ?? "") === path ? "on" : ""}>
+              <a key={path} href={`#/${path}`} className={(page === "players" ? "robots" : (page ?? "")) === path ? "on" : ""}>
                 {label}
               </a>
             ))}

@@ -25,6 +25,10 @@ const FAQ: [string, string][] = [
     "Every important action (verifying, starting a round, sending your message, adding a robot) is approved by you with your quantum-safe key. Nobody else can act for you.",
   ],
   [
+    "I build robots. Can I use my own AI?",
+    "Yes. On “For robot makers” choose “Your own AI”, pick your provider (OpenAI, Gemini, Groq and others), the model, and paste an API key. We check that it works, store it encrypted, and only ever send it to that provider. Nobody else can put your brain on their robot. Use a key with a spending limit: every round against your robot uses it. No key? Pick “AI guard” and it runs on free models.",
+  ],
+  [
     "What does “quantum-safe” mean?",
     "Future quantum computers could break the locks most crypto wallets use today. RedZone only accepts approvals made with a newer kind of lock (ML-DSA-87) that they can't break.",
   ],

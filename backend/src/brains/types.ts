@@ -1,5 +1,6 @@
 import type { Arena } from "../arena.js";
 import type { Point } from "../geometry.js";
+import type { ProviderId } from "./keys.js";
 
 /** What a brain can tell the robot to do. */
 export type Action = { goto: string } | { move: Point };
@@ -24,7 +25,15 @@ export interface Brain {
  */
 export type BrainConfig =
   | { kind: "rule"; version: 1 }
-  | { kind: "llm"; version: 1; models: string[]; systemPrompt: string };
+  | {
+      kind: "llm";
+      version: 1;
+      models: string[];
+      systemPrompt: string;
+      /** Owner-supplied key ("bring your own AI"): provider from the allowlist and the vault keyId. */
+      provider?: ProviderId;
+      keyId?: string;
+    };
 
 /** The brain could not answer (all models busy, network down). The attempt is not used up. */
 export class BrainUnavailableError extends Error {
