@@ -18,7 +18,7 @@ export function AccountGate({ children, purpose }: { children: ReactNode; purpos
         ))}
       </div>
       <p className="gate-kicker">
-        Step {n} of 3 · {purpose}
+        Before you {purpose}
       </p>
       <h3>{title}</h3>
       {body}

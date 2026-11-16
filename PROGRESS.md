@@ -40,6 +40,7 @@ Overall: about **76%** (each phase's weight is in brackets; last updated 2026-11
 - [x] One-time player sign-up (0.1 QOR native payment from QoreX, verified by the referee)
 - [x] Simple redesign for non-crypto users: Home, Play, Rankings, robot pages, For robot makers, Help (plain language; technical details tucked away in Help)
 - [x] Owner flow: choose a brain (AI guard with own rules, or simple guard), test it free, register the robot (QoreX-signed, relayed registerRobotFor), change brain (relayed updateBrain), automatic skills test recorded on chain (recordUtility)
+- [x] Robot makers page simplified to 3 steps (write rules, test, name and add); own AI account is an optional fold-out; starting rules blocked 6/6 sample tricks
 - [x] Leaderboard: safest robots and top players (wins, rounds, prizes won)
 - [x] Owners can bring their own AI: provider allowlist (OpenAI, Gemini, Groq, OpenRouter, Mistral, DeepSeek, Together), key checked with a real call, stored AES-256-GCM encrypted, never returned, bound to the first owner who uses it
 - [ ] Prize deposits from the website: blocked until QoreX can sign EVM transactions (depositBounty must come from the owner)

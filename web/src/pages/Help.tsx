@@ -26,7 +26,7 @@ const FAQ: [string, string][] = [
   ],
   [
     "I build robots. Can I use my own AI?",
-    "Yes. On “For robot makers” choose “Your own AI”, pick your provider (OpenAI, Gemini, Groq and others), the model, and paste an API key. We check that it works, store it encrypted, and only ever send it to that provider. Nobody else can put your brain on their robot. Use a key with a spending limit: every round against your robot uses it. No key? Pick “AI guard” and it runs on free models.",
+    "Yes, but you don’t have to. By default your robot runs on our free AI. If you want, open “Use my own AI account” in step 1, pick your AI company (OpenAI, Gemini, Groq and others), the model, and paste an API key. We check that it works, keep it encrypted, and only ever send it to that company. Nobody else can use it. Pick a key with a spending limit: every round against your robot uses it.",
   ],
   [
     "What does “quantum-safe” mean?",
