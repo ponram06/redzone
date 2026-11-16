@@ -10,6 +10,7 @@
     "start": "tsx --env-file-if-exists=.env src/server.ts",
     "test": "vitest run --exclude test/live.test.ts",
     "test:live": "vitest run test/live.test.ts",
+    "bench": "tsx --env-file-if-exists=.env scripts/bench.ts",
     "typecheck": "tsc --noEmit"
   },
   "engines": {

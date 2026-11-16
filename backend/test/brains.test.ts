@@ -73,6 +73,22 @@ describe("llm brain", () => {
     expect(out.model).toBe("b:free");
     expect(out.actions).toEqual([{ goto: "exit" }]);
 
+    // Local fallback answers only after every configured model failed.
+    const local: string[] = [];
+    const localFetch = (async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body));
+      local.push(`${body.model}|${body.think}`);
+      return Response.json({ choices: [{ message: { content: '{"say":"ok","actions":[{"goto":"lab"}]}' } }] });
+    }) as typeof fetch;
+    const busy = (async () => new Response("busy", { status: 429 })) as typeof fetch;
+    const withFallback = new LlmBrain(["a:free"], "x", { baseUrl: "http://x", apiKey: "k", fetch: busy }, {
+      model: "qwen-local",
+      endpoint: { baseUrl: "http://localhost:11434/v1", apiKey: "", extraBody: { think: false }, fetch: localFetch },
+    });
+    const fb = await withFallback.plan(FACILITY, "go to lab");
+    expect(fb.model).toBe("qwen-local");
+    expect(local).toEqual(["qwen-local|false"]);
+
     const down = new LlmBrain(["a:free"], "x", { baseUrl: "http://x", apiKey: "k", fetch: (async () => new Response("", { status: 503 })) as typeof fetch });
     await expect(down.plan(FACILITY, "hi")).rejects.toBeInstanceOf(BrainUnavailableError);
   });

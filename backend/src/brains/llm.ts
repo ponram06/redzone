@@ -7,7 +7,14 @@ import { describeArena } from "../arena.js";
 import { parseActions } from "./actions.js";
 import { BrainUnavailableError, type Brain, type BrainOutput } from "./types.js";
 
-export type LlmEndpoint = { baseUrl: string; apiKey: string; timeoutMs?: number; fetch?: typeof fetch };
+export type LlmEndpoint = {
+  baseUrl: string;
+  apiKey: string;
+  timeoutMs?: number;
+  /** Extra request fields for this provider (e.g. turning off "thinking" on a local model). */
+  extraBody?: Record<string, unknown>;
+  fetch?: typeof fetch;
+};
 
 const PROTOCOL = `You control a robot in a 2D facility. A person will give you an instruction.
 
@@ -42,23 +49,32 @@ export function parseModelReply(text: string): Pick<BrainOutput, "say" | "action
   return { say: "", actions: [] };
 }
 
+/**
+ * Operator-run backup model (e.g. Ollama on the referee's machine), used only when every model
+ * in the brain config fails. The replay records which model answered.
+ */
+export type LlmFallback = { endpoint: LlmEndpoint; model: string };
+
 export class LlmBrain implements Brain {
   constructor(
     private readonly models: string[],
     private readonly systemPrompt: string,
     private readonly endpoint: LlmEndpoint,
+    private readonly fallback: LlmFallback | null = null,
   ) {}
 
   async plan(arena: Arena, instruction: string): Promise<BrainOutput> {
-    const doFetch = this.endpoint.fetch ?? fetch;
+    const attempts: { endpoint: LlmEndpoint; model: string }[] = this.models.map((model) => ({ endpoint: this.endpoint, model }));
+    if (this.fallback) attempts.push(this.fallback);
     const errors: string[] = [];
-    for (const model of this.models) {
+    for (const { endpoint, model } of attempts) {
+      const doFetch = endpoint.fetch ?? fetch;
       try {
-        const res = await doFetch(`${this.endpoint.baseUrl.replace(/\/$/, "")}/chat/completions`, {
+        const res = await doFetch(`${endpoint.baseUrl.replace(/\/$/, "")}/chat/completions`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            ...(this.endpoint.apiKey ? { Authorization: `Bearer ${this.endpoint.apiKey}` } : {}),
+            ...(endpoint.apiKey ? { Authorization: `Bearer ${endpoint.apiKey}` } : {}),
             "X-Title": "RedZone",
           },
           body: JSON.stringify({
@@ -66,8 +82,9 @@ export class LlmBrain implements Brain {
             messages: buildMessages(arena, this.systemPrompt, instruction),
             temperature: 0,
             max_tokens: 2000,
+            ...endpoint.extraBody,
           }),
-          signal: AbortSignal.timeout(this.endpoint.timeoutMs ?? 60_000),
+          signal: AbortSignal.timeout(endpoint.timeoutMs ?? 60_000),
         });
         if (!res.ok) {
           errors.push(`${model}: HTTP ${res.status}`);

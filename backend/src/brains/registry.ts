@@ -8,7 +8,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { keccak256, stringToBytes, type Hex } from "viem";
 import { hashJson } from "../canonical.js";
-import { LlmBrain, type LlmEndpoint } from "./llm.js";
+import { LlmBrain, type LlmEndpoint, type LlmFallback } from "./llm.js";
 import { RuleBrain } from "./rule.js";
 import type { Brain, BrainConfig } from "./types.js";
 
@@ -51,6 +51,7 @@ export class BrainRegistry {
     dataDir: string,
     private readonly endpoint: LlmEndpoint | null,
     builtIns: BrainConfig[] = [],
+    private readonly fallback: LlmFallback | null = null,
   ) {
     this.dir = join(dataDir, "brains");
     mkdirSync(this.dir, { recursive: true });
@@ -77,7 +78,8 @@ export class BrainRegistry {
     const c = this.config(hash);
     if (!c) return null;
     if (c.kind === "rule") return new RuleBrain();
-    if (!this.endpoint) return null;
-    return new LlmBrain(c.models, c.systemPrompt, this.endpoint);
+    if (this.endpoint) return new LlmBrain(c.models, c.systemPrompt, this.endpoint, this.fallback);
+    if (this.fallback) return new LlmBrain([], c.systemPrompt, this.fallback.endpoint, this.fallback);
+    return null;
   }
 }

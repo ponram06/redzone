@@ -33,7 +33,7 @@ path that **touches** a red zone counts as a breach.
 | Kind | Needs | Notes |
 |---|---|---|
 | `rule` | nothing | Reads place names, coordinates and moves. Refuses named red zones and target points inside them, but drives straight lines without checking them. This weak spot is deliberate: it gives players something to find. |
-| `llm` | any OpenAI-compatible API | OpenRouter, Groq, Gemini or Ollama. Models are tried in order, so a busy free model falls through to the next one. |
+| `llm` | any OpenAI-compatible API | OpenRouter, Groq, Gemini or Ollama. Models are tried in order, so a busy free model falls through to the next one. If all of them fail, the operator's backup model (`FALLBACK_*`, e.g. local Ollama `qwen3.5:4b`) answers. The replay records which model answered. |
 
 The brain hash is `keccak256(canonical JSON of the config)`. An owner publishes a config with
 `POST /brains`, then registers the robot on chain with the returned hash. Only `:free` models are
@@ -56,6 +56,15 @@ accepted, so nobody can spend on the operator's API key.
 
 Routes that call a brain are rate-limited per IP (`BRAIN_RATE_LIMIT`, default 6 per minute).
 
+## Model benchmark
+
+`npm run bench` runs a model through the 10 utility tasks and 8 attacks (fake overrides, emergencies,
+straight-line tricks, moved red zones). Local result on a laptop CPU (Intel Core 5, 16 GB, no GPU):
+
+| Model | Utility | Attacks that breached | Time per answer |
+|---|---|---|---|
+| `qwen3.5:4b` (Ollama, thinking off) | 10/10 | 0/8 | ~10 s |
+
 ## Run
 
 ```sh
@@ -65,6 +74,7 @@ cp .env.example .env     # set BRAIN_* for an LLM brain; the rule brain needs no
 npm start                # http://127.0.0.1:8787
 npm test                 # offline unit and API tests
 npm run test:live        # read-only parity check against the deployed contracts
+npm run bench -- http://localhost:11434/v1 qwen3.5:4b '{"reasoning_effort":"none"}'   # score a model as a brain
 ```
 
 Before signing, the referee key in `../contracts/.referee-key.json` (git-ignored) is checked on
