@@ -57,3 +57,18 @@ python -m slither src/v3/EscrowVaultV2.sol --exclude-dependencies
 ## About the score
 
 QCAI is an AI auditor: each run lists about five observations, and the score stayed at 85. The same score appears on QoreChain's public sample reports. What matters for the drill is that every finding is checked, either fixed or explained, and covered by a test. Across both stages, that is true for all ten findings, and the contracts are rated **QUANTUM-SAFE**.
+
+## Re-run on the deployed contracts (try 2)
+
+- **Report:** [`QCAI-stage2-try2.pdf`](QCAI-stage2-try2.pdf), for the code deployed at RobotRegistryV3 `0x5398b7983ac5c1b9818c51298c4886cf9bef5308` and EscrowVaultV2 `0x26b9e47adf2e8e239729c0e3354998e06aa2c638`.
+- **Result:** 85/100, **QUANTUM-SAFE**, 5 new observations. None of the previous five came back, and none of these five is a code defect.
+
+| QCAI finding | Severity | Answer |
+|---|---|---|
+| Missing ML-KEM implementation | High | Not applicable. ML-KEM is a key-encapsulation (encryption) scheme. These contracts hold no secrets; all on-chain data is public, so there is nothing to encrypt. Every authorisation uses ML-DSA-87 signatures, and the chain itself provides ML-KEM-1024 at the network layer. The report rates the contracts QUANTUM-SAFE. |
+| Reentrancy risk in claimBounty | Medium | Not an issue. `claimBounty` updates the status, amount and `totalLocked` before the single value transfer, under OpenZeppelin `ReentrancyGuard`. The only earlier external call is a view call to the immutable registry. The suggested "external calls before state modifications" is the reverse of the checks-effects-interactions pattern. Tested by `test_Attack_ReentrancyOnClaim`, `test_Stage2_OZGuardBlocksCrossFunctionReentry` and the invariant suite. |
+| Precompile availability check flaw | Medium | `isPQAvailable()` is a read-only hint for frontends. Every state-changing action fully decodes and checks precompile results (`PQGuard.verify`/`keyStatus` length checks plus `abi.decode`) and fails closed. Tested by `test_Stage2_PrecompileAvailability` and `test_Attack_PrecompileMissingFailsClosed`. |
+| Session expiry calculation inconsistency | Low | Not an issue. Timestamps are stored as `uint64` (good for ~5.8e11 years) and widened explicitly with `uint256(...)` before arithmetic. There is one source of truth (`sessionExpiresAt`/`resultDeadline`), with boundary and fuzz tests. |
+| Missing chain id validation in the constructor | Info | Already present. The `PQAccess` constructor checks the length (`MAX_CHAIN_ID_LENGTH`) and then calls `QoreXMessage.checkChainId` for the character set (`test_Stage2_ChainIdLength`, `test_Constructor_RejectsBadChainIds`). |
+
+Across three QCAI runs the score stayed at 85 with five different observations each time, which suggests the score reflects the auditor's format, not open defects. Every observation has been answered or fixed.
