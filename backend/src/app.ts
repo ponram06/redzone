@@ -109,6 +109,14 @@ export async function buildApp(d: AppDeps) {
     return { message: attemptMessage(d.chainId, d.registry, sessionId, instruction) };
   });
 
+  app.get<{ Params: { address: string } }>("/player/:address", async (req) => d.game.playerStatus(req.params.address));
+
+  /** One-time sign-up: the player sends the fee from QoreX, then posts the transaction hash here. */
+  app.post<{ Body: { address?: unknown; txHash?: unknown } }>("/player/register", async (req, reply) => {
+    if (!allow(req, reply, "session")) return reply;
+    return d.game.registerPlayer({ address: req.body?.address, txHash: req.body?.txHash });
+  });
+
   /** What the QoreX wallet signs to start a session (relayed by the referee). */
   app.get<{ Querystring: { robotId?: string; player?: string } }>("/session/request", async (req) => {
     return d.game.sessionRequest({ robotId: req.query.robotId, player: req.query.player });

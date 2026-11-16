@@ -4,7 +4,7 @@ import { buildApp } from "./app.js";
 import { FACILITY } from "./arena.js";
 import { BrainRegistry, LEGACY_DEMO_HASH, RULE_BRAIN, brainHash } from "./brains/registry.js";
 import type { BrainConfig } from "./brains/types.js";
-import { CHAIN_ID, REGISTRY, RESULT_GRACE, SESSION_TTL, VAULT, openBounties, readPlayer, readPqcKey, readRobot, readRobots, readSession } from "./chain.js";
+import { CHAIN_ID, REGISTRY, RESULT_GRACE, SESSION_TTL, VAULT, openBounties, readNativeTransfer, readPlayer, readPqcKey, readRobot, readRobots, readSession } from "./chain.js";
 import { ChainRelayer } from "./relayer.js";
 import { Game } from "./game.js";
 import { DEFAULT_LLM_PROMPT } from "./prompt.js";
@@ -53,8 +53,10 @@ const game = new Game({
   brains,
   store,
   key,
-  chain: { readSession, readRobot, openBounties, readPqcKey, readPlayer },
+  chain: { readSession, readRobot, openBounties, readPqcKey, readPlayer, readNativeTransfer: (h) => readNativeTransfer(h) },
   relayer,
+  // One-time sign-up fee, paid to the relayer so it funds gas (0 turns sign-up off).
+  signup: relayer && BigInt(env.SIGNUP_FEE_UQOR ?? "100000") > 0n ? { feeUqor: BigInt(env.SIGNUP_FEE_UQOR ?? "100000"), payTo: relayer.cosmosAddress } : null,
   chainId: CHAIN_ID,
   registry: REGISTRY,
   vault: VAULT,

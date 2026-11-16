@@ -51,3 +51,45 @@ export function explainQorexError(e: unknown): string {
   if (/reject|denied|cancel/i.test(m)) return "You cancelled the request in QoreX.";
   return m;
 }
+
+// --- one-time sign-up payment (native MsgSend, hybrid-signed by QoreX) ---
+
+const enc = new TextEncoder();
+
+function varint(n: number): number[] {
+  const out: number[] = [];
+  while (n > 0x7f) {
+    out.push((n & 0x7f) | 0x80);
+    n >>>= 7;
+  }
+  out.push(n);
+  return out;
+}
+
+/** Protobuf length-delimited field. */
+function field(no: number, bytes: Uint8Array): number[] {
+  return [...varint((no << 3) | 2), ...varint(bytes.length), ...bytes];
+}
+
+/** cosmos.bank.v1beta1.MsgSend { from_address = 1; to_address = 2; repeated Coin amount = 3 } */
+export function encodeMsgSend(from: string, to: string, uqor: string): Uint8Array {
+  const coin = new Uint8Array([...field(1, enc.encode("uqor")), ...field(2, enc.encode(uqor))]);
+  return new Uint8Array([...field(1, enc.encode(from)), ...field(2, enc.encode(to)), ...field(3, coin)]);
+}
+
+type BroadcastResult = { txHash: string; code: number };
+
+/** Send `uqor` to `to` with a memo; QoreX shows the transfer and signs it with the PQC layer. */
+export async function payNative(from: string, to: string, uqor: string, memo: string): Promise<string> {
+  const n = (window.qorex?.native ?? null) as unknown as {
+    signAndBroadcast(p: { chainId: string; messages: { typeUrl: string; value: Uint8Array }[]; memo: string }): Promise<BroadcastResult>;
+  } | null;
+  if (!n) throw new Error("QoreX is not installed in this browser");
+  const r = await n.signAndBroadcast({
+    chainId: NATIVE_CHAIN_ID,
+    messages: [{ typeUrl: "/cosmos.bank.v1beta1.MsgSend", value: encodeMsgSend(from, to, uqor) }],
+    memo,
+  });
+  if (r.code !== 0) throw new Error(`The payment failed on chain (code ${r.code})`);
+  return r.txHash;
+}

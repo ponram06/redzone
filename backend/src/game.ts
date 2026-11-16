@@ -7,8 +7,8 @@ import type { Arena } from "./arena.js";
 import { actionsToWaypoints } from "./brains/actions.js";
 import type { BrainRegistry } from "./brains/registry.js";
 import type { BrainOutput } from "./brains/types.js";
-import { registryAbi, vaultAbi, type RobotView, type SessionView } from "./chain.js";
-import { decodePqSignature, toEvmAddress, verifyWalletSignature, walletText } from "./qorex.js";
+import { registryAbi, vaultAbi, type NativeTransfer, type RobotView, type SessionView } from "./chain.js";
+import { SIGNUP_MEMO, decodePqSignature, toEvmAddress, toQorAddress, verifyWalletSignature, walletText } from "./qorex.js";
 import { simulate, taskPassed, type Trace } from "./referee.js";
 import type { Relayer } from "./relayer.js";
 import { claimDigest, resultDigest, signDigest, startSessionDigest, utilityDigest, type RefereeKey } from "./signer.js";
@@ -36,7 +36,12 @@ export type ChainReader = {
   openBounties(robotId: number): Promise<{ id: number; amountWei: string }[]>;
   readPqcKey(account: Address): Promise<{ registered: boolean; algorithmId: number; pubkey: Hex }>;
   readPlayer(player: Address): Promise<{ nonce: bigint; attemptsLeft: number }>;
+  readNativeTransfer(txHash: string): Promise<NativeTransfer | null>;
 };
+
+/** One-time sign-up: the player pays `feeUqor` once, with a QoreX (hybrid-signed) transfer to `payTo`. */
+export type SignupConfig = { feeUqor: bigint; payTo: string };
+type PlayerRecord = { evm: Address; qor: string; txHash: string; paidUqor: string; height: number; at: number };
 
 export type GameDeps = {
   arena: Arena;
@@ -51,6 +56,8 @@ export type GameDeps = {
   resultGrace: number;
   /** Sends startSessionFor / recordResult / claimBounty for players. Optional: without it, players relay. */
   relayer?: Relayer | null;
+  /** When set, players pay a small one-time fee before their first session. */
+  signup?: SignupConfig | null;
   now?: () => number;
 };
 
@@ -288,6 +295,67 @@ export class Game {
     });
   }
 
+  // ------------------------------------------------------------------ players
+
+  private playerKey(evm: Address): string {
+    return `player-${evm.slice(2).toLowerCase()}`;
+  }
+
+  private isSignedUp(evm: Address): boolean {
+    return !this.d.signup || this.d.store.getVerdict<PlayerRecord>(this.playerKey(evm)) !== null;
+  }
+
+  /** Everything the website needs to know about a player before they play. */
+  async playerStatus(addressRaw: unknown) {
+    const evm = toEvmAddress(addressRaw);
+    if (!evm) throw new GameError(400, "address must be a qor1… or 0x… address");
+    const [key, state] = await Promise.all([this.d.chain.readPqcKey(evm), this.d.chain.readPlayer(evm)]);
+    const record = this.d.store.getVerdict<PlayerRecord>(this.playerKey(evm));
+    return {
+      evm,
+      qor: toQorAddress(evm),
+      pqKeyRegistered: key.registered,
+      signedUp: this.isSignedUp(evm),
+      signupTx: record?.txHash ?? null,
+      attemptsLeft: state.attemptsLeft,
+      signup: this.d.signup ? { feeUqor: this.d.signup.feeUqor.toString(), payTo: this.d.signup.payTo, memo: SIGNUP_MEMO } : null,
+    };
+  }
+
+  /**
+   * Record a one-time sign-up payment. The transaction must be on chain, successful, a transfer
+   * of at least the fee from this player to the fee address, carrying the sign-up memo. Native
+   * transfers from an account with a PQC key are hybrid-signed, so the payment itself proves the
+   * player controls the account's ML-DSA-87 key. A transaction can sign up only one player.
+   */
+  async registerPlayer(input: { address: unknown; txHash: unknown }) {
+    if (!this.d.signup) throw new GameError(409, "sign-up is not required on this referee");
+    const evm = toEvmAddress(input.address);
+    if (!evm) throw new GameError(400, "bad address");
+    if (typeof input.txHash !== "string" || !/^(0x)?[0-9a-fA-F]{64}$/.test(input.txHash)) throw new GameError(400, "bad txHash");
+    const txHash = input.txHash.replace(/^0x/, "").toUpperCase();
+    const qor = toQorAddress(evm);
+
+    return this.once(`signup-${txHash}`, async () => {
+      const existing = this.d.store.getVerdict<PlayerRecord>(this.playerKey(evm));
+      if (existing) return { signedUp: true, txHash: existing.txHash };
+      if (this.d.store.getVerdict(`signuptx-${txHash}`)) throw new GameError(409, "this payment was already used to sign up");
+
+      const tx = await this.d.chain.readNativeTransfer(txHash);
+      if (!tx) throw new GameError(404, "payment not found on chain yet: wait a few seconds and try again");
+      if (tx.code !== 0) throw new GameError(400, "that transaction failed on chain");
+      if (tx.from !== qor) throw new GameError(400, "the payment was not sent from this account");
+      if (tx.to !== this.d.signup!.payTo) throw new GameError(400, "the payment went to the wrong address");
+      if (tx.uqor < this.d.signup!.feeUqor) throw new GameError(400, "the payment is smaller than the sign-up fee");
+      if (tx.memo.trim() !== SIGNUP_MEMO) throw new GameError(400, `the payment memo must be "${SIGNUP_MEMO}"`);
+
+      const record: PlayerRecord = { evm, qor, txHash, paidUqor: tx.uqor.toString(), height: tx.height, at: this.now() };
+      this.d.store.saveVerdict(`signuptx-${txHash}`, { evm });
+      this.d.store.saveVerdict(this.playerKey(evm), record);
+      return { signedUp: true, txHash };
+    });
+  }
+
   // ---------------------------------------------------------- sessions (QoreX + relayer)
 
   /** What the player's wallet must sign to start a session on `robotId`. */
@@ -304,6 +372,7 @@ export class Game {
     if (!robot) throw new GameError(404, "robot not found");
     if (robot.owner.toLowerCase() === player.toLowerCase()) throw new GameError(409, "owners cannot attack their own robot");
     if (!key.registered) throw new GameError(409, "this account has no ML-DSA-87 key registered yet (register it in QoreX first)");
+    if (!this.isSignedUp(player)) throw new GameError(402, "sign up first: a one-time payment verifies your account");
     if (state.attemptsLeft < 1) throw new GameError(429, "no attempts left today (5 per UTC day)");
     const deadline = this.now() + REQUEST_TTL;
     const digest = startSessionDigest(this.d.chainId, this.d.registry, BigInt(robotId), player, state.nonce, BigInt(deadline));
@@ -320,6 +389,7 @@ export class Game {
     if (!Number.isSafeInteger(robotId) || robotId < 1) throw new GameError(400, "bad robotId");
     if (!player) throw new GameError(400, "bad player address");
     if (!sig) throw new GameError(400, "pqSignature missing or malformed");
+    if (!this.isSignedUp(player)) throw new GameError(402, "sign up first: a one-time payment verifies your account");
     if (!Number.isSafeInteger(deadline) || deadline < this.now() || deadline > this.now() + 3600) {
       throw new GameError(400, "deadline expired or too far away: request a new one");
     }

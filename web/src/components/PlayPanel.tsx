@@ -1,6 +1,9 @@
 import { useEffect, useState } from "react";
-import { api, attemptMessage, formatQor, type Health, type Robot, type Trace, type Verdict } from "../api";
-import { connect, explainQorexError, hasQorex, signPq } from "../qorex";
+import { api, attemptMessage, formatQor, type Health, type PlayerStatus, type Robot, type Trace, type Verdict } from "../api";
+import { connect, explainQorexError, hasQorex, payNative, signPq } from "../qorex";
+
+const qor = (uqor: string) => `${(Number(uqor) / 1e6).toLocaleString(undefined, { maximumFractionDigits: 6 })} QOR`;
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 type Props = {
   health: Health;
@@ -16,6 +19,7 @@ const short = (h: string) => `${h.slice(0, 8)}…${h.slice(-6)}`;
 export function PlayPanel({ health, robot, maxInstruction, onResult }: Props) {
   const [address, setAddress] = useState<string | null>(null);
   const [attemptsLeft, setAttemptsLeft] = useState<number | null>(null);
+  const [player, setPlayer] = useState<PlayerStatus | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [instruction, setInstruction] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
@@ -44,9 +48,39 @@ export function PlayPanel({ health, robot, maxInstruction, onResult }: Props) {
     }
   }
 
+  const loadPlayer = async (a: string) => {
+    const p = await api.player(a);
+    setPlayer(p);
+    setAttemptsLeft(p.attemptsLeft);
+    return p;
+  };
+
   const onConnect = () =>
     run("Waiting for QoreX…", async () => {
-      setAddress(await connect());
+      const a = await connect();
+      setAddress(a);
+      await loadPlayer(a);
+    });
+
+  /** One-time sign-up: a small QOR payment from QoreX (hybrid-signed), then registered with the referee. */
+  const onSignUp = () =>
+    run("Approve the one-time payment in QoreX…", async () => {
+      if (!address || !player?.signup) return;
+      const txHash = await payNative(address, player.signup.payTo, player.signup.feeUqor, player.signup.memo);
+      setBusy("Waiting for the payment to be confirmed…");
+      let lastError: unknown = null;
+      for (let i = 0; i < 8; i++) {
+        try {
+          await api.registerPlayer(address, txHash);
+          await loadPlayer(address);
+          return;
+        } catch (e) {
+          lastError = e;
+          if (!/not found/i.test((e as Error).message)) throw e;
+          await sleep(3000);
+        }
+      }
+      throw lastError;
     });
 
   const onStart = () =>
@@ -109,7 +143,23 @@ export function PlayPanel({ health, robot, maxInstruction, onResult }: Props) {
         </div>
       )}
 
-      {address && !session && (
+      {address && player && !player.pqKeyRegistered && (
+        <p className="error-text">This QoreX account has no quantum-safe (ML-DSA-87) key registered yet. Register it in QoreX, then reconnect.</p>
+      )}
+
+      {address && player?.pqKeyRegistered && !player.signedUp && player.signup && (
+        <>
+          <p className="small muted">
+            New here? Verify your account once with a tiny payment of {qor(player.signup.feeUqor)}. QoreX signs it with your
+            quantum-safe key. After that, every round is free.
+          </p>
+          <button className="primary" disabled={!!busy} onClick={onSignUp}>
+            Verify account (one-time {qor(player.signup.feeUqor)})
+          </button>
+        </>
+      )}
+
+      {address && player?.pqKeyRegistered && player.signedUp && !session && (
         <>
           <p className="small muted">
             Starting a session uses 1 of your 5 daily attempts. QoreX signs the request with your ML-DSA-87 key; the referee

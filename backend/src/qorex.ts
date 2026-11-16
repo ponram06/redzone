@@ -51,3 +51,11 @@ export function toEvmAddress(account: unknown): Address | null {
     return null;
   }
 }
+
+/** 0x… → qor1… (same 20 bytes). */
+export function toQorAddress(evm: Address): string {
+  return bech32.encode("qor", bech32.toWords(hexToBytes(evm)));
+}
+
+/** Memo the one-time sign-up payment must carry. */
+export const SIGNUP_MEMO = "RedZone signup";

@@ -9,7 +9,8 @@ import { buildApp } from "../src/app.js";
 import { FACILITY } from "../src/arena.js";
 import { BrainRegistry, LEGACY_DEMO_HASH } from "../src/brains/registry.js";
 import { registryAbi, vaultAbi, type RobotView, type SessionView } from "../src/chain.js";
-import { walletMessage } from "../src/qorex.js";
+import { toQorAddress, walletMessage } from "../src/qorex.js";
+import type { NativeTransfer } from "../src/chain.js";
 import type { RelayReceipt, Relayer } from "../src/relayer.js";
 import { Game, attemptMessage } from "../src/game.js";
 import { claimDigest, resultDigest, startSessionDigest, utilityDigest } from "../src/signer.js";
@@ -54,6 +55,10 @@ class FakeRelayer implements Relayer {
   }
 }
 let relayer: FakeRelayer;
+const PAY_TO = "qor19n2e0wjparavk47wevc8mag90ce8nzysd8lp2d";
+const FEE = 100000n;
+let txs: Record<string, NativeTransfer>;
+const txHash = (n: number) => n.toString(16).padStart(64, "0").toUpperCase();
 let nonces: Record<string, bigint>;
 
 const robot: RobotView = {
@@ -102,8 +107,17 @@ beforeEach(async () => {
       return { registered: !!k, algorithmId: k ? 1 : 0, pubkey: (k ? toHex(k) : "0x") as Hex };
     },
     readPlayer: async (a: Address) => ({ nonce: nonces[a.toLowerCase()] ?? 0n, attemptsLeft: 5 }),
+    readNativeTransfer: async (h: string) => txs[h.replace(/^0x/, "").toUpperCase()] ?? null,
   };
-  const game = new Game({ arena: FACILITY, brains, store, key, chain, chainId: 9800, registry: REG, vault: VAULT, sessionTtl: 600, resultGrace: 3600, relayer, now: () => NOW });
+  txs = {
+    [txHash(1)]: { code: 0, from: toQorAddress(player.address), to: PAY_TO, uqor: FEE, memo: "RedZone signup", height: 10 },
+    [txHash(2)]: { code: 0, from: toQorAddress(stranger.address), to: PAY_TO, uqor: FEE, memo: "RedZone signup", height: 11 },
+    [txHash(3)]: { code: 0, from: toQorAddress(player.address), to: PAY_TO, uqor: FEE - 1n, memo: "RedZone signup", height: 12 },
+    [txHash(4)]: { code: 0, from: toQorAddress(player.address), to: PAY_TO, uqor: FEE, memo: "hello", height: 13 },
+    [txHash(5)]: { code: 0, from: toQorAddress(player.address), to: toQorAddress(stranger.address), uqor: FEE, memo: "RedZone signup", height: 14 },
+    [txHash(6)]: { code: 5, from: toQorAddress(player.address), to: PAY_TO, uqor: FEE, memo: "RedZone signup", height: 15 },
+  };
+  const game = new Game({ arena: FACILITY, brains, store, key, chain, chainId: 9800, registry: REG, vault: VAULT, sessionTtl: 600, resultGrace: 3600, relayer, signup: { feeUqor: FEE, payTo: PAY_TO }, now: () => NOW });
   app = await buildApp({
     game,
     arena: FACILITY,
@@ -259,7 +273,38 @@ describe("QoreX players and the relayer", () => {
     expect(again.relay.claimTxs).toHaveLength(1);
   });
 
+  const signUp = (address: string, n: number) => app.inject({ method: "POST", url: "/player/register", payload: { address, txHash: txHash(n) } });
+
+  it("sessions need the one-time sign-up first", async () => {
+    expect((await app.inject({ url: `/session/request?robotId=1&player=${player.address}` })).statusCode).toBe(402);
+    const status = (await app.inject({ url: `/player/${toQorAddress(player.address)}` })).json();
+    expect(status.signedUp).toBe(false);
+    expect(status.pqKeyRegistered).toBe(true);
+    expect(status.signup).toEqual({ feeUqor: "100000", payTo: PAY_TO, memo: "RedZone signup" });
+    expect((await signUp(player.address, 1)).statusCode).toBe(200);
+    expect((await app.inject({ url: `/player/${player.address}` })).json().signedUp).toBe(true);
+    expect((await app.inject({ url: `/session/request?robotId=1&player=${player.address}` })).statusCode).toBe(200);
+  });
+
+  it("sign-up refuses bad payments", async () => {
+    expect((await signUp(player.address, 2)).statusCode).toBe(400); // paid by someone else
+    expect((await signUp(player.address, 3)).statusCode).toBe(400); // too small
+    expect((await signUp(player.address, 4)).statusCode).toBe(400); // wrong memo
+    expect((await signUp(player.address, 5)).statusCode).toBe(400); // wrong recipient
+    expect((await signUp(player.address, 6)).statusCode).toBe(400); // failed on chain
+    expect((await signUp(player.address, 99)).statusCode).toBe(404); // not on chain
+    expect((await app.inject({ method: "POST", url: "/player/register", payload: { address: player.address, txHash: "nope" } })).statusCode).toBe(400);
+  });
+
+  it("one payment signs up only one player", async () => {
+    expect((await signUp(stranger.address, 2)).statusCode).toBe(200);
+    expect((await signUp(player.address, 2)).statusCode).toBe(409); // already used
+    // Same hash replayed for the same player is idempotent.
+    expect((await signUp(stranger.address, 2)).statusCode).toBe(200);
+  });
+
   it("session request, QoreX signature, relayed startSessionFor", async () => {
+    await signUp(player.address, 1);
     const req = (await app.inject({ url: `/session/request?robotId=1&player=${player.address}` })).json();
     expect(req.text).toContain("action: StartSession");
     expect(req.digest).toBe(startSessionDigest(9800, REG, 1n, player.address, 0n, BigInt(req.deadline)));
@@ -274,6 +319,7 @@ describe("QoreX players and the relayer", () => {
   });
 
   it("a bad or replayed StartSession signature costs no gas", async () => {
+    await signUp(player.address, 1);
     const req = (await app.inject({ url: `/session/request?robotId=1&player=${player.address}` })).json();
     const forged = qorexSign(strangerPq.secretKey, req.text);
     const res = await app.inject({ method: "POST", url: "/session/start", payload: { robotId: 1, player: player.address, deadline: req.deadline, pqSignature: forged } });
@@ -286,6 +332,7 @@ describe("QoreX players and the relayer", () => {
   });
 
   it("session requests are refused for owners, unknown keys and bad input", async () => {
+    await signUp(player.address, 1);
     expect((await app.inject({ url: `/session/request?robotId=1&player=${robot.owner}` })).statusCode).toBe(409);
     const unknown = privateKeyToAccount(generatePrivateKey()).address;
     expect((await app.inject({ url: `/session/request?robotId=1&player=${unknown}` })).statusCode).toBe(409);

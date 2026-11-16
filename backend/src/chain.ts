@@ -163,3 +163,29 @@ export async function readPlayer(player: Address): Promise<{ nonce: bigint; atte
   ]);
   return { nonce, attemptsLeft: Number(left) };
 }
+
+export type NativeTransfer = { code: number; from: string; to: string; uqor: bigint; memo: string; height: number };
+
+/** A confirmed native transaction, read over REST: its first MsgSend, if any. Null when not found. */
+export async function readNativeTransfer(txHash: string, rest = process.env.QORE_REST_URL ?? "https://api-testnet.qore.host"): Promise<NativeTransfer | null> {
+  if (!/^(0x)?[0-9a-fA-F]{64}$/.test(txHash)) return null;
+  const hash = txHash.replace(/^0x/, "").toUpperCase();
+  const res = await fetch(`${rest}/cosmos/tx/v1beta1/txs/${hash}`, { signal: AbortSignal.timeout(20_000) });
+  if (res.status === 404 || res.status === 400) return null;
+  if (!res.ok) throw new Error(`tx lookup failed: HTTP ${res.status}`);
+  const body = (await res.json()) as {
+    tx?: { body?: { memo?: string; messages?: { "@type"?: string; from_address?: string; to_address?: string; amount?: { denom: string; amount: string }[] }[] } };
+    tx_response?: { code?: number; height?: string };
+  };
+  const send = body.tx?.body?.messages?.find((m) => m["@type"] === "/cosmos.bank.v1beta1.MsgSend");
+  if (!send) return { code: body.tx_response?.code ?? 0, from: "", to: "", uqor: 0n, memo: body.tx?.body?.memo ?? "", height: Number(body.tx_response?.height ?? 0) };
+  const uqor = (send.amount ?? []).filter((c) => c.denom === "uqor").reduce((s, c) => s + BigInt(c.amount), 0n);
+  return {
+    code: body.tx_response?.code ?? 0,
+    from: send.from_address ?? "",
+    to: send.to_address ?? "",
+    uqor,
+    memo: body.tx?.body?.memo ?? "",
+    height: Number(body.tx_response?.height ?? 0),
+  };
+}

@@ -89,7 +89,20 @@ export type Verdict = {
 export const attemptMessage = (chainId: number, registry: string, sessionId: number, instruction: string) =>
   `RedZone attempt\nchain: ${chainId}\nregistry: ${registry.toLowerCase()}\nsession: ${sessionId}\ninstruction: ${instruction.replace(/\r\n?/g, "\n").trim()}`;
 
+export type PlayerStatus = {
+  evm: string;
+  qor: string;
+  pqKeyRegistered: boolean;
+  signedUp: boolean;
+  signupTx: string | null;
+  attemptsLeft: number;
+  signup: { feeUqor: string; payTo: string; memo: string } | null;
+};
+
 export const api = {
+  player: (address: string) => call<PlayerStatus>(`/player/${encodeURIComponent(address)}`),
+  registerPlayer: (address: string, txHash: string) =>
+    call<{ signedUp: boolean; txHash: string }>("/player/register", { method: "POST", body: JSON.stringify({ address, txHash }) }),
   sessionRequest: (robotId: number, player: string) =>
     call<SessionRequest>(`/session/request?robotId=${robotId}&player=${encodeURIComponent(player)}`),
   sessionStart: (body: { robotId: number; player: string; deadline: number; pqSignature: string }) =>
