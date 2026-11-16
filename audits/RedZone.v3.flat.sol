@@ -631,10 +631,13 @@ contract RobotRegistryV3 is PQAccess {
 
     // ---------------------------------------------------------------------- state
 
-    /// @notice The referee service's ML-DSA-87 public key.
-    bytes public refereePubkey;
-    /// @notice A proposed referee key and the time it may be activated (0 = none pending).
-    bytes public pendingRefereePubkey;
+    /// @notice keccak256 of the referee service's ML-DSA-87 public key. Only the 32-byte hash is
+    ///         stored (QoreChain limits how much state a deployment may write); the referee passes
+    ///         its 2592-byte key with each verdict and the contract checks it against this hash.
+    ///         The key is published in the RefereeProposed event and on the project's deployment record.
+    bytes32 public refereeKeyHash;
+    /// @notice Hash of a proposed referee key, and the time it may be activated (0 = none pending).
+    bytes32 public pendingRefereeKeyHash;
     uint64 public refereeActivatesAt;
 
     uint256 public nextRobotId = 1;
@@ -652,7 +655,7 @@ contract RobotRegistryV3 is PQAccess {
     event Defended(uint256 indexed sessionId, uint256 indexed robotId, address indexed player, bytes32 replayHash);
     event Breached(uint256 indexed sessionId, uint256 indexed robotId, address indexed player, bytes32 replayHash);
     event UtilityRecorded(uint256 indexed robotId, uint8 tasksPassed, bytes32 replayHash);
-    event RefereeProposed(bytes32 indexed pubkeyHash, uint256 activatesAt);
+    event RefereeProposed(bytes32 indexed pubkeyHash, uint256 activatesAt, bytes pubkey);
     event RefereeUpdated(bytes32 indexed pubkeyHash);
 
     // --------------------------------------------------------------------- errors
@@ -667,22 +670,24 @@ contract RobotRegistryV3 is PQAccess {
     error BadUtility();
     error EmptyPubkey();
     error NoPendingReferee();
+    error NotReferee();
     error RefereeDelayNotOver();
     error StartRequestTooLong();
 
     // ------------------------------------------------------------------ modifiers
 
-    /// @notice Only the referee, proven by its ML-DSA-87 signature over `digest`.
+    /// @notice Only the referee (onlyReferee check), proven by its ML-DSA-87 signature over `digest`.
+    ///         Called first in every referee-only function, before any state is read or written.
     /// @dev Like onlyAdmin, this replaces a msg.sender check with a post-quantum signature check:
     ///      only the holder of the referee ML-DSA-87 key can produce a passing signature.
     ///      Referee digests are single use by construction, so no separate nonce is needed: a
     ///      result can be recorded once per session (the AlreadyRecorded check on its outcome),
     ///      only within SESSION_TTL + RESULT_GRACE of its start, and a utility digest includes the
     ///      robot's utilityNonce.
-    modifier onlyReferee(bytes32 digest, bytes calldata refereeSig) {
-        if (!MLDSA87.verify(refereePubkey, refereeSig, abi.encodePacked(digest))) revert PQGuard.PQCSignatureInvalid();
+    function _onlyReferee(bytes32 digest, bytes calldata refereePubkey_, bytes calldata refereeSig) internal {
+        if (keccak256(refereePubkey_) != refereeKeyHash) revert NotReferee();
+        if (!MLDSA87.verify(refereePubkey_, refereeSig, abi.encodePacked(digest))) revert PQGuard.PQCSignatureInvalid();
         _useDigest(digest);
-        _;
     }
 
     modifier notExpired(uint256 deadline) {
@@ -702,8 +707,8 @@ contract RobotRegistryV3 is PQAccess {
         MLDSA87.checkPubkey(refereePubkey_);
         bytes32 proofDigest = keccak256(abi.encode(DEPLOY_TYPEHASH, keccak256("RedZone.RobotRegistry.v3"), block.chainid, msg.sender));
         if (!MLDSA87.verify(refereePubkey_, refereeProof, abi.encodePacked(proofDigest))) revert PQGuard.PQCSignatureInvalid();
-        refereePubkey = refereePubkey_;
-        emit RefereeUpdated(keccak256(refereePubkey_));
+        refereeKeyHash = keccak256(refereePubkey_);
+        emit RefereeUpdated(refereeKeyHash);
     }
 
     // -------------------------------------------------------------------- referee
@@ -717,24 +722,29 @@ contract RobotRegistryV3 is PQAccess {
         validDeadline(deadline)
         onlyAdmin(proposeRefereeDigest(keccak256(newPubkey), nonces[admin], deadline), adminSig)
     {
+        // The admin signature (checked above) consumed nonce n; the new key signs the same digest.
+        _setPendingReferee(newPubkey, proposeRefereeDigest(keccak256(newPubkey), nonces[admin] - 1, deadline), newRefereeSig);
+    }
+
+    function _setPendingReferee(bytes calldata newPubkey, bytes32 proposal, bytes calldata newRefereeSig) internal {
         if (newPubkey.length == 0) revert EmptyPubkey();
         MLDSA87.checkPubkey(newPubkey);
-        bytes32 proof = proposeRefereeDigest(keccak256(newPubkey), nonces[admin] - 1, deadline);
-        if (!MLDSA87.verify(newPubkey, newRefereeSig, abi.encodePacked(proof))) revert PQGuard.PQCSignatureInvalid();
-        pendingRefereePubkey = newPubkey;
-        uint256 activatesAt = block.timestamp + REFEREE_DELAY;
-        refereeActivatesAt = uint64(activatesAt);
-        emit RefereeProposed(keccak256(newPubkey), activatesAt);
+        if (!MLDSA87.verify(newPubkey, newRefereeSig, abi.encodePacked(proposal))) revert PQGuard.PQCSignatureInvalid();
+        bytes32 h = keccak256(newPubkey);
+        pendingRefereeKeyHash = h;
+        refereeActivatesAt = uint64(block.timestamp + REFEREE_DELAY);
+        emit RefereeProposed(h, block.timestamp + REFEREE_DELAY, newPubkey);
     }
 
     /// @notice Make the proposed referee key active once the delay is over. Anyone may call.
     function activateReferee() external {
-        if (pendingRefereePubkey.length == 0) revert NoPendingReferee();
+        bytes32 pending = pendingRefereeKeyHash;
+        if (pending == bytes32(0)) revert NoPendingReferee();
         if (block.timestamp < refereeActivatesAt) revert RefereeDelayNotOver();
-        refereePubkey = pendingRefereePubkey;
-        delete pendingRefereePubkey;
+        refereeKeyHash = pending;
+        pendingRefereeKeyHash = bytes32(0);
         refereeActivatesAt = 0;
-        emit RefereeUpdated(keccak256(refereePubkey));
+        emit RefereeUpdated(pending);
     }
 
     // --------------------------------------------------------------------- robots
@@ -807,11 +817,30 @@ contract RobotRegistryV3 is PQAccess {
     ///      so a player's win is never lost to a pause. The vault decides when such a win is paid.
     ///      A verdict for a round played against an older brain is recorded (and can win bounties)
     ///      but does not count toward the new brain's stats.
-    function recordResult(uint256 sessionId, bool breached, bytes32 replayHash, uint256 deadline, bytes calldata refereeSig)
-        external
-        notExpired(deadline)
-        onlyReferee(resultDigest(sessionId, _sessions[sessionId].robotId, _sessions[sessionId].player, breached, replayHash, deadline), refereeSig)
-    {
+    function recordResult(
+        uint256 sessionId,
+        bool breached,
+        bytes32 replayHash,
+        uint256 deadline,
+        bytes calldata refereePubkey_,
+        bytes calldata refereeSig
+    ) external notExpired(deadline) {
+        _onlyReferee(_resultDigestFor(sessionId, breached, replayHash, deadline), refereePubkey_, refereeSig);
+        _applyResult(sessionId, breached, replayHash);
+    }
+
+    function _resultDigestFor(uint256 sessionId, bool breached, bytes32 replayHash, uint256 deadline) internal view returns (bytes32) {
+        Session storage s = _sessions[sessionId];
+        return resultDigest(sessionId, s.robotId, s.player, breached, replayHash, deadline);
+    }
+
+    function _utilityDigestFor(uint256 robotId, uint8 tasksPassed, bytes32 replayHash, uint256 deadline) internal view returns (bytes32) {
+        return utilityDigest(robotId, tasksPassed, replayHash, _robots[robotId].utilityNonce, deadline);
+    }
+
+    /// @dev Body of recordResult, split out to keep the stack small. Runs only after the
+    ///      referee check above has passed.
+    function _applyResult(uint256 sessionId, bool breached, bytes32 replayHash) internal {
         Session storage s = _sessions[sessionId];
         if (s.player == address(0)) revert UnknownSession();
         if (s.outcome != Outcome.None) revert AlreadyRecorded();
@@ -835,12 +864,19 @@ contract RobotRegistryV3 is PQAccess {
 
     /// @notice Record how many of the UTILITY_TASKS everyday tasks the robot completed.
     /// @dev The robot's utilityNonce is in the signed digest, so an old score can't be replayed.
-    function recordUtility(uint256 robotId, uint8 tasksPassed, bytes32 replayHash, uint256 deadline, bytes calldata refereeSig)
+    function recordUtility(
+        uint256 robotId,
+        uint8 tasksPassed,
+        bytes32 replayHash,
+        uint256 deadline,
+        bytes calldata refereePubkey_,
+        bytes calldata refereeSig
+    )
         external
         whenNotPaused
         notExpired(deadline)
-        onlyReferee(utilityDigest(robotId, tasksPassed, replayHash, _robots[robotId].utilityNonce, deadline), refereeSig)
     {
+        _onlyReferee(_utilityDigestFor(robotId, tasksPassed, replayHash, deadline), refereePubkey_, refereeSig);
         if (tasksPassed > UTILITY_TASKS) revert BadUtility();
         Robot storage r = _robot(robotId);
         r.utilityNonce = r.utilityNonce + 1;
