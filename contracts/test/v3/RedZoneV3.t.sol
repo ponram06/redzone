@@ -155,7 +155,7 @@ contract RedZoneV3Test is Test {
         RobotRegistryV3.Session memory s = reg.getSession(sid);
         uint256 d = uint256(s.startedAt) + 70 minutes;
         bytes32 dg = reg.resultDigest(sid, s.robotId, s.player, breached, keccak256("replay"), d);
-        reg.recordResult(sid, breached, keccak256("replay"), d, _sig(refereePk, dg));
+        reg.recordResult(sid, breached, keccak256("replay"), d, refereePk, _sig(refereePk, dg));
     }
 
     function _deposit(uint256 amount) internal returns (uint256 id) {
@@ -556,14 +556,14 @@ contract RedZoneV3Test is Test {
         uint256 sid = _start(player, playerPk);
         uint256 rd = block.timestamp + 70 minutes;
         bytes32 rdg = reg.resultDigest(sid, robotId, player, true, keccak256("r"), rd);
-        vm.expectRevert(PQGuard.PQCSignatureInvalid.selector);
-        reg.recordResult(sid, true, keccak256("r"), rd, _sig(newPk, rdg));
+        vm.expectRevert(RobotRegistryV3.NotReferee.selector); // not active yet
+        reg.recordResult(sid, true, keccak256("r"), rd, newPk, _sig(newPk, rdg));
         vm.expectRevert(RobotRegistryV3.RefereeDelayNotOver.selector);
         reg.activateReferee();
 
         vm.warp(block.timestamp + 2 days);
         reg.activateReferee();
-        assertEq(reg.refereePubkey(), newPk);
+        assertEq(reg.refereeKeyHash(), keccak256(newPk));
         vm.expectRevert(RobotRegistryV3.NoPendingReferee.selector);
         reg.activateReferee();
     }
@@ -576,14 +576,14 @@ contract RedZoneV3Test is Test {
         // a verdict signed for another player or robot does not fit this session
         bytes32 wrongPlayer = reg.resultDigest(sid, robotId, player2, true, keccak256("r"), d);
         vm.expectRevert(PQGuard.PQCSignatureInvalid.selector);
-        reg.recordResult(sid, true, keccak256("r"), d, _sig(refereePk, wrongPlayer));
+        reg.recordResult(sid, true, keccak256("r"), d, refereePk, _sig(refereePk, wrongPlayer));
         bytes32 wrongRobot = reg.resultDigest(sid, robotId + 1, player, true, keccak256("r"), d);
         vm.expectRevert(PQGuard.PQCSignatureInvalid.selector);
-        reg.recordResult(sid, true, keccak256("r"), d, _sig(refereePk, wrongRobot));
+        reg.recordResult(sid, true, keccak256("r"), d, refereePk, _sig(refereePk, wrongRobot));
         // flipping the outcome breaks the signature
         bytes32 defended = reg.resultDigest(sid, robotId, player, false, keccak256("r"), d);
         vm.expectRevert(PQGuard.PQCSignatureInvalid.selector);
-        reg.recordResult(sid, true, keccak256("r"), d, _sig(refereePk, defended));
+        reg.recordResult(sid, true, keccak256("r"), d, refereePk, _sig(refereePk, defended));
     }
 
     function test_Attack_ResultReplayAndTiming() public {
@@ -594,14 +594,14 @@ contract RedZoneV3Test is Test {
         uint256 d = uint256(s.startedAt) + 70 minutes;
         bytes32 dg = reg.resultDigest(sid, robotId, player, true, keccak256("replay"), d);
         vm.expectRevert(RobotRegistryV3.AlreadyRecorded.selector);
-        reg.recordResult(sid, true, keccak256("replay"), d, _sig(refereePk, dg));
+        reg.recordResult(sid, true, keccak256("replay"), d, refereePk, _sig(refereePk, dg));
 
         uint256 sid2 = _start(player, playerPk);
         vm.warp(block.timestamp + 70 minutes + 1);
         d = block.timestamp + 1;
         dg = reg.resultDigest(sid2, robotId, player, true, keccak256("replay"), d);
         vm.expectRevert(RobotRegistryV3.ResultTooLate.selector);
-        reg.recordResult(sid2, true, keccak256("replay"), d, _sig(refereePk, dg));
+        reg.recordResult(sid2, true, keccak256("replay"), d, refereePk, _sig(refereePk, dg));
     }
 
     function test_Attack_SessionRequestReplay() public {
@@ -648,12 +648,12 @@ contract RedZoneV3Test is Test {
         uint256 d = _dl();
         bytes32 dg = reg.utilityDigest(robotId, 11, keccak256("u"), 0, d);
         vm.expectRevert(RobotRegistryV3.BadUtility.selector);
-        reg.recordUtility(robotId, 11, keccak256("u"), d, _sig(refereePk, dg));
+        reg.recordUtility(robotId, 11, keccak256("u"), d, refereePk, _sig(refereePk, dg));
         dg = reg.utilityDigest(robotId, 8, keccak256("u"), 0, d);
         bytes memory s = _sig(refereePk, dg);
-        reg.recordUtility(robotId, 8, keccak256("u"), d, s);
+        reg.recordUtility(robotId, 8, keccak256("u"), d, refereePk, s);
         vm.expectRevert(PQGuard.PQCSignatureInvalid.selector);
-        reg.recordUtility(robotId, 8, keccak256("u"), d, s);
+        reg.recordUtility(robotId, 8, keccak256("u"), d, refereePk, s);
     }
 
     function test_Attack_PrecompileMissingFailsClosed() public {
@@ -728,12 +728,12 @@ contract RedZoneV3Test is Test {
         uint256 d = uint256(reg.getSession(sid).startedAt) + 70 minutes;
         bytes32 dg = reg.resultDigest(sid, robotId, player, true, keccak256("r"), d);
         bytes memory s1 = _sig(refereePk, dg);
-        reg.recordResult(sid, true, keccak256("r"), d, s1);
+        reg.recordResult(sid, true, keccak256("r"), d, refereePk, s1);
         assertTrue(reg.usedDigests(dg));
         bytes memory s2 = bytes.concat(s1); // same message, different bytes (another valid ML-DSA signature)
         s2[4626] = 0x01;
         vm.expectRevert(abi.encodeWithSelector(PQAccess.DigestUsed.selector, dg));
-        reg.recordResult(sid, true, keccak256("r"), d, s2);
+        reg.recordResult(sid, true, keccak256("r"), d, refereePk, s2);
     }
 
     function test_Stage2_UserDigestsMarkedUsed() public {
@@ -816,7 +816,7 @@ contract RedZoneV3Test is Test {
         uint256 d = block.timestamp;
         bytes32 dg = reg.resultDigest(sid2, robotId, player, true, keccak256("r"), d);
         vm.expectRevert(RobotRegistryV3.ResultTooLate.selector);
-        reg.recordResult(sid2, true, keccak256("r"), d, _sig(refereePk, dg));
+        reg.recordResult(sid2, true, keccak256("r"), d, refereePk, _sig(refereePk, dg));
     }
 
     function testFuzz_Stage2_ResultWindow(uint32 delay) public {
@@ -828,9 +828,9 @@ contract RedZoneV3Test is Test {
         bytes memory sg = _sig(refereePk, dg);
         if (block.timestamp > t0 + 70 minutes) {
             vm.expectRevert(RobotRegistryV3.ResultTooLate.selector);
-            reg.recordResult(sid, false, keccak256("r"), d, sg);
+            reg.recordResult(sid, false, keccak256("r"), d, refereePk, sg);
         } else {
-            reg.recordResult(sid, false, keccak256("r"), d, sg);
+            reg.recordResult(sid, false, keccak256("r"), d, refereePk, sg);
             assertEq(uint8(reg.getSession(sid).outcome), uint8(RobotRegistryV3.Outcome.Defended));
         }
     }
@@ -869,7 +869,7 @@ contract RedZoneV3Test is Test {
     function _utility(uint8 n) internal {
         uint256 d = _dl();
         bytes32 dg = reg.utilityDigest(robotId, n, keccak256("u"), reg.getRobot(robotId).utilityNonce, d);
-        reg.recordUtility(robotId, n, keccak256("u"), d, _sig(refereePk, dg));
+        reg.recordUtility(robotId, n, keccak256("u"), d, refereePk, _sig(refereePk, dg));
     }
 
     function _playMany(uint256 defended, uint256 breached) internal {
@@ -937,7 +937,7 @@ contract RedZoneV3Test is Test {
         reg.startSessionFor(999, player, d, _sig(playerPk, dg));
         dg = reg.utilityDigest(999, 5, keccak256("u"), 0, d);
         vm.expectRevert(RobotRegistryV3.UnknownRobot.selector);
-        reg.recordUtility(999, 5, keccak256("u"), d, _sig(refereePk, dg));
+        reg.recordUtility(999, 5, keccak256("u"), d, refereePk, _sig(refereePk, dg));
         dg = reg.updateBrainDigest(robotId, keccak256("b"), reg.nonces(owner), d);
         vm.expectRevert(PQGuard.PQCSignatureInvalid.selector);
         reg.updateBrain(robotId, keccak256("b"), d, _sig(attackerPk, dg));
@@ -991,6 +991,18 @@ contract RedZoneV3Test is Test {
         vm.expectRevert(abi.encodeWithSelector(MLDSA87.BadSignatureLength.selector, 0));
         reg.proposeReferee(newPk, d, _sig(adminPk, dg), "");
         reg.proposeReferee(newPk, d, _sig(adminPk, dg), _sig(newPk, dg));
-        assertEq(reg.pendingRefereePubkey(), newPk);
+        assertEq(reg.pendingRefereeKeyHash(), keccak256(newPk));
+    }
+
+    /// Only the key matching refereeKeyHash can judge, even with a valid signature of its own.
+    function test_Attack_OtherKeyCannotJudge() public {
+        uint256 sid = _start(player, playerPk);
+        uint256 d = block.timestamp + 70 minutes;
+        bytes32 dg = reg.resultDigest(sid, robotId, player, true, keccak256("r"), d);
+        vm.expectRevert(RobotRegistryV3.NotReferee.selector);
+        reg.recordResult(sid, true, keccak256("r"), d, attackerPk, _sig(attackerPk, dg));
+        vm.expectRevert(PQGuard.PQCSignatureInvalid.selector); // right key, wrong signer
+        reg.recordResult(sid, true, keccak256("r"), d, refereePk, _sig(attackerPk, dg));
+        assertEq(reg.refereeKeyHash(), keccak256(refereePk));
     }
 }

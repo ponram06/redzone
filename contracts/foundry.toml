@@ -8,6 +8,7 @@ solc_version = "0.8.28"
 optimizer = true
 optimizer_runs = 200
 remappings = ["forge-std/=lib/forge-std/src/", "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/"]
+fs_permissions = [{ access = "read", path = "./.v3-proofs.json" }]
 
 # Public QoreChain EVM endpoints. Use them by name:
 #   forge script ... --rpc-url qorechain_testnet

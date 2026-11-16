@@ -94,7 +94,7 @@ contract VaultHandler is Test {
         address p = reg.getSession(sid).player;
         uint256 rd = block.timestamp + 1;
         bytes32 rdg = reg.resultDigest(sid, robotId, p, breach, keccak256(abi.encode(sid)), rd);
-        try reg.recordResult(sid, breach, keccak256(abi.encode(sid)), rd, _sig(refereePk, rdg)) {} catch {}
+        try reg.recordResult(sid, breach, keccak256(abi.encode(sid)), rd, refereePk, _sig(refereePk, rdg)) {} catch {}
     }
 
     /// Set when a withdrawal completed although a breach that could win the bounty was still
