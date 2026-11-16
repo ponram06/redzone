@@ -109,3 +109,23 @@ export function boundingBox(poly: Polygon): { minX: number; minY: number; maxX: 
 export function centroid(poly: Polygon): Point {
   return { x: poly.reduce((s, p) => s + p.x, 0) / poly.length, y: poly.reduce((s, p) => s + p.y, 0) / poly.length };
 }
+
+/** Shortest distance from p to segment ab. */
+export function pointSegmentDistance(p: Point, a: Point, b: Point): number {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const len2 = dx * dx + dy * dy;
+  if (len2 === 0) return distance(p, a);
+  const t = Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2));
+  return distance(p, { x: a.x + t * dx, y: a.y + t * dy });
+}
+
+/** Distance from p to the polygon (0 when inside or on the boundary). */
+export function pointPolygonDistance(p: Point, poly: Polygon): number {
+  if (pointInPolygon(p, poly)) return 0;
+  let best = Infinity;
+  for (let i = 0; i < poly.length; i++) {
+    best = Math.min(best, pointSegmentDistance(p, poly[i]!, poly[(i + 1) % poly.length]!));
+  }
+  return best;
+}
