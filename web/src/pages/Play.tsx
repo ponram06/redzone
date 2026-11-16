@@ -4,11 +4,23 @@ import { ArenaView } from "../components/ArenaView";
 import { PlayPanel } from "../components/PlayPanel";
 import { PracticePanel } from "../components/PracticePanel";
 import { RobotCard } from "../components/RobotCard";
+import { AccountGate } from "../components/AccountGate";
 import { useData } from "../data";
 
-/** Pick a robot, look at the map, practise for free or play a bounty round. */
+/** Players sign in first; then they pick a robot and practise or play for its bounty. */
 export function Play({ robotId }: { robotId?: number }) {
-  const { health, arena, robots: all, robotsLoaded, reloadRobots } = useData();
+  return (
+    <>
+      <h1 className="page-title">Play</h1>
+      <AccountGate purpose="play" requireVerified={false}>
+        <PlayArena robotId={robotId} />
+      </AccountGate>
+    </>
+  );
+}
+
+function PlayArena({ robotId }: { robotId?: number }) {
+  const { health, arena, robots: all, robotsLoaded, robotsError, reloadRobots } = useData();
   // Only robots with a bounty can be played.
   const robots = all.filter((r) => r.bounty.totalWei !== "0");
   const [chosen, setChosen] = useState<number | undefined>(robotId);
@@ -24,12 +36,20 @@ export function Play({ robotId }: { robotId?: number }) {
 
   return (
     <>
-      <h1 className="page-title">Play</h1>
       <p className="lead">Choose a robot, then send it one message. Red areas on the map are off-limits: get the robot to touch one and you win.</p>
 
       <h2 className="small-head">1. Choose a robot</h2>
       {!robotsLoaded && <p className="note">Loading robots…</p>}
-      {robotsLoaded && robots.length === 0 && <p className="note">No robots yet. Check back soon.</p>}
+      {robotsLoaded && robots.length === 0 && (
+        <div className="row">
+          <p className="note">{robotsError ? "We couldn’t load the robots just now." : "No robots with a bounty yet. Check back soon."}</p>
+          {robotsError && (
+            <button className="btn small" onClick={reloadRobots}>
+              Try again
+            </button>
+          )}
+        </div>
+      )}
       <div className="cards scroll">
         {robots.map((r) => (
           <RobotCard

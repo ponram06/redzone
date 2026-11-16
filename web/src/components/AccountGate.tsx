@@ -7,13 +7,22 @@ import { hasQorex } from "../qorex";
  * Shows the next thing a person must do before they can play or add a robot,
  * as one simple step at a time. Renders `children` once everything is ready.
  */
-export function AccountGate({ children, purpose }: { children: ReactNode; purpose: string }) {
+export function AccountGate({
+  children,
+  purpose,
+  requireVerified = true,
+}: {
+  children: ReactNode;
+  purpose: string;
+  /** false: signing in with a safety key is enough (e.g. free practice); the one-time payment comes later. */
+  requireVerified?: boolean;
+}) {
   const acc = useAccount();
 
   const step = (n: number, title: string, body: ReactNode) => (
     <div className="gate">
       <div className="gate-steps" aria-hidden="true">
-        {[1, 2, 3].map((i) => (
+        {(requireVerified ? [1, 2, 3] : [1, 2]).map((i) => (
           <span key={i} className={i < n ? "dot done" : i === n ? "dot now" : "dot"} />
         ))}
       </div>
@@ -67,7 +76,7 @@ export function AccountGate({ children, purpose }: { children: ReactNode; purpos
     );
   }
 
-  if (!acc.player.signedUp && acc.player.signup) {
+  if (requireVerified && !acc.player.signedUp && acc.player.signup) {
     const fee = qorAmount(acc.player.signup.feeUqor);
     return step(
       2,

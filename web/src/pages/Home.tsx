@@ -3,7 +3,7 @@ import { useData } from "../data";
 import { byRank } from "./Rankings";
 
 export function Home() {
-  const { robots, health } = useData();
+  const { robots, robotsLoaded, robotsError, reloadRobots, health } = useData();
   const perDay = health?.rules?.attemptsPerDay;
   const top = robots.filter((r) => r.bounty.totalWei !== "0").sort(byRank).slice(0, 3);
 
@@ -57,7 +57,16 @@ export function Home() {
             ))}
           </div>
         ) : (
-          <p className="note">Loading robots…</p>
+          <div className="row">
+            <p className="note">
+              {!robotsLoaded ? "Loading robots…" : robotsError ? "We couldn’t load the robots just now." : "No robots with a bounty yet. Check back soon."}
+            </p>
+            {robotsError && (
+              <button className="btn small" onClick={reloadRobots}>
+                Try again
+              </button>
+            )}
+          </div>
         )}
       </section>
 

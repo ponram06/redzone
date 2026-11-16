@@ -8,6 +8,7 @@ type Data = {
   arena: Arena | null;
   robots: Robot[];
   robotsLoaded: boolean;
+  robotsError: boolean;
   error: string | null;
   reloadRobots(): Promise<void>;
 };
@@ -19,19 +20,22 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [arena, setArena] = useState<Arena | null>(null);
   const [robots, setRobots] = useState<Robot[]>([]);
   const [robotsLoaded, setRobotsLoaded] = useState(false);
+  const [robotsError, setRobotsError] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const reloadRobots = useCallback(async () => {
     // The public node can be slow: retry a few times before giving up.
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < 6; i++) {
       try {
         setRobots(await api.robots());
+        setRobotsError(false);
         setRobotsLoaded(true);
         return;
       } catch {
         await new Promise((r) => setTimeout(r, 1500 * (i + 1)));
       }
     }
+    setRobotsError(true);
     setRobotsLoaded(true);
   }, []);
 
@@ -46,7 +50,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     reloadRobots();
   }, [reloadRobots]);
 
-  return <Ctx.Provider value={{ health, arena, robots, robotsLoaded, error, reloadRobots }}>{children}</Ctx.Provider>;
+  return <Ctx.Provider value={{ health, arena, robots, robotsLoaded, robotsError, error, reloadRobots }}>{children}</Ctx.Provider>;
 }
 
 export function useData(): Data {
