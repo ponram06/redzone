@@ -54,6 +54,14 @@ library PQGuard {
         if (!verify(pubkey, signature, abi.encodePacked(digest))) revert PQCSignatureInvalid();
     }
 
+    /// @notice Reverts unless `signature` over the raw `message` bytes is valid for `account`'s
+    ///         registered PQ key. Used for wallet-style messages (e.g. QoreX signArbitrary).
+    function requireAccountMessageSig(address account, bytes memory message, bytes memory signature) internal view {
+        (bool registered,, bytes memory pubkey) = keyStatus(account);
+        if (!registered) revert PQCKeyNotRegistered(account);
+        if (!verify(pubkey, signature, message)) revert PQCSignatureInvalid();
+    }
+
     /// @notice Reverts unless `signature` over `digest` is valid for a fixed `pubkey` (e.g. the referee).
     function requirePubkeySig(bytes memory pubkey, bytes32 digest, bytes memory signature) internal view {
         if (!verify(pubkey, signature, abi.encodePacked(digest))) revert PQCSignatureInvalid();
