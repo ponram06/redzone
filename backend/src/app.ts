@@ -1,0 +1,132 @@
+/** HTTP API. Built as a factory so tests can inject requests without a network. */
+import cors from "@fastify/cors";
+import Fastify, { type FastifyReply, type FastifyRequest } from "fastify";
+import { keccak256, type Address } from "viem";
+import type { Arena } from "./arena.js";
+import { describeArena } from "./arena.js";
+import { brainHash, validateConfig, type BrainRegistry } from "./brains/registry.js";
+import { Game, GameError, attemptMessage, MAX_INSTRUCTION } from "./game.js";
+import type { RobotView } from "./chain.js";
+import type { RefereeKey } from "./signer.js";
+import type { Store } from "./store.js";
+
+export type AppDeps = {
+  game: Game;
+  arena: Arena;
+  brains: BrainRegistry;
+  store: Store;
+  key: RefereeKey;
+  chainId: number;
+  registry: Address;
+  vault: Address;
+  builtInBrains: Record<string, string>;
+  readRobots(): Promise<RobotView[]>;
+  readRobot(id: number): Promise<RobotView | null>;
+  corsOrigin?: string;
+  /** Requests per minute per IP for routes that call the brain. */
+  brainRateLimit?: number;
+};
+
+/** Tiny fixed-window limiter, per IP and route group. */
+function limiter(perMinute: number) {
+  const hits = new Map<string, { n: number; reset: number }>();
+  return (req: FastifyRequest, reply: FastifyReply, group: string): boolean => {
+    const now = Date.now();
+    const k = `${group}:${req.ip}`;
+    const h = hits.get(k);
+    if (!h || h.reset < now) {
+      hits.set(k, { n: 1, reset: now + 60_000 });
+      if (hits.size > 10_000) for (const [key, v] of hits) if (v.reset < now) hits.delete(key);
+      return true;
+    }
+    if (++h.n <= perMinute) return true;
+    reply.code(429).send({ error: "too many requests, slow down" });
+    return false;
+  };
+}
+
+export async function buildApp(d: AppDeps) {
+  const app = Fastify({ logger: false, bodyLimit: 64 * 1024 });
+  await app.register(cors, { origin: d.corsOrigin ?? true });
+  const allow = limiter(d.brainRateLimit ?? 6);
+
+  app.setErrorHandler((err, _req, reply) => {
+    if (err instanceof GameError) return reply.code(err.status).send({ error: err.message });
+    const status = (err as { statusCode?: number }).statusCode;
+    if (status && status < 500) return reply.code(status).send({ error: (err as Error).message });
+    console.error(err);
+    return reply.code(500).send({ error: "internal error" });
+  });
+
+  app.get("/health", async () => ({
+    ok: true,
+    chainId: d.chainId,
+    registry: d.registry,
+    vault: d.vault,
+    arena: d.arena.id,
+    refereePubkeyHash: keccak256(d.key.publicKey),
+    builtInBrains: d.builtInBrains,
+  }));
+
+  app.get("/arena", async () => ({ ...d.arena, description: describeArena(d.arena), maxInstruction: MAX_INSTRUCTION }));
+
+  app.get("/robots", async () => ({ robots: await d.readRobots() }));
+
+  app.get<{ Params: { id: string } }>("/robots/:id", async (req) => {
+    const id = Number(req.params.id);
+    if (!Number.isSafeInteger(id) || id < 1) throw new GameError(400, "bad robot id");
+    const r = await d.readRobot(id);
+    if (!r) throw new GameError(404, "robot not found");
+    const c = d.brains.config(r.brainHash);
+    return { ...r, brain: c ? { kind: c.kind, models: c.kind === "llm" ? c.models : undefined, known: true } : { known: false } };
+  });
+
+  /** Owners publish a brain config here, then register the robot on chain with the returned hash. */
+  app.post<{ Body: { config?: unknown } }>("/brains", async (req) => {
+    let config;
+    try {
+      config = validateConfig(req.body?.config);
+    } catch (e) {
+      throw new GameError(400, (e as Error).message);
+    }
+    d.brains.save(config);
+    return { brainHash: brainHash(config), config };
+  });
+
+  app.get<{ Params: { hash: string } }>("/brains/:hash", async (req) => {
+    const c = d.brains.config(req.params.hash);
+    if (!c) throw new GameError(404, "unknown brain");
+    return { brainHash: req.params.hash.toLowerCase(), config: c };
+  });
+
+  /** The exact text the player's wallet must sign for POST /attempt. */
+  app.get<{ Querystring: { sessionId?: string; instruction?: string } }>("/attempt/message", async (req) => {
+    const sessionId = Number(req.query.sessionId);
+    if (!Number.isSafeInteger(sessionId) || sessionId < 1) throw new GameError(400, "bad sessionId");
+    const instruction = (req.query.instruction ?? "").replace(/\r\n?/g, "\n").trim();
+    return { message: attemptMessage(d.chainId, d.registry, sessionId, instruction) };
+  });
+
+  app.post<{ Body: { sessionId?: unknown; instruction?: unknown; signature?: unknown } }>("/attempt", async (req, reply) => {
+    if (!allow(req, reply, "brain")) return reply;
+    return d.game.attempt({ sessionId: req.body?.sessionId, instruction: req.body?.instruction, signature: req.body?.signature });
+  });
+
+  app.post<{ Params: { robotId: string } }>("/utility/:robotId", async (req, reply) => {
+    if (!allow(req, reply, "utility")) return reply;
+    return d.game.utility(req.params.robotId);
+  });
+
+  app.post<{ Body: { brainHash?: unknown; instruction?: unknown } }>("/practice", async (req, reply) => {
+    if (!allow(req, reply, "brain")) return reply;
+    return d.game.practice({ brainHash: req.body?.brainHash, instruction: req.body?.instruction });
+  });
+
+  app.get<{ Params: { hash: string } }>("/replay/:hash", async (req) => {
+    const r = d.store.getReplay(req.params.hash);
+    if (!r) throw new GameError(404, "replay not found");
+    return r;
+  });
+
+  return app;
+}
