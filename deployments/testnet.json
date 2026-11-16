@@ -10,11 +10,13 @@
   "contracts": {
     "EscrowVault": {
       "address": "0xcD9AAd1ad2D7981699f256e73F2780dac86f0266",
-      "deployTx": "0x4249acd1a94e1e92c8395299e6699ace1abd5b836db2f9bb5ac7183281dcc60e"
+      "deployTx": "0x4249acd1a94e1e92c8395299e6699ace1abd5b836db2f9bb5ac7183281dcc60e",
+      "deployBlock": 10150178
     },
     "RobotRegistry": {
       "address": "0x7733d4f2D707c2F8160831e2e0ca2b6B90Ef4940",
-      "deployTx": "0xac7c743a7723426571af4f81c12b3c6f6ef5460ddcea9b1caf29282ffa70bfdc"
+      "deployTx": "0xac7c743a7723426571af4f81c12b3c6f6ef5460ddcea9b1caf29282ffa70bfdc",
+      "deployBlock": 10150185
     }
   },
   "setup": {

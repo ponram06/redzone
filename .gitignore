@@ -20,3 +20,6 @@ Thumbs.db
 .referee-key.json
 *.key.json
 .attacker.json
+
+# Backend data
+backend/data/
