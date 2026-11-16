@@ -127,6 +127,34 @@ export async function buildApp(d: AppDeps) {
     return d.game.startSession({ robotId: req.body?.robotId, player: req.body?.player, deadline: req.body?.deadline, pqSignature: req.body?.pqSignature });
   });
 
+  /** Owners: what QoreX signs to register a robot, then the relayed registration. */
+  app.get<{ Querystring: { owner?: string; name?: string; brainHash?: string } }>("/owner/robot/request", async (req) => {
+    return d.game.robotRequest({ owner: req.query.owner, name: req.query.name, brainHash: req.query.brainHash });
+  });
+
+  app.post<{ Body: { owner?: unknown; name?: unknown; brainHash?: unknown; deadline?: unknown; pqSignature?: unknown } }>(
+    "/owner/robot",
+    async (req, reply) => {
+      if (!allow(req, reply, "session")) return reply;
+      const b = req.body ?? {};
+      return d.game.registerRobot({ owner: b.owner, name: b.name, brainHash: b.brainHash, deadline: b.deadline, pqSignature: b.pqSignature });
+    },
+  );
+
+  /** Owners: give a robot a new brain (resets its record). */
+  app.get<{ Querystring: { robotId?: string; owner?: string; brainHash?: string } }>("/owner/brain/request", async (req) => {
+    return d.game.brainUpdateRequest({ robotId: req.query.robotId, owner: req.query.owner, brainHash: req.query.brainHash });
+  });
+
+  app.post<{ Body: { robotId?: unknown; owner?: unknown; brainHash?: unknown; deadline?: unknown; pqSignature?: unknown } }>(
+    "/owner/brain",
+    async (req, reply) => {
+      if (!allow(req, reply, "session")) return reply;
+      const b = req.body ?? {};
+      return d.game.updateBrain({ robotId: b.robotId, owner: b.owner, brainHash: b.brainHash, deadline: b.deadline, pqSignature: b.pqSignature });
+    },
+  );
+
   app.post<{ Params: { sessionId: string } }>("/attempt/:sessionId/relay", async (req, reply) => {
     if (!allow(req, reply, "session")) return reply;
     return d.game.relayAgain(req.params.sessionId);

@@ -13,8 +13,8 @@ verified on chain, so a leaked or quantum-broken ECDSA key cannot drain the vaul
 | Part | State |
 |---|---|
 | `contracts/` EscrowVault, RobotRegistryV2, PQAdmin, PQGuard, QoreXMessage | 92 Foundry tests passing, including a 45-test attacker playbook for v2 |
-| `backend/` robot brains + ML-DSA-87 referee API | Working: 43 tests, plus a live parity test against testnet ([backend/README.md](backend/README.md)) |
-| `web/` arena + leaderboard | Planned |
+| `backend/` robot brains + ML-DSA-87 referee API | Working: 59 tests, plus a live parity test against testnet ([backend/README.md](backend/README.md)) |
+| `web/` website for players, robot makers and buyers | Working: play (free practice and prize rounds), safety rankings, robot pages, add a robot, help. Sign-in with QoreX; a relayer pays gas |
 | `audits/` two-stage QCAI audit | Planned |
 
 ## Deployed on testnet
@@ -58,6 +58,10 @@ a per-signer nonce and a deadline, so signatures cannot be replayed elsewhere.
 ## Run the backend
 
 See [backend/README.md](backend/README.md): `cd backend && npm install && npm start`.
+
+## Run the website
+
+`cd web && npm install && npm run dev`, then open http://localhost:5173 (the backend must be running).
 
 ## Run the contracts
 

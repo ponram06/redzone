@@ -3,11 +3,11 @@
  *   npm run test:live
  * Needs the referee key at ../contracts/.referee-key.json (or REFEREE_KEY_FILE).
  */
-import { encodeFunctionData, decodeFunctionResult, parseAbi, type Hex } from "viem";
+import { keccak256, stringToBytes, encodeFunctionData, decodeFunctionResult, parseAbi, type Hex } from "viem";
 import { describe, expect, it } from "vitest";
 import { LEGACY_DEMO_HASH } from "../src/brains/registry.js";
 import { CHAIN_ID, PQC_VERIFY, REGISTRY, VAULT, client, registryAbi, robotKey, vaultAbi } from "../src/chain.js";
-import { claimDigest, loadRefereeKey, resultDigest, signDigest, startSessionDigest, utilityDigest } from "../src/signer.js";
+import { claimDigest, loadRefereeKey, registerRobotDigest, resultDigest, signDigest, startSessionDigest, updateBrainDigest, utilityDigest } from "../src/signer.js";
 
 const key = loadRefereeKey(process.env.REFEREE_KEY_FILE ?? "../contracts/.referee-key.json");
 const H = ("0x" + "cd".repeat(32)) as Hex;
@@ -35,6 +35,10 @@ describe("live contracts", { timeout: 60_000 }, () => {
     expect(claimDigest(CHAIN_ID, VAULT, 1n, player, H, deadline)).toBe(onChainClaim);
     const onChainStart = await client.readContract({ address: REGISTRY, abi: registryAbi, functionName: "startSessionDigest", args: [1n, player, 5n, deadline] });
     expect(startSessionDigest(CHAIN_ID, REGISTRY, 1n, player, 5n, deadline)).toBe(onChainStart);
+    const onChainRegister = await client.readContract({ address: REGISTRY, abi: registryAbi, functionName: "registerRobotDigest", args: [player, keccak256(stringToBytes("Guard Dog")), H, 2n, deadline] });
+    expect(registerRobotDigest(CHAIN_ID, REGISTRY, player, "Guard Dog", H, 2n, deadline)).toBe(onChainRegister);
+    const onChainUpdate = await client.readContract({ address: REGISTRY, abi: registryAbi, functionName: "updateBrainDigest", args: [3n, H, 4n, deadline] });
+    expect(updateBrainDigest(CHAIN_ID, REGISTRY, 3n, H, 4n, deadline)).toBe(onChainUpdate);
   });
 
   it("the chain's pqcVerify precompile accepts our signature and rejects a changed digest", async () => {

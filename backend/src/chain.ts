@@ -50,6 +50,12 @@ export const registryAbi = parseAbi([
   "function startSessionDigest(uint256 robotId, address player, uint256 nonce, uint256 deadline) view returns (bytes32)",
   "function startSessionFor(uint256 robotId, address player, uint256 deadline, bytes playerSig) returns (uint256)",
   "event SessionStarted(uint256 indexed sessionId, uint256 indexed robotId, address indexed player, uint256 expiresAt)",
+  "function registerRobotDigest(address owner, bytes32 nameHash, bytes32 brainHash, uint256 nonce, uint256 deadline) view returns (bytes32)",
+  "function registerRobotFor(address owner, string name, bytes32 brainHash, uint256 deadline, bytes ownerSig) returns (uint256)",
+  "function updateBrainDigest(uint256 robotId, bytes32 brainHash, uint256 nonce, uint256 deadline) view returns (bytes32)",
+  "function updateBrain(uint256 robotId, bytes32 brainHash, uint256 deadline, bytes ownerSig)",
+  "event RobotRegistered(uint256 indexed robotId, address indexed owner, bytes32 brainHash, string name)",
+  "event BrainUpdated(uint256 indexed robotId, bytes32 brainHash)",
 ]);
 
 export const vaultAbi = parseAbi([

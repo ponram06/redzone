@@ -87,3 +87,26 @@ export function startSessionDigest(chainId: number, registry: Address, robotId: 
   );
   return domainDigest(REGISTRY_DOMAIN, chainId, registry, data);
 }
+
+export const REGISTER_ROBOT_TYPEHASH = typehash(
+  "RedZone.RegisterRobot(address owner,bytes32 nameHash,bytes32 brainHash,uint256 nonce,uint256 deadline)",
+);
+export const UPDATE_BRAIN_TYPEHASH = typehash("RedZone.UpdateBrain(uint256 robotId,bytes32 brainHash,uint256 nonce,uint256 deadline)");
+
+/** RobotRegistryV2.registerRobotDigest, with nameHash = keccak256(bytes(name)). */
+export function registerRobotDigest(chainId: number, registry: Address, owner: Address, name: string, brain: Hex, nonce: bigint, deadline: bigint): Hex {
+  const data = encodeAbiParameters(
+    [{ type: "bytes32" }, { type: "address" }, { type: "bytes32" }, { type: "bytes32" }, { type: "uint256" }, { type: "uint256" }],
+    [REGISTER_ROBOT_TYPEHASH, owner, keccak256(stringToBytes(name)), brain, nonce, deadline],
+  );
+  return domainDigest(REGISTRY_DOMAIN, chainId, registry, data);
+}
+
+/** RobotRegistryV2.updateBrainDigest. */
+export function updateBrainDigest(chainId: number, registry: Address, robotId: bigint, brain: Hex, nonce: bigint, deadline: bigint): Hex {
+  const data = encodeAbiParameters(
+    [{ type: "bytes32" }, { type: "uint256" }, { type: "bytes32" }, { type: "uint256" }, { type: "uint256" }],
+    [UPDATE_BRAIN_TYPEHASH, robotId, brain, nonce, deadline],
+  );
+  return domainDigest(REGISTRY_DOMAIN, chainId, registry, data);
+}

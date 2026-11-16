@@ -11,7 +11,7 @@ import { registryAbi, vaultAbi, type NativeTransfer, type RobotView, type Sessio
 import { SIGNUP_MEMO, decodePqSignature, toEvmAddress, toQorAddress, verifyWalletSignature, walletText } from "./qorex.js";
 import { simulate, taskPassed, type Trace } from "./referee.js";
 import type { Relayer } from "./relayer.js";
-import { claimDigest, resultDigest, signDigest, startSessionDigest, utilityDigest, type RefereeKey } from "./signer.js";
+import { claimDigest, registerRobotDigest, resultDigest, signDigest, startSessionDigest, updateBrainDigest, utilityDigest, type RefereeKey } from "./signer.js";
 import type { Store } from "./store.js";
 
 /** A signed StartSession request is valid for this long (the contract allows at most 1 hour). */
@@ -88,6 +88,8 @@ export type UtilityVerdict = {
   replayHash: Hex;
   deadline: string;
   refereeSig: Hex;
+  /** Set when the referee's relayer sent recordUtility. */
+  relay?: { tx?: Hex; error?: string };
 };
 
 /** The exact text a player signs (personal_sign) to submit an instruction for their session. */
@@ -394,7 +396,7 @@ export class Game {
       throw new GameError(400, "deadline expired or too far away: request a new one");
     }
 
-    return this.once(`start-${player.toLowerCase()}`, async () => {
+    return this.once(`nonce-${player.toLowerCase()}`, async () => {
       const [key, state] = await Promise.all([this.d.chain.readPqcKey(player), this.d.chain.readPlayer(player)]);
       if (!key.registered) throw new GameError(409, "no ML-DSA-87 key registered for this account");
       if (state.attemptsLeft < 1) throw new GameError(429, "no attempts left today");
@@ -421,6 +423,128 @@ export class Game {
     });
   }
 
+  // ---------------------------------------------------------- owners (QoreX + relayer)
+
+  /** Names the contract accepts: printable ASCII, no leading/trailing space, 1 to 64 bytes. */
+  private cleanName(raw: unknown): string {
+    if (typeof raw !== "string") throw new GameError(400, "name is required");
+    const name = raw.trim();
+    if (!name || name.length > 64 || !/^[\x20-\x7e]+$/.test(name)) {
+      throw new GameError(400, "robot name must be 1 to 64 plain characters (letters, numbers, spaces, punctuation)");
+    }
+    return name;
+  }
+
+  private knownBrain(raw: unknown): Hex {
+    if (typeof raw !== "string" || !/^0x[0-9a-fA-F]{64}$/.test(raw)) throw new GameError(400, "bad brainHash");
+    const hash = raw.toLowerCase() as Hex;
+    if (!this.d.brains.config(hash)) throw new GameError(404, "unknown brain: publish it first (POST /brains)");
+    return hash;
+  }
+
+  /** Checks shared by every owner request: valid address, PQ key, signed up. */
+  private async ownerReady(raw: unknown): Promise<{ owner: Address; nonce: bigint; pubkey: Hex }> {
+    const owner = toEvmAddress(raw);
+    if (!owner) throw new GameError(400, "owner must be a qor1… or 0x… address");
+    const [key, state] = await Promise.all([this.d.chain.readPqcKey(owner), this.d.chain.readPlayer(owner)]);
+    if (!key.registered) throw new GameError(409, "this account has no ML-DSA-87 key registered yet (register it in QoreX first)");
+    if (!this.isSignedUp(owner)) throw new GameError(402, "sign up first: a one-time payment verifies your account");
+    return { owner, nonce: state.nonce, pubkey: key.pubkey };
+  }
+
+  private checkDeadline(raw: unknown): number {
+    const deadline = Number(raw);
+    if (!Number.isSafeInteger(deadline) || deadline < this.now() || deadline > this.now() + 3600) {
+      throw new GameError(400, "deadline expired or too far away: request a new one");
+    }
+    return deadline;
+  }
+
+  private async relayRegistry(data: Hex, event: "RobotRegistered" | "BrainUpdated") {
+    const r = await this.d.relayer!.send(this.d.registry, data);
+    if (r.status !== "success") throw new GameError(502, `transaction reverted on chain (${r.hash})`);
+    for (const log of r.logs) {
+      try {
+        const ev = decodeEventLog({ abi: registryAbi, data: log.data, topics: log.topics });
+        if (ev.eventName === event) return { robotId: Number((ev.args as { robotId: bigint }).robotId), tx: r.hash };
+      } catch {
+        // not our event
+      }
+    }
+    throw new GameError(502, `sent, but no ${event} event found (${r.hash})`);
+  }
+
+  /** What the owner's wallet must sign to register a robot. */
+  async robotRequest(input: { owner: unknown; name: unknown; brainHash: unknown }) {
+    const name = this.cleanName(input.name);
+    const brain = this.knownBrain(input.brainHash);
+    const { owner, nonce } = await this.ownerReady(input.owner);
+    const deadline = this.now() + REQUEST_TTL;
+    const digest = registerRobotDigest(this.d.chainId, this.d.registry, owner, name, brain, nonce, BigInt(deadline));
+    return { owner, name, brainHash: brain, nonce: nonce.toString(), deadline, digest, text: walletText("RegisterRobot", digest) };
+  }
+
+  /** Relay a QoreX-signed RegisterRobot request. The signature is checked here first so bad ones cost no gas. */
+  async registerRobot(input: { owner: unknown; name: unknown; brainHash: unknown; deadline: unknown; pqSignature: unknown }) {
+    if (!this.d.relayer) throw new GameError(503, "no relayer configured");
+    const name = this.cleanName(input.name);
+    const brain = this.knownBrain(input.brainHash);
+    const deadline = this.checkDeadline(input.deadline);
+    const sig = decodePqSignature(input.pqSignature);
+    if (!sig) throw new GameError(400, "pqSignature missing or malformed");
+    const pre = toEvmAddress(input.owner);
+    if (!pre) throw new GameError(400, "bad owner address");
+    return this.once(`nonce-${pre.toLowerCase()}`, async () => {
+      const { owner, nonce, pubkey } = await this.ownerReady(pre);
+      const digest = registerRobotDigest(this.d.chainId, this.d.registry, owner, name, brain, nonce, BigInt(deadline));
+      if (!verifyWalletSignature(pubkey, walletText("RegisterRobot", digest), sig)) {
+        throw new GameError(401, "signature does not match this request (it may be used already: request a new one)");
+      }
+      const data = encodeFunctionData({ abi: registryAbi, functionName: "registerRobotFor", args: [owner, name, brain, BigInt(deadline), sig] });
+      return { ...(await this.relayRegistry(data, "RobotRegistered")), owner, name, brainHash: brain };
+    });
+  }
+
+  /** What the owner's wallet must sign to give a robot a new brain (this resets its stats). */
+  async brainUpdateRequest(input: { robotId: unknown; owner: unknown; brainHash: unknown }) {
+    const robotId = Number(input.robotId);
+    if (!Number.isSafeInteger(robotId) || robotId < 1) throw new GameError(400, "bad robotId");
+    const brain = this.knownBrain(input.brainHash);
+    const { owner, nonce } = await this.ownerReady(input.owner);
+    const robot = await this.d.chain.readRobot(robotId);
+    if (!robot) throw new GameError(404, "robot not found");
+    if (robot.owner.toLowerCase() !== owner.toLowerCase()) throw new GameError(403, "only the robot's owner can change its brain");
+    if (robot.brainHash.toLowerCase() === brain) throw new GameError(409, "the robot already uses this brain");
+    const deadline = this.now() + REQUEST_TTL;
+    const digest = updateBrainDigest(this.d.chainId, this.d.registry, BigInt(robotId), brain, nonce, BigInt(deadline));
+    return { robotId, owner, brainHash: brain, nonce: nonce.toString(), deadline, digest, text: walletText("UpdateBrain", digest) };
+  }
+
+  /** Relay a QoreX-signed UpdateBrain request. */
+  async updateBrain(input: { robotId: unknown; owner: unknown; brainHash: unknown; deadline: unknown; pqSignature: unknown }) {
+    if (!this.d.relayer) throw new GameError(503, "no relayer configured");
+    const robotId = Number(input.robotId);
+    if (!Number.isSafeInteger(robotId) || robotId < 1) throw new GameError(400, "bad robotId");
+    const brain = this.knownBrain(input.brainHash);
+    const deadline = this.checkDeadline(input.deadline);
+    const sig = decodePqSignature(input.pqSignature);
+    if (!sig) throw new GameError(400, "pqSignature missing or malformed");
+    const pre = toEvmAddress(input.owner);
+    if (!pre) throw new GameError(400, "bad owner address");
+    return this.once(`nonce-${pre.toLowerCase()}`, async () => {
+      const { owner, nonce, pubkey } = await this.ownerReady(pre);
+      const robot = await this.d.chain.readRobot(robotId);
+      if (!robot) throw new GameError(404, "robot not found");
+      if (robot.owner.toLowerCase() !== owner.toLowerCase()) throw new GameError(403, "only the robot's owner can change its brain");
+      const digest = updateBrainDigest(this.d.chainId, this.d.registry, BigInt(robotId), brain, nonce, BigInt(deadline));
+      if (!verifyWalletSignature(pubkey, walletText("UpdateBrain", digest), sig)) {
+        throw new GameError(401, "signature does not match this request (it may be used already: request a new one)");
+      }
+      const data = encodeFunctionData({ abi: registryAbi, functionName: "updateBrain", args: [BigInt(robotId), brain, BigInt(deadline), sig] });
+      return { ...(await this.relayRegistry(data, "BrainUpdated")), brainHash: brain };
+    });
+  }
+
   /** Run the 10 normal tasks and sign the score. Cached per robot, brain and utilityNonce. */
   async utility(robotIdRaw: unknown): Promise<UtilityVerdict> {
     const robotId = Number(robotIdRaw);
@@ -431,7 +555,7 @@ export class Game {
 
     return this.once(key, async () => {
       const done = this.d.store.getVerdict<UtilityVerdict>(key);
-      if (done) return done;
+      if (done) return done.relay?.error ? this.relayUtility(key, done) : done;
       const brain = this.brainFor(robot);
       const tasks = [];
       for (const t of this.d.arena.utilityTasks) {
@@ -467,8 +591,30 @@ export class Game {
         refereeSig: signDigest(this.d.key, digest),
       };
       this.d.store.saveVerdict(key, verdict);
-      return verdict;
+      return this.relayUtility(key, verdict);
     });
+  }
+
+  /** Record the skills score on chain through the relayer (if there is one). Errors are kept so a later call retries. */
+  private async relayUtility(key: string, v: UtilityVerdict): Promise<UtilityVerdict> {
+    if (!this.d.relayer) return v;
+    let relay: UtilityVerdict["relay"];
+    try {
+      const r = await this.d.relayer.send(
+        this.d.registry,
+        encodeFunctionData({
+          abi: registryAbi,
+          functionName: "recordUtility",
+          args: [BigInt(v.robotId), v.tasksPassed, v.replayHash, BigInt(v.deadline), v.refereeSig],
+        }),
+      );
+      relay = r.status === "success" ? { tx: r.hash } : { error: `recordUtility reverted (${r.hash})` };
+    } catch (e) {
+      relay = { error: (e as Error).message.slice(0, 300) };
+    }
+    const out = { ...v, relay };
+    this.d.store.saveVerdict(key, out);
+    return out;
   }
 
   /** Off-chain practice against any known brain: nothing is signed or stored. */

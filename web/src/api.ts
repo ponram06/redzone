@@ -22,6 +22,7 @@ export type Robot = {
   owner: string;
   name: string;
   brainHash: string;
+  registeredAt: number;
   attacks: number;
   defended: number;
   breached: number;
@@ -99,7 +100,22 @@ export type PlayerStatus = {
   signup: { feeUqor: string; payTo: string; memo: string } | null;
 };
 
+export type SignRequest = { deadline: number; digest: string; text: string };
+export type BrainConfig = { kind: "rule"; version: 1 } | { kind: "llm"; version: 1; models: string[]; systemPrompt: string };
+export type UtilityResult = { robotId: number; tasksPassed: number; relay?: { tx?: string; error?: string } };
+
 export const api = {
+  publishBrain: (config: BrainConfig) => call<{ brainHash: string }>("/brains", { method: "POST", body: JSON.stringify({ config }) }),
+  brain: (hash: string) => call<{ brainHash: string; config: BrainConfig }>(`/brains/${hash}`),
+  robotRequest: (owner: string, name: string, brainHash: string) =>
+    call<SignRequest>(`/owner/robot/request?owner=${encodeURIComponent(owner)}&name=${encodeURIComponent(name)}&brainHash=${brainHash}`),
+  registerRobot: (body: { owner: string; name: string; brainHash: string; deadline: number; pqSignature: string }) =>
+    call<{ robotId: number; tx: string }>("/owner/robot", { method: "POST", body: JSON.stringify(body) }),
+  brainRequest: (robotId: number, owner: string, brainHash: string) =>
+    call<SignRequest>(`/owner/brain/request?robotId=${robotId}&owner=${encodeURIComponent(owner)}&brainHash=${brainHash}`),
+  updateBrain: (body: { robotId: number; owner: string; brainHash: string; deadline: number; pqSignature: string }) =>
+    call<{ robotId: number; tx: string }>("/owner/brain", { method: "POST", body: JSON.stringify(body) }),
+  utility: (robotId: number) => call<UtilityResult>(`/utility/${robotId}`, { method: "POST" }),
   player: (address: string) => call<PlayerStatus>(`/player/${encodeURIComponent(address)}`),
   registerPlayer: (address: string, txHash: string) =>
     call<{ signedUp: boolean; txHash: string }>("/player/register", { method: "POST", body: JSON.stringify({ address, txHash }) }),

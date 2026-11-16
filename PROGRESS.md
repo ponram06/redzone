@@ -6,7 +6,7 @@ the first unchecked item of the earliest unfinished phase.
 Rules: no Claude co-author line in commits. Never commit `.env`, `.referee-key.json`, `.attacker.json`.
 Do not spend drill-account QOR or touch the fest website without the owner.
 
-Overall: about **66%** (each phase's weight is in brackets; last updated 2026-11-16).
+Overall: about **74%** (each phase's weight is in brackets; last updated 2026-11-16).
 
 ## Phase 1. Setup and registration (5%): done
 - [x] Hackathon registration, Post-Quantum dApp category, project page on build.qorechain.io
@@ -30,18 +30,20 @@ Overall: about **66%** (each phase's weight is in brackets; last updated 2026-11
 - [x] Replays and API: /attempt, /utility, /practice, /brains, /robots, /arena, /replay
 - [x] Backup chain: OpenRouter free models, then Groq gpt-oss-120b and gpt-oss-20b, then Deploy GLM-5.3-Flash, then local Ollama gemma4:e4b on D: (`npm run bench`)
 
-## Phase 5. Website (`web/`, React + Vite + TypeScript) (20%): 60%
+## Phase 5. Website (`web/`, React + Vite + TypeScript) (20%): 90%
 - [x] Scaffold and theme
 - [x] Wallet: QoreX connect (native lane), ML-DSA signArbitrary for sessions and attempts
 - [x] Arena canvas: map, red zones, animated robot path, replay viewer
 - [x] Practice mode (no wallet) against the demo robots
 - [x] Attack flow: QoreX-signed StartSession relayed to RobotRegistryV2, signed instruction, verdict, auto recordResult + claimBounty
-- [ ] Relayer account: new testnet account, PQC key, funded with a few QOR (needs the owner)
-- [ ] Leaderboard and robot pages (rating, tier, bounty)
-- [ ] Owner flow: publish brain config, register robot, deposit bounty, utility score
+- [x] Relayer account: funded with 3 QOR from the main account, PQC key registered (tx 92C274AE…98FC)
+- [x] One-time player sign-up (0.1 QOR native payment from QoreX, verified by the referee)
+- [x] Simple redesign for non-crypto users: Home, Play, Rankings, robot pages, For robot makers, Help (plain language; technical details tucked away in Help)
+- [x] Owner flow: choose a brain (AI guard with own rules, or simple guard), test it free, register the robot (QoreX-signed, relayed registerRobotFor), change brain (relayed updateBrain), automatic skills test recorded on chain (recordUtility)
+- [ ] Prize deposits from the website: blocked until QoreX can sign EVM transactions (depositBounty must come from the owner)
 
 ## Phase 6. Integration on testnet (5%): 0%
-- [ ] End-to-end round with the test attacker account (startSession, attempt, recordResult)
+- [ ] End-to-end round from the website with the main QoreX account: verify, start, attack, verdict (planned after 19 Nov, after the drill)
 - [ ] Utility score recorded on chain for the demo robot(s)
 - [ ] Second demo robot with the LLM brain and a small bounty
 

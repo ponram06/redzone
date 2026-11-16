@@ -13,7 +13,7 @@ import { toQorAddress, walletMessage } from "../src/qorex.js";
 import type { NativeTransfer } from "../src/chain.js";
 import type { RelayReceipt, Relayer } from "../src/relayer.js";
 import { Game, attemptMessage } from "../src/game.js";
-import { claimDigest, resultDigest, startSessionDigest, utilityDigest } from "../src/signer.js";
+import { claimDigest, registerRobotDigest, resultDigest, startSessionDigest, updateBrainDigest, utilityDigest } from "../src/signer.js";
 import { pqcSign } from "@qorechain/sdk";
 import { Store } from "../src/store.js";
 
@@ -49,6 +49,22 @@ class FakeRelayer implements Relayer {
         address: REG,
         topics: encodeEventTopics({ abi: registryAbi, eventName: "SessionStarted", args: { sessionId: 77n, robotId, player: who } }),
         data: encodeAbiParameters([{ type: "uint256" }], [BigInt(NOW + 600)]),
+      } as unknown as Log);
+    }
+    if (call.functionName === "registerRobotFor") {
+      const [owner, , brainHash] = call.args as unknown as [Address, string, Hex];
+      logs.push({
+        address: REG,
+        topics: encodeEventTopics({ abi: registryAbi, eventName: "RobotRegistered", args: { robotId: 5n, owner } }),
+        data: encodeAbiParameters([{ type: "bytes32" }, { type: "string" }], [brainHash, "x"]),
+      } as unknown as Log);
+    }
+    if (call.functionName === "updateBrain") {
+      const [robotId, brainHash] = call.args as unknown as [bigint, Hex];
+      logs.push({
+        address: REG,
+        topics: encodeEventTopics({ abi: registryAbi, eventName: "BrainUpdated", args: { robotId } }),
+        data: encodeAbiParameters([{ type: "bytes32" }], [brainHash]),
       } as unknown as Log);
     }
     return { hash: ("0x" + "11".repeat(32)) as Hex, status: "success", logs };
@@ -100,7 +116,7 @@ beforeEach(async () => {
   };
   const chain = {
     readSession: async (id: number) => sessions[id] ?? null,
-    readRobot: async (id: number) => (id === 1 ? robot : null),
+    readRobot: async (id: number) => (id === 1 ? robot : id === 2 ? { ...robot, id: 2, owner: player.address } : null),
     openBounties: async () => robot.bounty.open,
     readPqcKey: async (a: Address) => {
       const k = pqKeys[a.toLowerCase()];
@@ -197,6 +213,21 @@ describe("other routes", () => {
     const v = (await app.inject({ method: "POST", url: "/utility/1" })).json();
     expect(v.tasksPassed).toBe(10);
     expect(verifies(utilityDigest(9800, REG, 1n, 10, v.replayHash, 0n, BigInt(v.deadline)), v.refereeSig)).toBe(true);
+    // The referee records the score itself.
+    expect(v.relay.tx).toMatch(/^0x/);
+    expect(relayer.sent.at(-1)?.fn).toBe("recordUtility");
+    // Asking again returns the stored verdict without sending twice.
+    const n = relayer.sent.length;
+    await app.inject({ method: "POST", url: "/utility/1" });
+    expect(relayer.sent.length).toBe(n);
+  });
+
+  it("a failed utility relay is retried on the next request", async () => {
+    relayer.failNext = 1;
+    const v = (await app.inject({ method: "POST", url: "/utility/1" })).json();
+    expect(v.relay.error).toBe("network down");
+    const again = (await app.inject({ method: "POST", url: "/utility/1" })).json();
+    expect(again.relay.tx).toMatch(/^0x/);
   });
 
   it("practice runs without signing", async () => {
@@ -338,5 +369,67 @@ describe("QoreX players and the relayer", () => {
     expect((await app.inject({ url: `/session/request?robotId=1&player=${unknown}` })).statusCode).toBe(409);
     expect((await app.inject({ url: "/session/request?robotId=1&player=nope" })).statusCode).toBe(400);
     expect((await app.inject({ url: `/session/request?robotId=9&player=${player.address}` })).statusCode).toBe(404);
+  });
+
+  describe("owners", () => {
+    const RULE = "0x538990c9c76901dfbecb9de9f04e1feae7ca82140387c0763adb01d496ede6e1";
+    const reqRobot = (q: string) => app.inject({ url: `/owner/robot/request?${q}` });
+
+    it("register a robot: request, QoreX signature, relayed registerRobotFor", async () => {
+      await signUp(player.address, 1);
+      const r = await reqRobot(`owner=${toQorAddress(player.address)}&name=${encodeURIComponent("Guard Dog")}&brainHash=${RULE}`);
+      expect(r.statusCode).toBe(200);
+      const q = r.json();
+      expect(q.digest).toBe(registerRobotDigest(9800, REG, player.address, "Guard Dog", RULE, 0n, BigInt(q.deadline)));
+      const pqSignature = qorexSign(playerPq.secretKey, q.text);
+      const res = await app.inject({
+        method: "POST",
+        url: "/owner/robot",
+        payload: { owner: player.address, name: "Guard Dog", brainHash: RULE, deadline: q.deadline, pqSignature },
+      });
+      expect(res.statusCode).toBe(200);
+      expect(res.json().robotId).toBe(5);
+      expect(relayer.sent.at(-1)?.fn).toBe("registerRobotFor");
+    });
+
+    it("refuses bad names, unknown brains, unsigned-up owners and wrong signatures without gas", async () => {
+      expect((await reqRobot(`owner=${player.address}&name=Guard&brainHash=${RULE}`)).statusCode).toBe(402);
+      await signUp(player.address, 1);
+      expect((await reqRobot(`owner=${player.address}&name=&brainHash=${RULE}`)).statusCode).toBe(400);
+      expect((await reqRobot(`owner=${player.address}&name=${"x".repeat(65)}&brainHash=${RULE}`)).statusCode).toBe(400);
+      expect((await reqRobot(`owner=${player.address}&name=${encodeURIComponent("Bad\u202eName")}&brainHash=${RULE}`)).statusCode).toBe(400);
+      expect((await reqRobot(`owner=${player.address}&name=Guard&brainHash=0x${"ab".repeat(32)}`)).statusCode).toBe(404);
+      const q = (await reqRobot(`owner=${player.address}&name=Guard&brainHash=${RULE}`)).json();
+      const before = relayer.sent.length;
+      const forged = qorexSign(strangerPq.secretKey, q.text);
+      const res = await app.inject({ method: "POST", url: "/owner/robot", payload: { owner: player.address, name: "Guard", brainHash: RULE, deadline: q.deadline, pqSignature: forged } });
+      expect(res.statusCode).toBe(401);
+      // A signature for one name cannot register another.
+      const good = qorexSign(playerPq.secretKey, q.text);
+      const swapped = await app.inject({ method: "POST", url: "/owner/robot", payload: { owner: player.address, name: "Other", brainHash: RULE, deadline: q.deadline, pqSignature: good } });
+      expect(swapped.statusCode).toBe(401);
+      expect(relayer.sent.length).toBe(before);
+    });
+
+    it("update a brain: only the owner, only a known new brain", async () => {
+      await signUp(player.address, 1);
+      await signUp(stranger.address, 2);
+      // Robot 1 belongs to someone else.
+      expect((await app.inject({ url: `/owner/brain/request?robotId=1&owner=${player.address}&brainHash=${RULE}` })).statusCode).toBe(403);
+      // Robot 2 already uses the demo brain hash, which maps to the rule brain only as a legacy alias.
+      const r = await app.inject({ url: `/owner/brain/request?robotId=2&owner=${player.address}&brainHash=${RULE}` });
+      expect(r.statusCode).toBe(200);
+      const q = r.json();
+      expect(q.digest).toBe(updateBrainDigest(9800, REG, 2n, RULE, 0n, BigInt(q.deadline)));
+      const res = await app.inject({
+        method: "POST",
+        url: "/owner/brain",
+        payload: { robotId: 2, owner: player.address, brainHash: RULE, deadline: q.deadline, pqSignature: qorexSign(playerPq.secretKey, q.text) },
+      });
+      expect(res.statusCode).toBe(200);
+      expect(relayer.sent.at(-1)?.fn).toBe("updateBrain");
+      // The stranger cannot change robot 2.
+      expect((await app.inject({ url: `/owner/brain/request?robotId=2&owner=${stranger.address}&brainHash=${RULE}` })).statusCode).toBe(403);
+    });
   });
 });

@@ -1,26 +1,35 @@
 import { useEffect, useState } from "react";
-import { api, attemptMessage, formatQor, type Health, type PlayerStatus, type Robot, type Trace, type Verdict } from "../api";
-import { connect, explainQorexError, hasQorex, payNative, signPq } from "../qorex";
-
-const qor = (uqor: string) => `${(Number(uqor) / 1e6).toLocaleString(undefined, { maximumFractionDigits: 6 })} QOR`;
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+import { useAccount } from "../account";
+import { api, attemptMessage, formatQor, type Health, type Robot, type Trace, type Verdict } from "../api";
+import { plural, shortHash } from "../format";
+import { explainQorexError, signPq } from "../qorex";
+import { AccountGate } from "./AccountGate";
 
 type Props = {
   health: Health;
-  robot: Robot | undefined;
+  robot: Robot;
   maxInstruction: number;
   onResult: (trace: Trace) => void;
+  onFinished: () => void;
 };
 
-type Session = { id: number; expiresAt: number; tx: string };
+type Round = { id: number; expiresAt: number; tx: string };
 
-const short = (h: string) => `${h.slice(0, 8)}…${h.slice(-6)}`;
+/** A real round: start (uses one daily try), send one message, get the verdict and any prize. */
+export function PlayPanel(props: Props) {
+  if (!props.health.relayer) {
+    return <p className="note">Prize rounds are paused right now. Free practice still works.</p>;
+  }
+  return (
+    <AccountGate purpose="play for prizes">
+      <RealRound {...props} />
+    </AccountGate>
+  );
+}
 
-export function PlayPanel({ health, robot, maxInstruction, onResult }: Props) {
-  const [address, setAddress] = useState<string | null>(null);
-  const [attemptsLeft, setAttemptsLeft] = useState<number | null>(null);
-  const [player, setPlayer] = useState<PlayerStatus | null>(null);
-  const [session, setSession] = useState<Session | null>(null);
+function RealRound({ health, robot, maxInstruction, onResult, onFinished }: Props) {
+  const acc = useAccount();
+  const [round, setRound] = useState<Round | null>(null);
   const [instruction, setInstruction] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -28,13 +37,16 @@ export function PlayPanel({ health, robot, maxInstruction, onResult }: Props) {
   const [now, setNow] = useState(() => Math.floor(Date.now() / 1000));
 
   useEffect(() => {
-    if (!session) return;
+    if (!round) return;
     const t = setInterval(() => setNow(Math.floor(Date.now() / 1000)), 1000);
     return () => clearInterval(t);
-  }, [session]);
+  }, [round]);
 
-  const secondsLeft = session ? Math.max(0, session.expiresAt - now) : 0;
-  const isOwner = !!(robot && address && robot.owner.toLowerCase() === address.toLowerCase());
+  const address = acc.address!;
+  const player = acc.player!;
+  const isOwner = robot.owner.toLowerCase() === player.evm.toLowerCase();
+  const left = round ? Math.max(0, round.expiresAt - now) : 0;
+  const prize = robot.bounty.totalWei !== "0" ? formatQor(robot.bounty.totalWei) : null;
 
   async function run(label: string, fn: () => Promise<void>) {
     setBusy(label);
@@ -48,178 +60,117 @@ export function PlayPanel({ health, robot, maxInstruction, onResult }: Props) {
     }
   }
 
-  const loadPlayer = async (a: string) => {
-    const p = await api.player(a);
-    setPlayer(p);
-    setAttemptsLeft(p.attemptsLeft);
-    return p;
-  };
-
-  const onConnect = () =>
-    run("Waiting for QoreX…", async () => {
-      const a = await connect();
-      setAddress(a);
-      await loadPlayer(a);
-    });
-
-  /** One-time sign-up: a small QOR payment from QoreX (hybrid-signed), then registered with the referee. */
-  const onSignUp = () =>
-    run("Approve the one-time payment in QoreX…", async () => {
-      if (!address || !player?.signup) return;
-      const txHash = await payNative(address, player.signup.payTo, player.signup.feeUqor, player.signup.memo);
-      setBusy("Waiting for the payment to be confirmed…");
-      let lastError: unknown = null;
-      for (let i = 0; i < 8; i++) {
-        try {
-          await api.registerPlayer(address, txHash);
-          await loadPlayer(address);
-          return;
-        } catch (e) {
-          lastError = e;
-          if (!/not found/i.test((e as Error).message)) throw e;
-          await sleep(3000);
-        }
-      }
-      throw lastError;
-    });
-
-  const onStart = () =>
-    run("Sign the request in QoreX…", async () => {
-      if (!robot || !address) return;
+  const start = () =>
+    run("Approve in QoreX…", async () => {
       setVerdict(null);
       const req = await api.sessionRequest(robot.id, address);
-      setAttemptsLeft(req.attemptsLeft);
       const pqSignature = await signPq(address, req.text);
-      setBusy("Starting the session on chain…");
+      setBusy("Starting your round…");
       const s = await api.sessionStart({ robotId: robot.id, player: address, deadline: req.deadline, pqSignature });
-      setSession({ id: s.sessionId, expiresAt: s.expiresAt, tx: s.tx });
-      setAttemptsLeft(req.attemptsLeft - 1);
+      setRound({ id: s.sessionId, expiresAt: s.expiresAt, tx: s.tx });
+      acc.setAttemptsLeft(req.attemptsLeft - 1);
     });
 
-  const onAttack = () =>
-    run("Sign your instruction in QoreX…", async () => {
-      if (!session || !address) return;
-      const text = attemptMessage(health.chainId, health.registry, session.id, instruction);
-      const pqSignature = await signPq(address, text);
-      setBusy("The robot is thinking and the referee is judging…");
-      const v = await api.attempt(session.id, instruction, pqSignature);
+  const send = () =>
+    run("Approve in QoreX…", async () => {
+      if (!round) return;
+      const pqSignature = await signPq(address, attemptMessage(health.chainId, health.registry, round.id, instruction));
+      setBusy("The robot is thinking…");
+      const v = await api.attempt(round.id, instruction, pqSignature);
       setVerdict(v);
       onResult(v.trace);
-      setSession(null);
+      setRound(null);
+      setInstruction("");
+      onFinished();
     });
 
-  const onRetryRelay = () =>
-    run("Sending to chain again…", async () => {
-      if (!verdict) return;
-      setVerdict(await api.relayAgain(verdict.sessionId));
+  const retry = () =>
+    run("Trying again…", async () => {
+      if (verdict) setVerdict(await api.relayAgain(verdict.sessionId));
     });
 
-  if (!hasQorex()) {
-    return (
-      <div className="play">
-        <p className="muted small">Real attempts need the QoreX wallet extension, switched to the testnet.</p>
-      </div>
-    );
-  }
+  if (isOwner) return <p className="note">This is your robot, so you can't play against it. Pick another robot.</p>;
 
-  if (!health.relayer) {
-    return (
-      <div className="play">
-        <p className="muted small">Real attempts are offline right now (no relayer). Practice rounds still work.</p>
-      </div>
-    );
-  }
+  const won = verdict?.breached;
+  const paid = verdict?.relay?.claimTxs?.length;
 
   return (
-    <div className="play">
-      {!address ? (
-        <button className="primary" disabled={!!busy} onClick={onConnect}>
-          Connect QoreX
-        </button>
-      ) : (
-        <div className="small muted">
-          Connected <code>{short(address)}</code>
-          {attemptsLeft !== null && ` · ${attemptsLeft} attempt${attemptsLeft === 1 ? "" : "s"} left today`}
-        </div>
-      )}
-
-      {address && player && !player.pqKeyRegistered && (
-        <p className="error-text">This QoreX account has no quantum-safe (ML-DSA-87) key registered yet. Register it in QoreX, then reconnect.</p>
-      )}
-
-      {address && player?.pqKeyRegistered && !player.signedUp && player.signup && (
-        <>
-          <p className="small muted">
-            New here? Verify your account once with a tiny payment of {qor(player.signup.feeUqor)}. QoreX signs it with your
-            quantum-safe key. After that, every round is free.
-          </p>
-          <button className="primary" disabled={!!busy} onClick={onSignUp}>
-            Verify account (one-time {qor(player.signup.feeUqor)})
-          </button>
-        </>
-      )}
-
-      {address && player?.pqKeyRegistered && player.signedUp && !session && (
-        <>
-          <p className="small muted">
-            Starting a session uses 1 of your 5 daily attempts. QoreX signs the request with your ML-DSA-87 key; the referee
-            relays it and the contract checks the signature on chain.
-          </p>
-          <button className="primary" disabled={!!busy || !robot || isOwner} onClick={onStart}>
-            Start a 10-minute session on {robot?.name ?? "…"}
-          </button>
-          {isOwner && <p className="error-text">You own this robot, so you can't attack it.</p>}
-        </>
-      )}
-
-      {session && (
-        <>
-          <div className="session-bar small">
-            Session #{session.id} · {Math.floor(secondsLeft / 60)}:{String(secondsLeft % 60).padStart(2, "0")} left
-            <span className="muted"> · tx {short(session.tx)}</span>
-          </div>
-          <textarea
-            value={instruction}
-            maxLength={maxInstruction}
-            placeholder="One instruction. Make it count."
-            onChange={(e) => setInstruction(e.target.value)}
-            aria-label="Your attack instruction"
-          />
-          <button className="primary" disabled={!!busy || !instruction.trim() || secondsLeft === 0} onClick={onAttack}>
-            Sign and send
-          </button>
-        </>
-      )}
-
-      {busy && <p className="small">{busy}</p>}
-      {error && <p className="error-text">{error}</p>}
-
+    <div className="stack">
       {verdict && (
-        <div className={`verdict ${verdict.breached ? "breached" : "defended"}`}>
-          <strong>{verdict.breached ? "BREACHED" : "DEFENDED"}</strong>
-          <span>“{verdict.say || "…"}”</span>
-        </div>
-      )}
-      {verdict && (
-        <div className="small muted onchain">
-          {verdict.relay?.resultTx && <div>Result on chain: {short(verdict.relay.resultTx)}</div>}
-          {verdict.relay?.claimTxs?.map((c) => (
-            <div key={c.bountyId}>
-              Bounty #{c.bountyId} paid to you ({formatQor(verdict.claims.find((x) => x.bountyId === c.bountyId)?.amountWei ?? "0")}):{" "}
-              {short(c.tx)}
-            </div>
-          ))}
+        <div className={`result ${won ? "win" : "lose"}`} aria-live="polite">
+          <strong>{won ? "You did it!" : "The robot stayed safe"}</strong>
+          <p>
+            {won
+              ? paid
+                ? "The robot walked into a red zone. The prize has been sent to your QoreX account."
+                : "The robot walked into a red zone. Your prize is being sent."
+              : "It didn't fall for that one. Try a different trick."}
+          </p>
+          <p className="quote">Robot said: “{verdict.say || "…"}”</p>
           {verdict.relay?.error && (
-            <div className="error-text">
-              Not on chain yet: {verdict.relay.error}{" "}
-              <button className="chip" onClick={onRetryRelay} disabled={!!busy}>
+            <p className="error-text">
+              We couldn't save this result yet.{" "}
+              <button className="link" onClick={retry} disabled={!!busy}>
                 Try again
               </button>
-            </div>
+            </p>
           )}
-          <div>Replay: {short(verdict.replayHash)}</div>
+          <details className="proof">
+            <summary>Proof</summary>
+            {verdict.relay?.resultTx && <div>Result saved: {shortHash(verdict.relay.resultTx)}</div>}
+            {verdict.relay?.claimTxs?.map((c) => (
+              <div key={c.bountyId}>Prize payment: {shortHash(c.tx)}</div>
+            ))}
+            <div>Replay: {shortHash(verdict.replayHash)}</div>
+          </details>
         </div>
       )}
+
+      {!round ? (
+        <>
+          <p>
+            {prize ? (
+              <>
+                Trick <strong>{robot.name}</strong> into a red zone and win <strong>{prize}</strong>.
+              </>
+            ) : (
+              <>
+                Trick <strong>{robot.name}</strong> into a red zone to beat it.
+              </>
+            )}{" "}
+            You get one message per round.
+          </p>
+          <button className="btn primary big" disabled={!!busy || player.attemptsLeft < 1} onClick={start}>
+            {verdict ? "Play again" : "Start a round"}
+          </button>
+          <p className="note">
+            {player.attemptsLeft > 0
+              ? `${plural(player.attemptsLeft, "try", "tries")} left today. Each round lasts 10 minutes.`
+              : "You've used all 5 tries for today. Come back tomorrow, or keep practising for free."}
+          </p>
+        </>
+      ) : (
+        <>
+          <div className="timer">
+            Round running · <strong>{Math.floor(left / 60)}:{String(left % 60).padStart(2, "0")}</strong> left
+          </div>
+          <label htmlFor="real-msg">Your message to {robot.name}</label>
+          <textarea
+            id="real-msg"
+            value={instruction}
+            maxLength={maxInstruction}
+            placeholder="Think carefully. You only get one message this round."
+            onChange={(e) => setInstruction(e.target.value)}
+          />
+          <button className="btn primary big" disabled={!!busy || !instruction.trim() || left === 0} onClick={send}>
+            Send to robot
+          </button>
+          {left === 0 && <p className="note">Time's up for this round. Start a new one.</p>}
+        </>
+      )}
+
+      {busy && <p className="note">{busy}</p>}
+      {error && <p className="error-text">{error}</p>}
     </div>
   );
 }
