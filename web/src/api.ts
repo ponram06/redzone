@@ -1,6 +1,10 @@
 /** Client for the RedZone referee backend. */
 
-export const API_URL = (import.meta.env.VITE_API_URL as string | undefined) ?? "http://127.0.0.1:8787";
+/**
+ * The RedZone server. Set VITE_API_URL when building for production; without it a production build
+ * calls its own origin (put the server behind the same domain), and `npm run dev` uses the local server.
+ */
+export const API_URL = (import.meta.env.VITE_API_URL as string | undefined) ?? (import.meta.env.DEV ? "http://127.0.0.1:8787" : "");
 
 export type Point = { x: number; y: number };
 export type Place = { id: string; name: string; at: Point; radius: number };
@@ -62,6 +66,12 @@ export type Health = {
   relayer: { address: string; cosmos: string } | null;
   /** Bounties are paid to payTo from QoreX and locked in the vault by RedZone. */
   prize?: { minUqor: string; payTo: string } | null;
+  /** Native chain id QoreX signs for (from the deployment record). */
+  nativeChainId: string | null;
+  signupFeeUqor: string | null;
+  /** Game rules, read from the contract by the server. */
+  rules: { attemptsPerDay: number; sessionTtl: number; resultGrace: number; utilityTasks: number; maxNameLength: number } | null;
+  explorerUrl: string | null;
   ownKeys?: { enabled: boolean; providers: { id: string; name: string }[] };
 };
 
@@ -104,8 +114,9 @@ export type PlayerStatus = {
 };
 
 export type LeaderRow = { rank: number; player: string; qor: string; attempts: number; wins: number; wonWei: string };
-export type OwnerPrize = { robotId: number; bountyId: number | null; uqor: string; status: "locked" | "withdrawn"; open: boolean; withdrawTx: string | null };
-export const prizeMemo = (robotId: number) => `RedZone bounty #${robotId}`;
+/** A maker's bounty still in the vault (read from the chain). */
+export type OwnerBounty = { robotId: number; bountyId: number; uqor: string };
+export const bountyMemo = (robotId: number) => `RedZone bounty #${robotId}`;
 export type SignRequest = { deadline: number; digest: string; text: string };
 export type BrainConfig = { kind: "rule"; version: 1 } | { kind: "llm"; version: 1; models: string[]; systemPrompt: string };
 export type UtilityResult = { robotId: number; tasksPassed: number; relay?: { tx?: string; error?: string } };
@@ -113,12 +124,15 @@ export type UtilityResult = { robotId: number; tasksPassed: number; relay?: { tx
 export const api = {
   publishOwnBrain: (provider: string, model: string, systemPrompt: string, apiKey: string) =>
     call<{ brainHash: string }>("/brains", { method: "POST", body: JSON.stringify({ config: { provider, model, systemPrompt }, apiKey }) }),
-  addPrize: (robotId: number, owner: string, txHash: string) =>
-    call<{ robotId: number; bountyId: number; uqor: string }>("/owner/bounty", { method: "POST", body: JSON.stringify({ robotId, owner, txHash }) }),
-  ownerPrizes: (owner: string) => call<{ bounties: OwnerPrize[] }>(`/owner/${encodeURIComponent(owner)}/bounties`).then((r) => r.bounties),
-  prizeBackRequest: (bountyId: number, owner: string) =>
+  addBounty: (robotId: number, owner: string, txHash: string) =>
+    call<{ robotId: number; bountyIds: number[]; lockedUqor: string; depositTx: string | null }>("/owner/bounty", {
+      method: "POST",
+      body: JSON.stringify({ robotId, owner, txHash }),
+    }),
+  ownerBounties: (owner: string) => call<{ bounties: OwnerBounty[] }>(`/owner/${encodeURIComponent(owner)}/bounties`).then((r) => r.bounties),
+  bountyBackRequest: (bountyId: number, owner: string) =>
     call<SignRequest>(`/owner/bounty/back/request?bountyId=${bountyId}&owner=${encodeURIComponent(owner)}`),
-  takePrizeBack: (body: { bountyId: number; owner: string; deadline: number; pqSignature: string }) =>
+  takeBountyBack: (body: { bountyId: number; owner: string; deadline: number; pqSignature: string }) =>
     call<{ bountyId: number; tx: string; uqor: string }>("/owner/bounty/back", { method: "POST", body: JSON.stringify(body) }),
   leaderboard: () => call<{ players: LeaderRow[] }>("/leaderboard").then((r) => r.players),
   publishBrain: (config: BrainConfig) => call<{ brainHash: string }>("/brains", { method: "POST", body: JSON.stringify({ config }) }),

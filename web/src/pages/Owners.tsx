@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useAccount } from "../account";
-import { api, prizeMemo, type OwnerPrize, type Trace } from "../api";
+import { api, bountyMemo, type OwnerBounty, type Trace } from "../api";
 import { AccountGate } from "../components/AccountGate";
 import { ArenaView } from "../components/ArenaView";
 import { PracticePanel } from "../components/PracticePanel";
@@ -83,9 +83,9 @@ export function Owners() {
   }
 
   const mine = acc.player ? robots.filter((r) => r.owner.toLowerCase() === acc.player!.evm.toLowerCase()) : [];
-  const [bounties, setPrizes] = useState<OwnerPrize[]>([]);
+  const [bounties, setBounties] = useState<OwnerBounty[]>([]);
   const loadPrizes = async () => {
-    if (acc.player) setPrizes(await api.ownerPrizes(acc.player.evm).catch(() => []));
+    if (acc.player) setBounties(await api.ownerBounties(acc.player.evm).catch(() => []));
   };
   useEffect(() => {
     loadPrizes();
@@ -251,11 +251,11 @@ function toUqor(qorText: string, minUqor: bigint): string | null {
  */
 async function lockPrize(address: string, robotId: number, uqor: string, payTo: string, setBusy: (s: string) => void) {
   setBusy("Approve the bounty payment in QoreX…");
-  const tx = await payNative(address, payTo, uqor, prizeMemo(robotId));
+  const tx = await payNative(address, payTo, uqor, bountyMemo(robotId));
   setBusy("Locking the bounty in the vault…");
   for (let i = 0; ; i++) {
     try {
-      return await api.addPrize(robotId, address, tx);
+      return await api.addBounty(robotId, address, tx);
     } catch (e) {
       const m = (e as Error).message;
       // Not visible on chain yet, or the lock step failed: both are safe to retry (no double payment).
@@ -289,7 +289,8 @@ function AddRobot({ saveBrain, onAdded }: { saveBrain: () => Promise<string | nu
   const [done, setDone] = useState<{ id: number; bounty?: string; skills?: number; prizeError?: string } | null>(null);
   const s = useSigned();
   const clean = name.trim();
-  const validName = clean.length > 0 && clean.length <= 64 && /^[\x20-\x7e]+$/.test(clean);
+  const maxName = health?.rules?.maxNameLength;
+  const validName = clean.length > 0 && (!maxName || clean.length <= maxName) && /^[\x20-\x7e]+$/.test(clean);
   const uqor = toUqor(amount, minUqor);
 
   const add = () =>
@@ -321,7 +322,7 @@ function AddRobot({ saveBrain, onAdded }: { saveBrain: () => Promise<string | nu
         <strong>{done.prizeError ? "Robot added, bounty still needed" : "Your robot is live!"}</strong>
         <p>
           It's robot #{done.id}.{done.bounty && ` Its bounty of ${qorAmount(done.bounty)} is locked in the vault.`}
-          {done.skills !== undefined && ` It passed ${done.skills} of 10 everyday tasks.`}
+          {done.skills !== undefined && ` It passed ${done.skills} of ${health?.rules?.utilityTasks ?? "the"} everyday tasks.`}
         </p>
         {done.prizeError && (
           <p className="error-text">
@@ -345,8 +346,8 @@ function AddRobot({ saveBrain, onAdded }: { saveBrain: () => Promise<string | nu
   return (
     <div className="stack">
       <label htmlFor="robot-name">Robot name</label>
-      <input id="robot-name" value={name} maxLength={64} placeholder="e.g. Warehouse Helper" onChange={(e) => setName(e.target.value)} />
-      {name && !validName && <p className="error-text">Use plain letters, numbers and punctuation (up to 64).</p>}
+      <input id="robot-name" value={name} maxLength={maxName} placeholder="e.g. Warehouse Helper" onChange={(e) => setName(e.target.value)} />
+      {name && !validName && <p className="error-text">Use plain letters, numbers and punctuation {maxName ? ` (up to ${maxName})` : ""}.</p>}
       <PrizeInput value={amount} onChange={setAmount} minUqor={minUqor} />
       <button className="btn primary big" disabled={!validName || !uqor || !!s.busy} onClick={add}>
         Add my robot{uqor ? ` with a ${qorAmount(uqor)} bounty` : ""}
@@ -359,13 +360,13 @@ function AddRobot({ saveBrain, onAdded }: { saveBrain: () => Promise<string | nu
 }
 
 /** Bounty controls on a maker's robot: add one if it has none, or take an unwon bounty back. */
-function RobotPrize({ robotId, hasPrize, bounties, onChange }: { robotId: number; hasPrize: boolean; bounties: OwnerPrize[]; onChange: () => Promise<void> }) {
+function RobotPrize({ robotId, hasPrize, bounties, onChange }: { robotId: number; hasPrize: boolean; bounties: OwnerBounty[]; onChange: () => Promise<void> }) {
   const { health } = useData();
   const minUqor = BigInt(health?.prize?.minUqor ?? "1000000");
   const [amount, setAmount] = useState(String(Number(minUqor) / 1e6));
   const [adding, setAdding] = useState(false);
   const s = useSigned();
-  const open = bounties.filter((p) => p.robotId === robotId && p.open && p.bountyId);
+  const open = bounties.filter((p) => p.robotId === robotId);
   const uqor = toUqor(amount, minUqor);
 
   const add = () =>
@@ -378,10 +379,10 @@ function RobotPrize({ robotId, hasPrize, bounties, onChange }: { robotId: number
 
   const takeBack = (bountyId: number) =>
     s.run(async (address) => {
-      const req = await api.prizeBackRequest(bountyId, address);
+      const req = await api.bountyBackRequest(bountyId, address);
       const pqSignature = await signPq(address, req.text);
       s.setBusy("Sending the bounty back to you…");
-      await api.takePrizeBack({ bountyId, owner: address, deadline: req.deadline, pqSignature });
+      await api.takeBountyBack({ bountyId, owner: address, deadline: req.deadline, pqSignature });
       await onChange();
     });
 
@@ -409,7 +410,7 @@ function RobotPrize({ robotId, hasPrize, bounties, onChange }: { robotId: number
         </>
       )}
       {open.map((p) => (
-        <button key={p.bountyId} className="btn small" disabled={!!s.busy} onClick={() => takeBack(p.bountyId!)}>
+        <button key={p.bountyId} className="btn small" disabled={!!s.busy} onClick={() => takeBack(p.bountyId)}>
           Take my {qorAmount(p.uqor)} bounty back
         </button>
       ))}

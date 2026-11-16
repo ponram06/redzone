@@ -13,7 +13,7 @@ verified on chain, so a leaked or quantum-broken ECDSA key cannot drain the vaul
 | Part | State |
 |---|---|
 | `contracts/` EscrowVault, RobotRegistryV2, PQAdmin, PQGuard, QoreXMessage | 92 Foundry tests passing, including a 45-test attacker playbook for v2 |
-| `backend/` robot brains + ML-DSA-87 referee API | Working: 71 tests, plus a live parity test against testnet ([backend/README.md](backend/README.md)) |
+| `backend/` robot brains + ML-DSA-87 referee API | Working: 72 tests, plus a live parity test against testnet ([backend/README.md](backend/README.md)) |
 | `web/` website for players, robot makers and buyers | Working: play (free practice and prize rounds), safety rankings, robot pages, add a robot, help. Sign-in with QoreX; a relayer pays gas |
 | `audits/` two-stage QCAI audit | Planned |
 
@@ -54,6 +54,35 @@ account's ML-DSA-87 key opens with a hybrid-signed native message (`npm run wind
 
 `msg.sender` is never used for authorisation. Signed digests include chain id, vault address,
 a per-signer nonce and a deadline, so signatures cannot be replayed elsewhere.
+
+## Where the data comes from
+
+Nothing on the website is typed in or simulated. The chain is the source of truth. The server's
+own files are only caches and the off-chain parts of the game (brain configs and replays, whose
+hashes are on chain).
+
+| What you see | Source |
+|---|---|
+| Robots, owners, names, attacks, wins, safety score, badge, skills score | `RobotRegistryV2` reads (`getRobot`, `getRating`, `getTier`) |
+| Bounties on each robot | `EscrowVault.bounties` |
+| Tries left today | `RobotRegistryV2.attemptsLeftToday` |
+| Game rules (tries per day, round length, number of tasks, name length) | Contract constants, read when the server starts |
+| Top players leaderboard | `Breached` / `Defended` events and `BountyClaimed` events, scanned from the deploy blocks |
+| "Account verified" | The player's sign-up transfer, found with the chain's transaction search |
+| A maker's bounties and how much is locked | Their QoreX payments (tx search) and the vault's `BountyDeposited` events |
+| Quantum-safe key registered | `pqcKeyStatus` precompile |
+| Network and contract addresses | `deployments/testnet.json` |
+| Verdict proofs | Transaction hashes from the chain; the replay behind each `replayHash` from `GET /replay/:hash` |
+
+If the server's data folder is lost, sign-ups, bounties, the leaderboard and robot records all
+come back from the chain. Only replay files and brain configs need a backup: their hashes are on
+chain, so a restored copy can be checked.
+
+**One leftover from before the Q-Day Drill:** robot #1 (Sentinel-01) was registered before brain
+configs existed. Its `brainHash` is `keccak256("redzone-demo-brain-v1")`, which the server maps to
+the built-in rule brain. After the drill, its owner (the admin account) will call `updateBrain` to
+switch it to the rule brain's real config hash. That isn't done now because it would change a
+drill contract's state before drill day.
 
 ## Known limitation: QoreX can't send transactions to contracts yet
 

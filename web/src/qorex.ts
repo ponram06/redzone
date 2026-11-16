@@ -1,6 +1,14 @@
 /** Minimal QoreX wallet access (window.qorex, injected by the QoreX extension). */
 
-export const NATIVE_CHAIN_ID = "qorechain-diana";
+/** The native chain id QoreX signs for. Set from the server's /health (deployment record) on load. */
+let NATIVE_CHAIN_ID = "";
+export function setNativeChainId(id: string) {
+  NATIVE_CHAIN_ID = id;
+}
+function chainId(): string {
+  if (!NATIVE_CHAIN_ID) throw new Error("Still connecting to RedZone, try again in a moment.");
+  return NATIVE_CHAIN_ID;
+}
 
 type QorexNative = {
   enable(chainId: string): Promise<unknown>;
@@ -27,7 +35,7 @@ function native(): QorexNative {
 /** Ask QoreX for access and return the active qor1… address. */
 export async function connect(): Promise<string> {
   const n = native();
-  await n.enable(NATIVE_CHAIN_ID);
+  await n.enable(chainId());
   const { accounts, activeIndex } = await n.listAccounts();
   const acc = accounts[activeIndex] ?? accounts[0];
   if (!acc) throw new Error("QoreX has no account");
@@ -36,7 +44,7 @@ export async function connect(): Promise<string> {
 
 /** Sign text with the account's ML-DSA-87 key; returns the post-quantum signature (base64). */
 export async function signPq(address: string, text: string): Promise<string> {
-  const r = await native().signArbitrary(NATIVE_CHAIN_ID, address, text);
+  const r = await native().signArbitrary(chainId(), address, text);
   if (r.signatureType !== "ml-dsa-87-hybrid" || !r.pq?.signature) {
     throw new Error("QoreX did not return an ML-DSA-87 signature (is the account's PQC key registered?)");
   }
@@ -47,7 +55,7 @@ export async function signPq(address: string, text: string): Promise<string> {
 export function explainQorexError(e: unknown): string {
   const m = (e as Error)?.message ?? String(e);
   if (/locked/i.test(m)) return "QoreX is locked. Unlock it and try again.";
-  if (/does not match the active network/i.test(m)) return "Switch QoreX to the testnet (qorechain-diana) and try again.";
+  if (/does not match the active network/i.test(m)) return `Switch QoreX to the right network (${NATIVE_CHAIN_ID}) and try again.`;
   if (/reject|denied|cancel/i.test(m)) return "You cancelled the request in QoreX.";
   return m;
 }
@@ -86,7 +94,7 @@ export async function payNative(from: string, to: string, uqor: string, memo: st
   } | null;
   if (!n) throw new Error("QoreX is not installed in this browser");
   const r = await n.signAndBroadcast({
-    chainId: NATIVE_CHAIN_ID,
+    chainId: chainId(),
     messages: [{ typeUrl: "/cosmos.bank.v1beta1.MsgSend", value: encodeMsgSend(from, to, uqor) }],
     memo,
   });

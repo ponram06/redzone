@@ -3,7 +3,8 @@ import { useData } from "../data";
 import { byRank } from "./Rankings";
 
 export function Home() {
-  const { robots } = useData();
+  const { robots, health } = useData();
+  const perDay = health?.rules?.attemptsPerDay;
   const top = robots.filter((r) => r.bounty.totalWei !== "0").sort(byRank).slice(0, 3);
 
   return (
@@ -63,11 +64,13 @@ export function Home() {
       <section className="audience">
         <div>
           <h3>For players</h3>
-          <p>Free practice, 5 bounty rounds a day, bounties paid automatically. A tiny one-time fee verifies your account.</p>
+          <p>
+            Free practice{perDay ? `, ${perDay} bounty rounds a day` : ""}, bounties paid automatically. A tiny one-time fee verifies your account.
+          </p>
         </div>
         <div>
           <h3>For robot makers</h3>
-          <p>Put your robot's brain in the arena. Thousands of tricks later, you know exactly how safe it is.</p>
+          <p>Put your robot's brain in the arena. Every attack players try is recorded on the blockchain, so its safety record is real.</p>
         </div>
         <div>
           <h3>For robot buyers</h3>

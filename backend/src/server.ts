@@ -7,21 +7,27 @@ import { BrainRegistry, LEGACY_DEMO_HASH, RULE_BRAIN, brainHash } from "./brains
 import type { BrainConfig } from "./brains/types.js";
 import {
   CHAIN_ID,
+  NATIVE_CHAIN_ID,
   REGISTRY,
-  RESULT_GRACE,
-  SESSION_TTL,
+  REGISTRY_DEPLOY_BLOCK,
+  REST_URL,
   VAULT,
+  VAULT_DEPLOY_BLOCK,
+  client,
   openBounties,
   readBounty,
+  readDeposit,
   readNativeTransfer,
-  readNextBountyId,
+  readNextRobotId,
   readPlayer,
   readPqcKey,
   readRobot,
   readRobots,
+  readRules,
   readSession,
   readVaultNonce,
 } from "./chain.js";
+import { ChainLedger } from "./ledger.js";
 import { ChainRelayer } from "./relayer.js";
 import { Game } from "./game.js";
 import { DEFAULT_LLM_PROMPT } from "./prompt.js";
@@ -68,6 +74,16 @@ const store = new Store(dataDir);
 const relayer = ChainRelayer.fromEnv(env, [REGISTRY, VAULT]);
 const prize = relayer ? { minUqor: BigInt(env.PRIZE_MIN_UQOR ?? "1000000"), payTo: relayer.cosmosAddress } : null;
 
+// Rules come from the contract; history comes from chain events and the tx index.
+const rules = await readRules();
+if (rules.utilityTasks !== FACILITY.utilityTasks.length) throw new Error(`arena has ${FACILITY.utilityTasks.length} tasks, contract expects ${rules.utilityTasks}`);
+const ledger = new ChainLedger(client, REGISTRY, REGISTRY_DEPLOY_BLOCK, VAULT, VAULT_DEPLOY_BLOCK, REST_URL);
+await ledger.sync();
+
+// One-time sign-up fee, paid to the relayer so it funds gas (0 turns sign-up off).
+const signupFee = BigInt(env.SIGNUP_FEE_UQOR ?? "100000");
+const signup = relayer && signupFee > 0n ? { feeUqor: signupFee, payTo: relayer.cosmosAddress } : null;
+
 const game = new Game({
   arena: FACILITY,
   brains,
@@ -81,19 +97,20 @@ const game = new Game({
     readPlayer,
     readNativeTransfer: (h) => readNativeTransfer(h),
     readBounty,
-    readNextBountyId,
     readVaultNonce,
+    readNextRobotId,
+    readDeposit,
   },
+  ledger,
   relayer,
   // Prizes are paid to the relayer from QoreX and locked in the vault by it (PRIZE_MIN_UQOR, default 1 QOR).
   prize,
-  // One-time sign-up fee, paid to the relayer so it funds gas (0 turns sign-up off).
-  signup: relayer && BigInt(env.SIGNUP_FEE_UQOR ?? "100000") > 0n ? { feeUqor: BigInt(env.SIGNUP_FEE_UQOR ?? "100000"), payTo: relayer.cosmosAddress } : null,
+  signup,
   chainId: CHAIN_ID,
   registry: REGISTRY,
   vault: VAULT,
-  sessionTtl: SESSION_TTL,
-  resultGrace: RESULT_GRACE,
+  sessionTtl: rules.sessionTtl,
+  resultGrace: rules.resultGrace,
 });
 
 const builtInBrains: Record<string, string> = { rule: brainHash(RULE_BRAIN), "demo-legacy (robot 1)": LEGACY_DEMO_HASH };
@@ -111,6 +128,10 @@ const app = await buildApp({
   builtInBrains,
   relayer: relayer ? { address: relayer.address, cosmos: relayer.cosmosAddress } : null,
   prize,
+  rules,
+  nativeChainId: NATIVE_CHAIN_ID,
+  signupFeeUqor: signup?.feeUqor ?? null,
+  explorerUrl: env.EXPLORER_URL?.trim() || null,
   readRobots,
   readRobot,
   corsOrigin: env.CORS_ORIGIN || undefined,

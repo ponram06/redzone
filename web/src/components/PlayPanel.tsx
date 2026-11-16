@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useAccount } from "../account";
-import { api, attemptMessage, formatQor, type Health, type Robot, type Trace, type Verdict } from "../api";
+import { API_URL, api, attemptMessage, formatQor, type Health, type Robot, type Trace, type Verdict } from "../api";
 import { plural, shortHash } from "../format";
 import { explainQorexError, signPq } from "../qorex";
 import { AccountGate } from "./AccountGate";
@@ -117,11 +117,22 @@ function RealRound({ health, robot, maxInstruction, onResult, onFinished }: Prop
           )}
           <details className="proof">
             <summary>Proof</summary>
-            {verdict.relay?.resultTx && <div>Result saved: {shortHash(verdict.relay.resultTx)}</div>}
+            {verdict.relay?.resultTx && (
+              <div>
+                Result saved: <TxLink hash={verdict.relay.resultTx} explorer={health.explorerUrl} />
+              </div>
+            )}
             {verdict.relay?.claimTxs?.map((c) => (
-              <div key={c.bountyId}>Bounty payment: {shortHash(c.tx)}</div>
+              <div key={c.bountyId}>
+                Bounty payment: <TxLink hash={c.tx} explorer={health.explorerUrl} />
+              </div>
             ))}
-            <div>Replay: {shortHash(verdict.replayHash)}</div>
+            <div>
+              Replay:{" "}
+              <a href={`${API_URL}/replay/${verdict.replayHash}`} target="_blank" rel="noreferrer">
+                {shortHash(verdict.replayHash)}
+              </a>
+            </div>
           </details>
         </div>
       )}
@@ -145,8 +156,8 @@ function RealRound({ health, robot, maxInstruction, onResult, onFinished }: Prop
           </button>
           <p className="note">
             {player.attemptsLeft > 0
-              ? `${plural(player.attemptsLeft, "try", "tries")} left today. Each round lasts 10 minutes.`
-              : "You've used all 5 tries for today. Come back tomorrow, or keep practising for free."}
+              ? `${plural(player.attemptsLeft, "try", "tries")} left today.${health.rules ? ` Each round lasts ${Math.round(health.rules.sessionTtl / 60)} minutes.` : ""}`
+              : `You've used all ${health.rules?.attemptsPerDay ?? "your"} tries for today. Come back tomorrow, or keep practising for free.`}
           </p>
         </>
       ) : (
@@ -172,5 +183,15 @@ function RealRound({ health, robot, maxInstruction, onResult, onFinished }: Prop
       {busy && <p className="note">{busy}</p>}
       {error && <p className="error-text">{error}</p>}
     </div>
+  );
+}
+
+/** A transaction hash, linked to the block explorer when the network has one. */
+function TxLink({ hash, explorer }: { hash: string; explorer: string | null }) {
+  if (!explorer) return <code title={hash}>{shortHash(hash)}</code>;
+  return (
+    <a href={`${explorer}/tx/${hash}`} target="_blank" rel="noreferrer" title={hash}>
+      {shortHash(hash)}
+    </a>
   );
 }

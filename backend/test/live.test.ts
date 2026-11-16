@@ -6,7 +6,8 @@
 import { keccak256, stringToBytes, encodeFunctionData, decodeFunctionResult, parseAbi, type Hex } from "viem";
 import { describe, expect, it } from "vitest";
 import { LEGACY_DEMO_HASH } from "../src/brains/registry.js";
-import { CHAIN_ID, PQC_VERIFY, REGISTRY, VAULT, client, registryAbi, robotKey, vaultAbi } from "../src/chain.js";
+import { CHAIN_ID, PQC_VERIFY, REGISTRY, REGISTRY_DEPLOY_BLOCK, REST_URL, VAULT, VAULT_DEPLOY_BLOCK, client, readRules, registryAbi, robotKey, vaultAbi } from "../src/chain.js";
+import { ChainLedger } from "../src/ledger.js";
 import { claimDigest, loadRefereeKey, registerRobotDigest, resultDigest, signDigest, startSessionDigest, updateBrainDigest, utilityDigest, withdrawDigest } from "../src/signer.js";
 
 const key = loadRefereeKey(process.env.REFEREE_KEY_FILE ?? "../contracts/.referee-key.json");
@@ -60,5 +61,20 @@ describe("live contracts", { timeout: 60_000 }, () => {
     expect(r.brainHash).toBe(LEGACY_DEMO_HASH);
     const [, rk] = await client.readContract({ address: VAULT, abi: vaultAbi, functionName: "bounties", args: [1n] });
     expect(rk).toBe(robotKey(1));
+  });
+
+  it("game rules are read from the contract", async () => {
+    expect(await readRules()).toEqual({ attemptsPerDay: 5, sessionTtl: 600, resultGrace: 3600, utilityTasks: 10, maxNameLength: 64 });
+  });
+
+  it("the ledger reads real history: the 1 QOR bounty deposit and a native transfer", { timeout: 180_000 }, async () => {
+    const ledger = new ChainLedger(client, REGISTRY, REGISTRY_DEPLOY_BLOCK, VAULT, VAULT_DEPLOY_BLOCK, REST_URL);
+    await ledger.sync();
+    const first = ledger.deposits().find((d) => d.bountyId === 1)!;
+    expect(first.robotKey).toBe(robotKey(1));
+    expect(first.amountWei).toBe(10n ** 18n);
+    // The 3 QOR the main account sent to fund the relayer (16 Nov).
+    const t = await ledger.transfers("qor1crs332umw4zr9adcegafrc0yr8juke7t7rsre5", "qor19n2e0wjparavk47wevc8mag90ce8nzysd8lp2d");
+    expect(t.some((x) => x.uqor === 3_000_000n && x.code === 0)).toBe(true);
   });
 });

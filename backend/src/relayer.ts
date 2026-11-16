@@ -31,7 +31,8 @@ export type RelayReceipt = { hash: Hex; status: "success" | "reverted"; logs: Lo
 
 export interface Relayer {
   readonly address: Address;
-  send(to: Address, data: Hex, valueWei?: bigint): Promise<RelayReceipt>;
+  /** `onSent` gets the hash as soon as the transaction is broadcast, before its receipt. */
+  send(to: Address, data: Hex, valueWei?: bigint, onSent?: (hash: Hex) => void): Promise<RelayReceipt>;
   /** ML-DSA-87 signature over a 32-byte digest with the relayer's own PQC key (vault withdrawals). */
   pqSign?(digest: Hex): Hex;
 }
@@ -70,12 +71,12 @@ export class ChainRelayer implements Relayer {
   }
 
   /** One transaction at a time, so nonces never collide. */
-  send(to: Address, data: Hex, valueWei = 0n): Promise<RelayReceipt> {
+  send(to: Address, data: Hex, valueWei = 0n, onSent?: (hash: Hex) => void): Promise<RelayReceipt> {
     if (!this.targets.some((t) => t.toLowerCase() === to.toLowerCase())) {
       return Promise.reject(new Error(`relayer refuses target ${to}`));
     }
     if (valueWei < 0n || valueWei % 10n ** 12n !== 0n) return Promise.reject(new Error("value must be whole uqor"));
-    const run = this.queue.then(() => this.sendNow(to, data, valueWei));
+    const run = this.queue.then(() => this.sendNow(to, data, valueWei, onSent));
     this.queue = run.catch(() => {});
     return run;
   }
@@ -84,7 +85,7 @@ export class ChainRelayer implements Relayer {
     return bytesToHex(pqcSign(this.acc.pqc.secretKey, hexToBytes(digest)));
   }
 
-  private async sendNow(to: Address, data: Hex, valueWei: bigint): Promise<RelayReceipt> {
+  private async sendNow(to: Address, data: Hex, valueWei: bigint, onSent?: (hash: Hex) => void): Promise<RelayReceipt> {
     await this.ensureWindow(valueWei / 10n ** 12n);
     const wallet = createWalletClient({ account: privateKeyToAccount(this.privateKey), chain: qorechain, transport: http() });
     const estimate = await client.estimateGas({ account: this.address, to, data, value: valueWei });
@@ -92,6 +93,7 @@ export class ChainRelayer implements Relayer {
     if (gas > MAX_GAS) throw new Error(`relay gas ${gas} above cap`);
     const gasPrice = ((await client.getGasPrice()) * 12n) / 10n;
     const hash = await wallet.sendTransaction({ to, data, gas, gasPrice, value: valueWei, type: "legacy" });
+    onSent?.(hash);
     const receipt = await client.waitForTransactionReceipt({ hash, timeout: 90_000 });
     return { hash, status: receipt.status, logs: receipt.logs };
   }

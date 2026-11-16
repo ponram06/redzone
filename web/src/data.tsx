@@ -1,6 +1,7 @@
 /** Site-wide data from the referee: health, the arena map and the robot list. */
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 import { api, type Arena, type Health, type Robot } from "./api";
+import { setNativeChainId } from "./qorex";
 
 type Data = {
   health: Health | null;
@@ -37,6 +38,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     Promise.all([api.health(), api.arena()])
       .then(([h, a]) => {
+        if (h.nativeChainId) setNativeChainId(h.nativeChainId);
         setHealth(h);
         setArena(a);
       })

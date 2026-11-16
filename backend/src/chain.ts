@@ -2,6 +2,7 @@
 import { readFileSync } from "node:fs";
 import {
   createPublicClient,
+  decodeEventLog,
   decodeFunctionResult,
   defineChain,
   encodeFunctionData,
@@ -15,7 +16,18 @@ import {
 
 const deployments = JSON.parse(
   readFileSync(new URL("../../deployments/testnet.json", import.meta.url), "utf8"),
-) as { evmChainId: number; contracts: { EscrowVault: { address: Address }; RobotRegistryV2: { address: Address } } };
+) as {
+  evmChainId: number;
+  network: string;
+  contracts: { EscrowVault: { address: Address; deployBlock: number }; RobotRegistryV2: { address: Address; deployBlock: number; nativeChainId: string } };
+};
+
+/** Native (Cosmos) chain id QoreX signs for, from the deployment record. */
+export const NATIVE_CHAIN_ID = deployments.contracts.RobotRegistryV2.nativeChainId;
+export const REGISTRY_DEPLOY_BLOCK = BigInt(deployments.contracts.RobotRegistryV2.deployBlock);
+export const VAULT_DEPLOY_BLOCK = BigInt(deployments.contracts.EscrowVault.deployBlock);
+/** Native REST endpoint: QORE_REST_URL, else the SDK's preset for this network. */
+export const REST_URL = process.env.QORE_REST_URL?.trim() || "https://api-testnet.qore.host";
 
 export const CHAIN_ID = deployments.evmChainId;
 export const VAULT = deployments.contracts.EscrowVault.address;
@@ -49,6 +61,11 @@ export const registryAbi = parseAbi([
   "function attemptsLeftToday(address player) view returns (uint256)",
   "function startSessionDigest(uint256 robotId, address player, uint256 nonce, uint256 deadline) view returns (bytes32)",
   "function startSessionFor(uint256 robotId, address player, uint256 deadline, bytes playerSig) returns (uint256)",
+  "function MAX_ATTEMPTS_PER_DAY() view returns (uint256)",
+  "function SESSION_TTL() view returns (uint256)",
+  "function RESULT_GRACE() view returns (uint256)",
+  "function UTILITY_TASKS() view returns (uint8)",
+  "function MAX_NAME_LENGTH() view returns (uint256)",
   "event SessionStarted(uint256 indexed sessionId, uint256 indexed robotId, address indexed player, uint256 expiresAt)",
   "function registerRobotDigest(address owner, bytes32 nameHash, bytes32 brainHash, uint256 nonce, uint256 deadline) view returns (bytes32)",
   "function registerRobotFor(address owner, string name, bytes32 brainHash, uint256 deadline, bytes ownerSig) returns (uint256)",
@@ -72,8 +89,6 @@ export const vaultAbi = parseAbi([
   "event BountyWithdrawn(uint256 indexed bountyId, address indexed to, uint256 amount)",
 ]);
 
-export const SESSION_TTL = 600;
-export const RESULT_GRACE = 3600;
 export const TIERS = ["Rookie", "Guard", "Sentinel"] as const;
 
 /** The vault keys bounties by bytes32; robot N's key is keccak256("robot-N"). */
@@ -148,6 +163,46 @@ export async function readBounty(id: number): Promise<BountyView> {
   return { id, owner, robotKey: rk, amountWei: amount, status };
 }
 
+/** The game rules as the contract enforces them (read once at start-up, never typed in). */
+export async function readRules() {
+  const read = <T>(functionName: "MAX_ATTEMPTS_PER_DAY" | "SESSION_TTL" | "RESULT_GRACE" | "UTILITY_TASKS" | "MAX_NAME_LENGTH") =>
+    client.readContract({ address: REGISTRY, abi: registryAbi, functionName }) as Promise<T>;
+  const [attemptsPerDay, sessionTtl, resultGrace, utilityTasks, maxNameLength] = await Promise.all([
+    read<bigint>("MAX_ATTEMPTS_PER_DAY"),
+    read<bigint>("SESSION_TTL"),
+    read<bigint>("RESULT_GRACE"),
+    read<number>("UTILITY_TASKS"),
+    read<bigint>("MAX_NAME_LENGTH"),
+  ]);
+  return {
+    attemptsPerDay: Number(attemptsPerDay),
+    sessionTtl: Number(sessionTtl),
+    resultGrace: Number(resultGrace),
+    utilityTasks: Number(utilityTasks),
+    maxNameLength: Number(maxNameLength),
+  };
+}
+
+export async function readNextRobotId(): Promise<number> {
+  return Number(await client.readContract({ address: REGISTRY, abi: registryAbi, functionName: "nextRobotId" }));
+}
+
+/** Status of a depositBounty we sent, from its receipt. */
+export async function readDeposit(hash: Hex): Promise<{ status: "pending" | "success" | "reverted"; bountyId?: number; amountWei: bigint }> {
+  const r = await client.getTransactionReceipt({ hash }).catch(() => null);
+  if (!r) return { status: "pending", amountWei: 0n };
+  if (r.status !== "success") return { status: "reverted", amountWei: 0n };
+  for (const log of r.logs) {
+    try {
+      const ev = decodeEventLog({ abi: vaultAbi, data: log.data, topics: log.topics });
+      if (ev.eventName === "BountyDeposited") return { status: "success", bountyId: Number(ev.args.bountyId), amountWei: ev.args.amount };
+    } catch {
+      // not our event
+    }
+  }
+  return { status: "reverted", amountWei: 0n };
+}
+
 export async function readNextBountyId(): Promise<number> {
   return Number(await client.readContract({ address: VAULT, abi: vaultAbi, functionName: "nextBountyId" }));
 }
@@ -195,7 +250,7 @@ export async function readPlayer(player: Address): Promise<{ nonce: bigint; atte
 export type NativeTransfer = { code: number; from: string; to: string; uqor: bigint; memo: string; height: number };
 
 /** A confirmed native transaction, read over REST: its first MsgSend, if any. Null when not found. */
-export async function readNativeTransfer(txHash: string, rest = process.env.QORE_REST_URL ?? "https://api-testnet.qore.host"): Promise<NativeTransfer | null> {
+export async function readNativeTransfer(txHash: string, rest = REST_URL): Promise<NativeTransfer | null> {
   if (!/^(0x)?[0-9a-fA-F]{64}$/.test(txHash)) return null;
   const hash = txHash.replace(/^0x/, "").toUpperCase();
   const res = await fetch(`${rest}/cosmos/tx/v1beta1/txs/${hash}`, { signal: AbortSignal.timeout(20_000) });

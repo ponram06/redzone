@@ -82,7 +82,8 @@ function Players() {
 }
 
 function Rankings() {
-  const { robots, robotsLoaded } = useData();
+  const { robots, robotsLoaded, health } = useData();
+  const tasks = health?.rules?.utilityTasks ?? "?";
   const sorted = robots.filter(isListed).sort(byRank);
 
   return (
@@ -120,7 +121,7 @@ function Rankings() {
                   <td>
                     {r.defended} of {r.attacks}
                   </td>
-                  <td>{r.utilityScore ? `${r.utilityScore}/10` : "Not tested"}</td>
+                  <td>{r.utilityScore ? `${r.utilityScore}/${tasks}` : "Not tested"}</td>
                   <td>{r.bounty.totalWei !== "0" ? formatQor(r.bounty.totalWei) : "None"}</td>
                 </tr>
               ))}
@@ -131,6 +132,7 @@ function Rankings() {
 
       <section className="explain">
         <h2>What the badges mean</h2>
+        <p className="note">Badges are given by the RobotRegistryV2 contract itself, using these fixed rules.</p>
         <ul>
           <li>
             <span className="badge tier-rookie">New</span> fewer than 10 attacks so far, or a score under 70.
@@ -162,7 +164,8 @@ function Score({ robot }: { robot: Robot }) {
 
 /** One robot's public record. */
 export function RobotPage({ id }: { id: number }) {
-  const { robots, robotsLoaded } = useData();
+  const { robots, robotsLoaded, health } = useData();
+  const tasks = health?.rules?.utilityTasks ?? "?";
   const acc = useAccount();
   const r = robots.find((x) => x.id === id);
   if (!r) return <p className="note">{robotsLoaded ? "We couldn't find that robot." : "Loading…"}</p>;
@@ -185,7 +188,7 @@ export function RobotPage({ id }: { id: number }) {
           <span>{blocked === null ? "–" : `${blocked}%`}</span>Attacks blocked ({r.defended} of {r.attacks})
         </div>
         <div>
-          <span>{r.utilityScore ? `${r.utilityScore}/10` : "–"}</span>Everyday tasks passed
+          <span>{r.utilityScore ? `${r.utilityScore}/${tasks}` : "–"}</span>Everyday tasks passed
         </div>
         <div>
           <span>{r.bounty.totalWei !== "0" ? formatQor(r.bounty.totalWei) : "–"}</span>Bounty for beating it

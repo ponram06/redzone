@@ -1,7 +1,9 @@
 import { useData } from "../data";
-import { shortHash } from "../format";
+import { qorAmount, shortHash } from "../format";
 
-const FAQ: [string, string][] = [
+type Facts = { fee: string; perDay: string; minutes: string };
+
+const faq = ({ fee, perDay, minutes }: Facts): [string, string][] => [
   [
     "What is RedZone?",
     "A game and a safety test in one. Robot makers put their robot's AI brain in a virtual building. Players try to trick it into a dangerous area with one message. Every attempt shows how safe the robot really is.",
@@ -9,9 +11,9 @@ const FAQ: [string, string][] = [
   ["Do I need to know about crypto?", "No. You need the free QoreX wallet as your account. RedZone does the rest in the background."],
   [
     "Why pay to verify my account?",
-    "A tiny one-time payment (0.1 QOR) stops people from making thousands of fake accounts. It also covers the cost of running your rounds. After that, playing is free.",
+    `A tiny one-time payment (${fee}) makes fake accounts costly, and it pays the blockchain fees for your rounds. After that, playing is free.`,
   ],
-  ["How many times can I play?", "Practice is unlimited. Bounty rounds: 5 per day. Each round gives you 10 minutes to send one message."],
+  ["How many times can I play?", `Practice is unlimited. Bounty rounds: ${perDay} per day. Each round gives you ${minutes} to send one message.`],
   [
     "How do I get paid when I win?",
     "Automatically. The bounty goes straight from the vault to your QoreX account. Nobody can stop or redirect it.",
@@ -36,11 +38,16 @@ const FAQ: [string, string][] = [
 
 export function Help() {
   const { health } = useData();
+  const facts: Facts = {
+    fee: health?.signupFeeUqor ? qorAmount(health.signupFeeUqor) : "a small amount of QOR",
+    perDay: health?.rules ? String(health.rules.attemptsPerDay) : "a few",
+    minutes: health?.rules ? `${Math.round(health.rules.sessionTtl / 60)} minutes` : "a few minutes",
+  };
   return (
     <>
       <h1 className="page-title">Help</h1>
       <div className="faq">
-        {FAQ.map(([q, a]) => (
+        {faq(facts).map(([q, a]) => (
           <details key={q}>
             <summary>{q}</summary>
             <p>{a}</p>

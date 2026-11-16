@@ -8,6 +8,7 @@ import { actionsToWaypoints } from "./brains/actions.js";
 import type { BrainRegistry } from "./brains/registry.js";
 import type { BrainOutput } from "./brains/types.js";
 import { registryAbi, robotKey, vaultAbi, type BountyView, type NativeTransfer, type RobotView, type SessionView } from "./chain.js";
+import type { LedgerReader, Transfer } from "./ledger.js";
 import { SIGNUP_MEMO, decodePqSignature, toEvmAddress, toQorAddress, verifyWalletSignature, walletText } from "./qorex.js";
 import { simulate, taskPassed, type Trace } from "./referee.js";
 import type { Relayer } from "./relayer.js";
@@ -38,43 +39,32 @@ export type ChainReader = {
   readPlayer(player: Address): Promise<{ nonce: bigint; attemptsLeft: number }>;
   readNativeTransfer(txHash: string): Promise<NativeTransfer | null>;
   readBounty(id: number): Promise<BountyView>;
-  readNextBountyId(): Promise<number>;
   readVaultNonce(account: Address): Promise<bigint>;
+  readNextRobotId(): Promise<number>;
+  /** A deposit we sent: pending (not mined or not found), success with its BountyDeposited, or reverted. */
+  readDeposit(hash: Hex): Promise<{ status: "pending" | "success" | "reverted"; bountyId?: number; amountWei: bigint }>;
 };
 
-/** Makers pay prizes to the relayer (QoreX can't call contracts yet); the relayer locks them in the vault. */
+/** Makers pay bounties to the relayer (QoreX can't call contracts yet); the relayer locks them in the vault. */
 export type PrizeConfig = { minUqor: bigint; payTo: string };
-export const prizeMemo = (robotId: number) => `RedZone bounty #${robotId}`;
-/** 10,000 QOR: a sanity cap on a single prize. */
-const MAX_PRIZE_UQOR = 10_000n * 1_000_000n;
+export const bountyMemo = (robotId: number) => `RedZone bounty #${robotId}`;
+/** 10,000 QOR: a sanity cap on a single bounty payment. */
+const MAX_BOUNTY_UQOR = 10_000n * 1_000_000n;
+const WEI_PER_UQOR = 10n ** 12n;
 
-export type PrizeRecord = {
-  txHash: string;
-  robotId: number;
-  owner: Address;
-  uqor: string;
-  /** paid: payment checked, not locked yet. locked: in the vault. withdrawn: back with the maker. */
-  status: "paid" | "locked" | "withdrawn";
-  firstBountyId: number;
-  bountyId?: number;
-  depositTx?: Hex;
-  withdrawTx?: Hex;
-  error?: string;
-  at: number;
-};
-
-/** What the maker signs (off chain, checked by the referee) to take a prize back. */
-export function prizeBackDigest(chainId: number, vault: Address, bountyId: number, owner: Address, deadline: number): Hex {
+/** What the maker signs (checked by the referee) to take a bounty back. */
+export function bountyBackDigest(chainId: number, vault: Address, bountyId: number, owner: Address, deadline: number): Hex {
   return keccak256(
     encodeAbiParameters(
       [{ type: "string" }, { type: "uint256" }, { type: "address" }, { type: "uint256" }, { type: "address" }, { type: "uint256" }],
-      ["RedZone.TakePrizeBack", BigInt(chainId), vault, BigInt(bountyId), owner, BigInt(deadline)],
+      ["RedZone.TakeBountyBack", BigInt(chainId), vault, BigInt(bountyId), owner, BigInt(deadline)],
     ),
   );
 }
 
 /** One-time sign-up: the player pays `feeUqor` once, with a QoreX (hybrid-signed) transfer to `payTo`. */
 export type SignupConfig = { feeUqor: bigint; payTo: string };
+/** Cache of a sign-up found on chain (the chain is the source of truth; this file only saves a lookup). */
 type PlayerRecord = { evm: Address; qor: string; txHash: string; paidUqor: string; height: number; at: number };
 
 export type GameDeps = {
@@ -83,6 +73,8 @@ export type GameDeps = {
   store: Store;
   key: RefereeKey;
   chain: ChainReader;
+  /** Chain history: contract events and native transfers. */
+  ledger: LedgerReader;
   chainId: number;
   registry: Address;
   vault: Address;
@@ -143,7 +135,6 @@ function cleanInstruction(raw: unknown): string {
 
 export class Game {
   private readonly locks = new Map<string, Promise<unknown>>();
-  private board: { at: number; rows: { rank: number; player: Address; qor: string; attempts: number; wins: number; wonWei: string }[] } | null = null;
   private readonly now: () => number;
 
   constructor(private readonly d: GameDeps) {
@@ -340,21 +331,36 @@ export class Game {
     return `player-${evm.slice(2).toLowerCase()}`;
   }
 
-  private isSignedUp(evm: Address): boolean {
-    return !this.d.signup || this.d.store.getVerdict<PlayerRecord>(this.playerKey(evm)) !== null;
+  /**
+   * The player's sign-up payment, from the chain: a successful transfer of at least the fee from
+   * this account to the fee address with the sign-up memo. Found once, then cached.
+   */
+  private async signupFor(evm: Address): Promise<PlayerRecord | null> {
+    if (!this.d.signup) return null;
+    const cached = this.d.store.getVerdict<PlayerRecord>(this.playerKey(evm));
+    if (cached) return cached;
+    const qor = toQorAddress(evm);
+    const tx = (await this.d.ledger.transfers(qor, this.d.signup.payTo)).find((t) => t.memo.trim() === SIGNUP_MEMO && t.uqor >= this.d.signup!.feeUqor);
+    if (!tx) return null;
+    const record: PlayerRecord = { evm, qor, txHash: tx.txHash, paidUqor: tx.uqor.toString(), height: tx.height, at: this.now() };
+    this.d.store.saveVerdict(this.playerKey(evm), record);
+    return record;
+  }
+
+  private async isSignedUp(evm: Address): Promise<boolean> {
+    return !this.d.signup || (await this.signupFor(evm)) !== null;
   }
 
   /** Everything the website needs to know about a player before they play. */
   async playerStatus(addressRaw: unknown) {
     const evm = toEvmAddress(addressRaw);
     if (!evm) throw new GameError(400, "address must be a qor1… or 0x… address");
-    const [key, state] = await Promise.all([this.d.chain.readPqcKey(evm), this.d.chain.readPlayer(evm)]);
-    const record = this.d.store.getVerdict<PlayerRecord>(this.playerKey(evm));
+    const [key, state, record] = await Promise.all([this.d.chain.readPqcKey(evm), this.d.chain.readPlayer(evm), this.signupFor(evm)]);
     return {
       evm,
       qor: toQorAddress(evm),
       pqKeyRegistered: key.registered,
-      signedUp: this.isSignedUp(evm),
+      signedUp: !this.d.signup || record !== null,
       signupTx: record?.txHash ?? null,
       attemptsLeft: state.attemptsLeft,
       signup: this.d.signup ? { feeUqor: this.d.signup.feeUqor.toString(), payTo: this.d.signup.payTo, memo: SIGNUP_MEMO } : null,
@@ -375,10 +381,9 @@ export class Game {
     const txHash = input.txHash.replace(/^0x/, "").toUpperCase();
     const qor = toQorAddress(evm);
 
-    return this.once(`signup-${txHash}`, async () => {
-      const existing = this.d.store.getVerdict<PlayerRecord>(this.playerKey(evm));
+    return this.once(`signup-${evm.toLowerCase()}`, async () => {
+      const existing = await this.signupFor(evm);
       if (existing) return { signedUp: true, txHash: existing.txHash };
-      if (this.d.store.getVerdict(`signuptx-${txHash}`)) throw new GameError(409, "this payment was already used to sign up");
 
       const tx = await this.d.chain.readNativeTransfer(txHash);
       if (!tx) throw new GameError(404, "payment not found on chain yet: wait a few seconds and try again");
@@ -388,10 +393,10 @@ export class Game {
       if (tx.uqor < this.d.signup!.feeUqor) throw new GameError(400, "the payment is smaller than the sign-up fee");
       if (tx.memo.trim() !== SIGNUP_MEMO) throw new GameError(400, `the payment memo must be "${SIGNUP_MEMO}"`);
 
-      const record: PlayerRecord = { evm, qor, txHash, paidUqor: tx.uqor.toString(), height: tx.height, at: this.now() };
-      this.d.store.saveVerdict(`signuptx-${txHash}`, { evm });
-      this.d.store.saveVerdict(this.playerKey(evm), record);
-      return { signedUp: true, txHash };
+      // The payment is valid; the chain's tx search may need a few seconds to index it.
+      const found = await this.signupFor(evm);
+      if (!found) throw new GameError(404, "payment not indexed on chain yet: wait a few seconds and try again");
+      return { signedUp: true, txHash: found.txHash };
     });
   }
 
@@ -411,7 +416,7 @@ export class Game {
     if (!robot) throw new GameError(404, "robot not found");
     if (robot.owner.toLowerCase() === player.toLowerCase()) throw new GameError(409, "owners cannot attack their own robot");
     if (!key.registered) throw new GameError(409, "this account has no ML-DSA-87 key registered yet (register it in QoreX first)");
-    if (!this.isSignedUp(player)) throw new GameError(402, "sign up first: a one-time payment verifies your account");
+    if (!(await this.isSignedUp(player))) throw new GameError(402, "sign up first: a one-time payment verifies your account");
     if (state.attemptsLeft < 1) throw new GameError(429, "no attempts left today (5 per UTC day)");
     const deadline = this.now() + REQUEST_TTL;
     const digest = startSessionDigest(this.d.chainId, this.d.registry, BigInt(robotId), player, state.nonce, BigInt(deadline));
@@ -428,7 +433,7 @@ export class Game {
     if (!Number.isSafeInteger(robotId) || robotId < 1) throw new GameError(400, "bad robotId");
     if (!player) throw new GameError(400, "bad player address");
     if (!sig) throw new GameError(400, "pqSignature missing or malformed");
-    if (!this.isSignedUp(player)) throw new GameError(402, "sign up first: a one-time payment verifies your account");
+    if (!(await this.isSignedUp(player))) throw new GameError(402, "sign up first: a one-time payment verifies your account");
     if (!Number.isSafeInteger(deadline) || deadline < this.now() || deadline > this.now() + 3600) {
       throw new GameError(400, "deadline expired or too far away: request a new one");
     }
@@ -460,20 +465,50 @@ export class Game {
     });
   }
 
-  // ---------------------------------------------------------- prizes (paid in QoreX, locked by the relayer)
+  // ---------------------------------------------------------- bounties (paid in QoreX, locked by the relayer)
   //
   // QoreX can't call contracts yet, so a maker can't call EscrowVault.depositBounty themselves.
-  // Instead they pay the prize to the relayer with a normal QoreX transfer (hybrid-signed), with the
-  // memo "RedZone prize #<robotId>". The referee checks that payment and the relayer deposits exactly
-  // that amount into the vault for the robot. On chain the relayer is the bounty owner, so only its
-  // ML-DSA-87 key can withdraw; the referee does that only for the maker who paid, back to them.
+  // They pay the bounty to the relayer with a normal QoreX transfer (hybrid-signed), memo
+  // "RedZone bounty #<robotId>", and the relayer deposits it into the vault for that robot.
+  //
+  // Everything here is worked out from the chain, not from files on this server:
+  //   paid      = the robot owner's successful transfers to the relayer with that memo
+  //   deposited = the vault's BountyDeposited events by the relayer for that robot
+  // The relayer deposits only paid - deposited, so retries, restarts or a lost database can never
+  // lock a payment twice. Withdrawals go only to the robot's on-chain owner.
 
-  private prizeKey(txHash: string): string {
-    return `prize-${txHash}`;
+  /** Sum of valid bounty payments for a robot, from the chain. */
+  private async paidFor(robotId: number, owner: Address): Promise<{ total: bigint; txs: Transfer[] }> {
+    const all = await this.d.ledger.transfers(toQorAddress(owner), this.d.prize!.payTo);
+    const txs = all.filter((t) => t.memo.trim() === bountyMemo(robotId) && t.uqor >= this.d.prize!.minUqor && t.uqor <= MAX_BOUNTY_UQOR);
+    return { total: txs.reduce((s, t) => s + t.uqor, 0n), txs };
   }
 
-  /** Lock a maker's prize payment in the vault for their robot. Idempotent per payment. */
-  async addPrize(input: { robotId: unknown; owner: unknown; txHash: unknown }): Promise<PrizeRecord> {
+  /** Bounties the relayer deposited for a robot: chain events plus our own sends still being indexed. */
+  private async depositedFor(robotId: number): Promise<{ total: bigint; ids: number[]; txs: Set<string> }> {
+    await this.d.ledger.sync();
+    const rk = robotKey(robotId).toLowerCase();
+    const relayer = this.d.relayer!.address.toLowerCase();
+    const mine = this.d.ledger.deposits().filter((e) => e.robotKey.toLowerCase() === rk && e.owner.toLowerCase() === relayer);
+    const txs = new Set(mine.map((e) => e.tx.toLowerCase()));
+    let total = mine.reduce((s, e) => s + e.amountWei / WEI_PER_UQOR, 0n);
+    const ids = mine.map((e) => e.bountyId);
+    // A deposit we sent may not be visible to getLogs yet: count it from its receipt.
+    for (const h of this.d.store.getVerdict<string[]>(`deposits-${robotId}`) ?? []) {
+      if (txs.has(h.toLowerCase())) continue;
+      const r = await this.d.chain.readDeposit(h as Hex);
+      if (r.status === "pending") throw new GameError(409, "your last bounty deposit is still confirming: try again in a minute");
+      if (r.status === "success" && r.bountyId) {
+        total += r.amountWei / WEI_PER_UQOR;
+        ids.push(r.bountyId);
+        txs.add(h.toLowerCase());
+      }
+    }
+    return { total, ids, txs };
+  }
+
+  /** Lock the maker's paid-but-not-yet-locked bounty for this robot. Safe to call any number of times. */
+  async addBounty(input: { robotId: unknown; owner: unknown; txHash: unknown }) {
     if (!this.d.prize || !this.d.relayer) throw new GameError(503, "bounties can't be added on this referee");
     const robotId = Number(input.robotId);
     if (!Number.isSafeInteger(robotId) || robotId < 1) throw new GameError(400, "bad robotId");
@@ -481,128 +516,106 @@ export class Game {
     if (!owner) throw new GameError(400, "bad owner address");
     if (typeof input.txHash !== "string" || !/^(0x)?[0-9a-fA-F]{64}$/.test(input.txHash)) throw new GameError(400, "bad txHash");
     const txHash = input.txHash.replace(/^0x/, "").toUpperCase();
-    const key = this.prizeKey(txHash);
 
-    return this.once(key, async () => {
-      const done = this.d.store.getVerdict<PrizeRecord>(key);
-      if (done?.status === "locked") {
-        if (done.owner.toLowerCase() !== owner.toLowerCase() || done.robotId !== robotId) throw new GameError(409, "this payment was already used");
-        return done;
-      }
+    return this.once(`bounty-robot-${robotId}`, async () => {
       const robot = await this.d.chain.readRobot(robotId);
       if (!robot) throw new GameError(404, "robot not found");
       if (robot.owner.toLowerCase() !== owner.toLowerCase()) throw new GameError(403, "only the robot's owner can add its bounty");
 
-      let record = done;
-      if (!record) {
-        const tx = await this.d.chain.readNativeTransfer(txHash);
-        if (!tx) throw new GameError(404, "payment not found on chain yet: wait a few seconds and try again");
-        if (tx.code !== 0) throw new GameError(400, "that transaction failed on chain");
-        if (tx.from !== toQorAddress(owner)) throw new GameError(400, "the payment was not sent from this account");
-        if (tx.to !== this.d.prize!.payTo) throw new GameError(400, "the payment went to the wrong address");
-        if (tx.memo.trim() !== prizeMemo(robotId)) throw new GameError(400, `the payment memo must be "${prizeMemo(robotId)}"`);
-        if (tx.uqor < this.d.prize!.minUqor) throw new GameError(400, "the bounty is smaller than the minimum");
-        if (tx.uqor > MAX_PRIZE_UQOR) throw new GameError(400, "the bounty is too large");
-        record = {
-          txHash,
-          robotId,
-          owner,
-          uqor: tx.uqor.toString(),
-          status: "paid",
-          // Bounties created from here on can only be ours: lets a retry see a deposit that
-          // landed even if we never got its receipt, so a prize is never locked twice.
-          firstBountyId: await this.d.chain.readNextBountyId(),
-          at: this.now(),
-        };
-        this.d.store.saveVerdict(key, record);
-      }
+      // Clear errors for the payment the maker just made.
+      const tx = await this.d.chain.readNativeTransfer(txHash);
+      if (!tx) throw new GameError(404, "payment not found on chain yet: wait a few seconds and try again");
+      if (tx.code !== 0) throw new GameError(400, "that transaction failed on chain");
+      if (tx.from !== toQorAddress(owner)) throw new GameError(400, "the payment was not sent from this account");
+      if (tx.to !== this.d.prize!.payTo) throw new GameError(400, "the payment went to the wrong address");
+      if (tx.memo.trim() !== bountyMemo(robotId)) throw new GameError(400, `the payment memo must be "${bountyMemo(robotId)}"`);
+      if (tx.uqor < this.d.prize!.minUqor) throw new GameError(400, "the bounty is smaller than the minimum");
+      if (tx.uqor > MAX_BOUNTY_UQOR) throw new GameError(400, "the bounty is too large");
 
-      const valueWei = BigInt(record.uqor) * 10n ** 12n;
-      const landed = await this.findDeposit(record, valueWei);
-      if (landed) return this.savePrize(key, { ...record, status: "locked", bountyId: landed, error: undefined });
+      const paid = await this.paidFor(robotId, owner);
+      // The chain's tx index can lag a few seconds behind the tx itself.
+      if (!paid.txs.some((t) => t.txHash === txHash)) throw new GameError(404, "payment not indexed on chain yet: wait a few seconds and try again");
+      const dep = await this.depositedFor(robotId);
+      const missing = paid.total - dep.total;
+      if (missing <= 0n) return { robotId, bountyIds: dep.ids, lockedUqor: dep.total.toString(), depositTx: null };
 
-      try {
-        const r = await this.d.relayer!.send(
-          this.d.vault,
-          encodeFunctionData({ abi: vaultAbi, functionName: "depositBounty", args: [robotKey(robotId)] }),
-          valueWei,
-        );
-        if (r.status !== "success") throw new Error(`depositBounty reverted (${r.hash})`);
-        let bountyId: number | undefined;
-        for (const log of r.logs) {
-          try {
-            const ev = decodeEventLog({ abi: vaultAbi, data: log.data, topics: log.topics });
-            if (ev.eventName === "BountyDeposited") bountyId = Number(ev.args.bountyId);
-          } catch {
-            // not our event
-          }
+      const pendingKey = `deposits-${robotId}`;
+      const r = await this.d.relayer!.send(
+        this.d.vault,
+        encodeFunctionData({ abi: vaultAbi, functionName: "depositBounty", args: [robotKey(robotId)] }),
+        missing * WEI_PER_UQOR,
+        (hash) => this.d.store.saveVerdict(pendingKey, [...(this.d.store.getVerdict<string[]>(pendingKey) ?? []), hash]),
+      ).catch((e: Error) => {
+        throw new GameError(502, `your payment arrived, but locking the bounty failed (${e.message.slice(0, 120)}). Try again in a minute: you won't pay twice`);
+      });
+      if (r.status !== "success") throw new GameError(502, `locking the bounty failed on chain (${r.hash}). Try again: you won't pay twice`);
+      let bountyId: number | undefined;
+      for (const log of r.logs) {
+        try {
+          const ev = decodeEventLog({ abi: vaultAbi, data: log.data, topics: log.topics });
+          if (ev.eventName === "BountyDeposited") bountyId = Number(ev.args.bountyId);
+        } catch {
+          // not our event
         }
-        if (!bountyId) throw new Error(`deposit sent but no BountyDeposited event (${r.hash})`);
-        return this.savePrize(key, { ...record, status: "locked", bountyId, depositTx: r.hash, error: undefined });
-      } catch (e) {
-        this.savePrize(key, { ...record, error: (e as Error).message.slice(0, 300) });
-        throw new GameError(502, "your payment arrived, but locking the bounty failed. Try again in a minute (you won't pay twice)");
       }
+      return { robotId, bountyIds: [...dep.ids, ...(bountyId ? [bountyId] : [])], lockedUqor: (dep.total + missing).toString(), depositTx: r.hash };
     });
   }
 
-  private savePrize(key: string, r: PrizeRecord): PrizeRecord {
-    this.d.store.saveVerdict(key, r);
-    this.prizeIndex = null;
-    return r;
+  /** robotKey -> robot id, for every robot on chain. */
+  private async robotIdsByKey(): Promise<Map<string, number>> {
+    const next = await this.d.chain.readNextRobotId();
+    const m = new Map<string, number>();
+    for (let i = 1; i < next; i++) m.set(robotKey(i).toLowerCase(), i);
+    return m;
   }
 
-  /** A deposit for this payment that already reached the vault (same robot, amount and relayer). */
-  private async findDeposit(r: PrizeRecord, valueWei: bigint): Promise<number | null> {
-    const next = await this.d.chain.readNextBountyId();
-    const taken = new Set(this.allPrizes().filter((p) => p.bountyId).map((p) => p.bountyId));
-    for (let id = r.firstBountyId; id < next; id++) {
-      if (taken.has(id)) continue;
-      const b = await this.d.chain.readBounty(id);
-      if (b.robotKey === robotKey(r.robotId) && b.amountWei === valueWei && b.owner.toLowerCase() === this.d.relayer!.address.toLowerCase()) return id;
-    }
-    return null;
-  }
-
-  private prizeIndex: PrizeRecord[] | null = null;
-  private allPrizes(): PrizeRecord[] {
-    this.prizeIndex ??= this.d.store.listVerdicts<PrizeRecord>("prize-");
-    return this.prizeIndex;
-  }
-
-  /** The maker's prizes, with whether each is still in the vault. */
-  async ownerPrizes(ownerRaw: unknown) {
+  /** The maker's bounties still in the vault, read from the chain. */
+  async ownerBounties(ownerRaw: unknown) {
     const owner = toEvmAddress(ownerRaw);
     if (!owner) throw new GameError(400, "bad owner address");
-    const mine = this.allPrizes().filter((p) => p.owner.toLowerCase() === owner.toLowerCase() && p.status !== "paid");
-    return Promise.all(
-      mine.map(async (p) => {
-        const open = p.status === "locked" && p.bountyId ? (await this.d.chain.readBounty(p.bountyId)).status === 1 : false;
-        return { robotId: p.robotId, bountyId: p.bountyId ?? null, uqor: p.uqor, status: p.status, open, withdrawTx: p.withdrawTx ?? null };
-      }),
-    );
+    if (!this.d.relayer) return [];
+    await this.d.ledger.sync();
+    const ids = await this.robotIdsByKey();
+    const relayer = this.d.relayer.address.toLowerCase();
+    const out: { robotId: number; bountyId: number; uqor: string }[] = [];
+    for (const e of this.d.ledger.deposits()) {
+      if (e.owner.toLowerCase() !== relayer) continue;
+      const robotId = ids.get(e.robotKey.toLowerCase());
+      if (!robotId) continue;
+      const robot = await this.d.chain.readRobot(robotId);
+      if (robot?.owner.toLowerCase() !== owner.toLowerCase()) continue;
+      const b = await this.d.chain.readBounty(e.bountyId);
+      if (b.status === 1) out.push({ robotId, bountyId: e.bountyId, uqor: (b.amountWei / WEI_PER_UQOR).toString() });
+    }
+    return out;
   }
 
-  private prizeByBounty(bountyId: number): PrizeRecord | undefined {
-    return this.allPrizes().find((p) => p.bountyId === bountyId && (p.status === "locked" || p.status === "withdrawn"));
+  /** Checks shared by the take-back request and the take-back itself, all against the chain. */
+  private async bountyForOwner(bountyId: number, owner: Address) {
+    if (!this.d.relayer?.pqSign) throw new GameError(503, "no relayer configured");
+    const b = await this.d.chain.readBounty(bountyId);
+    if (b.owner.toLowerCase() !== this.d.relayer.address.toLowerCase()) throw new GameError(403, "this bounty wasn't added through RedZone");
+    const robotId = (await this.robotIdsByKey()).get(b.robotKey.toLowerCase());
+    const robot = robotId ? await this.d.chain.readRobot(robotId) : null;
+    if (!robot || robot.owner.toLowerCase() !== owner.toLowerCase()) throw new GameError(403, "only the robot's owner can take its bounty back");
+    if (b.status !== 1) throw new GameError(409, b.status === 2 ? "a player already won this bounty" : "this bounty is no longer in the vault");
+    return { b, robotId: robotId! };
   }
 
-  /** What the maker's wallet signs to take a prize back (checked here; the vault checks the relayer's signature). */
-  async prizeBackRequest(input: { bountyId: unknown; owner: unknown }) {
+  /** What the maker's wallet signs to take a bounty back. */
+  async bountyBackRequest(input: { bountyId: unknown; owner: unknown }) {
     const bountyId = Number(input.bountyId);
     const owner = toEvmAddress(input.owner);
     if (!Number.isSafeInteger(bountyId) || bountyId < 1 || !owner) throw new GameError(400, "bad request");
-    const p = this.prizeByBounty(bountyId);
-    if (!p || p.owner.toLowerCase() !== owner.toLowerCase()) throw new GameError(403, "this bounty wasn't added by you");
-    if (p.status !== "locked") throw new GameError(409, "this bounty was already taken back");
+    await this.bountyForOwner(bountyId, owner);
     const deadline = this.now() + REQUEST_TTL;
-    const digest = prizeBackDigest(this.d.chainId, this.d.vault, bountyId, owner, deadline);
+    const digest = bountyBackDigest(this.d.chainId, this.d.vault, bountyId, owner, deadline);
     return { bountyId, owner, deadline, digest, text: walletText("TakeBountyBack", digest) };
   }
 
-  /** Withdraw a prize to the maker who paid it, after checking their QoreX ML-DSA signature. */
-  async takePrizeBack(input: { bountyId: unknown; owner: unknown; deadline: unknown; pqSignature: unknown }) {
-    if (!this.d.relayer?.pqSign) throw new GameError(503, "no relayer configured");
+  /** Withdraw a bounty to the robot's owner, after checking their QoreX ML-DSA signature. */
+  async takeBountyBack(input: { bountyId: unknown; owner: unknown; deadline: unknown; pqSignature: unknown }) {
     const bountyId = Number(input.bountyId);
     const owner = toEvmAddress(input.owner);
     const deadline = this.checkDeadline(input.deadline);
@@ -611,17 +624,12 @@ export class Game {
     if (!sig) throw new GameError(400, "pqSignature missing or malformed");
 
     return this.once(`bounty-${bountyId}`, async () => {
-      const p = this.prizeByBounty(bountyId);
-      if (!p || p.owner.toLowerCase() !== owner.toLowerCase()) throw new GameError(403, "this bounty wasn't added by you");
-      if (p.status !== "locked") throw new GameError(409, "this bounty was already taken back");
       const key = await this.d.chain.readPqcKey(owner);
       if (!key.registered) throw new GameError(409, "no ML-DSA-87 key registered for this account");
-      if (!verifyWalletSignature(key.pubkey, walletText("TakeBountyBack", prizeBackDigest(this.d.chainId, this.d.vault, bountyId, owner, deadline)), sig)) {
+      if (!verifyWalletSignature(key.pubkey, walletText("TakeBountyBack", bountyBackDigest(this.d.chainId, this.d.vault, bountyId, owner, deadline)), sig)) {
         throw new GameError(401, "signature does not match this request");
       }
-      const b = await this.d.chain.readBounty(bountyId);
-      if (b.status !== 1) throw new GameError(409, b.status === 2 ? "a player already won this bounty" : "this bounty is no longer in the vault");
-
+      const { b } = await this.bountyForOwner(bountyId, owner);
       const vaultDeadline = BigInt(this.now() + 600);
       const nonce = await this.d.chain.readVaultNonce(this.d.relayer!.address);
       const relayerSig = this.d.relayer!.pqSign!(withdrawDigest(this.d.chainId, this.d.vault, BigInt(bountyId), owner, nonce, vaultDeadline));
@@ -630,38 +638,35 @@ export class Game {
         encodeFunctionData({ abi: vaultAbi, functionName: "withdrawBounty", args: [BigInt(bountyId), owner, vaultDeadline, relayerSig] }),
       );
       if (r.status !== "success") throw new GameError(502, `withdrawBounty reverted (${r.hash})`);
-      this.savePrize(this.prizeKey(p.txHash), { ...p, status: "withdrawn", withdrawTx: r.hash });
-      return { bountyId, tx: r.hash, uqor: p.uqor };
+      return { bountyId, tx: r.hash, uqor: (b.amountWei / WEI_PER_UQOR).toString() };
     });
   }
 
   // ---------------------------------------------------------- leaderboard
 
   /**
-   * Players ranked by wins, then prize won, then fewest attempts. Built from finished verdicts;
-   * a prize counts once its claim transaction was sent. Cached for 30 seconds.
+   * Players ranked by robots tricked, then bounty won, then fewest rounds. Built only from the
+   * contracts' events: Breached / Defended (RobotRegistryV2) and BountyClaimed (EscrowVault).
    */
-  leaderboard(limit = 50) {
-    const at = this.now();
-    if (this.board && this.board.at > at - 30) return this.board.rows.slice(0, limit);
-    const by = new Map<string, { player: Address; qor: string; attempts: number; wins: number; wonWei: bigint }>();
-    for (const v of this.d.store.listVerdicts<AttemptVerdict>("session-")) {
-      if (!v?.player) continue;
-      const k = v.player.toLowerCase();
-      const row = by.get(k) ?? { player: v.player, qor: toQorAddress(v.player), attempts: 0, wins: 0, wonWei: 0n };
-      row.attempts++;
-      if (v.breached) {
-        row.wins++;
-        const paid = new Set((v.relay?.claimTxs ?? []).map((c) => c.bountyId));
-        for (const c of v.claims ?? []) if (paid.has(c.bountyId)) row.wonWei += BigInt(c.amountWei);
-      }
-      by.set(k, row);
+  async leaderboard(limit = 50) {
+    await this.d.ledger.sync();
+    const by = new Map<string, { player: Address; attempts: number; wins: number; wonWei: bigint }>();
+    const row = (p: Address) => {
+      const k = p.toLowerCase();
+      let r = by.get(k);
+      if (!r) by.set(k, (r = { player: p, attempts: 0, wins: 0, wonWei: 0n }));
+      return r;
+    };
+    for (const e of this.d.ledger.results()) {
+      const r = row(e.player);
+      r.attempts++;
+      if (e.breached) r.wins++;
     }
-    const rows = [...by.values()]
+    for (const c of this.d.ledger.claims()) row(c.claimer).wonWei += c.amountWei;
+    return [...by.values()]
       .sort((a, b) => b.wins - a.wins || (b.wonWei > a.wonWei ? 1 : b.wonWei < a.wonWei ? -1 : 0) || a.attempts - b.attempts)
-      .map((r, i) => ({ rank: i + 1, player: r.player, qor: r.qor, attempts: r.attempts, wins: r.wins, wonWei: r.wonWei.toString() }));
-    this.board = { at, rows };
-    return rows.slice(0, limit);
+      .slice(0, limit)
+      .map((r, i) => ({ rank: i + 1, player: r.player, qor: toQorAddress(r.player), attempts: r.attempts, wins: r.wins, wonWei: r.wonWei.toString() }));
   }
 
   // ---------------------------------------------------------- owners (QoreX + relayer)
@@ -694,7 +699,7 @@ export class Game {
     if (!owner) throw new GameError(400, "owner must be a qor1… or 0x… address");
     const [key, state] = await Promise.all([this.d.chain.readPqcKey(owner), this.d.chain.readPlayer(owner)]);
     if (!key.registered) throw new GameError(409, "this account has no ML-DSA-87 key registered yet (register it in QoreX first)");
-    if (!this.isSignedUp(owner)) throw new GameError(402, "sign up first: a one-time payment verifies your account");
+    if (!(await this.isSignedUp(owner))) throw new GameError(402, "sign up first: a one-time payment verifies your account");
     return { owner, nonce: state.nonce, pubkey: key.pubkey };
   }
 
