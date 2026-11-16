@@ -101,8 +101,14 @@ contract VaultHandler is Test {
     /// unjudged, or had been judged less than an hour earlier (no fair chance to claim).
     bool public winBeatenByWithdrawal;
 
+    function _bountyTimes(uint256 b) internal view returns (uint256 r, uint64 dep, uint64 req) {
+        (, bytes memory raw) = address(vault).staticcall(abi.encodeCall(vault.bounties, (b)));
+        EscrowVaultV2.Bounty memory x = abi.decode(raw, (EscrowVaultV2.Bounty));
+        return (x.robotId, x.depositedAt, x.withdrawRequestedAt);
+    }
+
     function _winnableBreachPending(uint256 b) internal view returns (bool) {
-        (uint256 bRobot,,, uint64 depositedAt, uint64 requestedAt,,) = vault.bounties(b);
+        (uint256 bRobot, uint64 depositedAt, uint64 requestedAt) = _bountyTimes(b);
         for (uint256 k = 0; k < sessionIds.length; k++) {
             RobotRegistryV3.Session memory s = reg.getSession(sessionIds[k]);
             if (s.robotId != bRobot || s.startedAt < depositedAt) continue;
@@ -113,16 +119,26 @@ contract VaultHandler is Test {
         return false;
     }
 
-    function claim(uint8 bountySeed, uint8 sessionSeed) external {
+    /// Skip unpayable breaches, then claim the earliest valid one (as the relayer does).
+    function claim(uint8 bountySeed) external {
         uint256 n = vault.nextBountyId();
-        if (n == 1 || sessionIds.length == 0) return;
+        if (n == 1) return;
         uint256 b = 1 + (uint256(bountySeed) % (n - 1));
-        uint256 sid = sessionIds[uint256(sessionSeed) % sessionIds.length];
+        _skipAll(b);
+        (EscrowVaultV2.Next st, uint256 sid) = vault.nextBreach(b);
+        if (st != EscrowVaultV2.Next.Claimable) return;
         address p = reg.getSession(sid).player;
         uint256 before = p.balance;
-        try vault.claimBounty(b, sid) {
-            paidToPlayers += p.balance - before;
-        } catch {}
+        vault.claimBounty(b);
+        paidToPlayers += p.balance - before;
+    }
+
+    function _skipAll(uint256 b) internal {
+        for (uint256 k = 0; k < 50; k++) {
+            (EscrowVaultV2.Next st,) = vault.nextBreach(b);
+            if (st != EscrowVaultV2.Next.Skippable) return;
+            vault.skipBreach(b);
+        }
     }
 
     function requestWithdraw(uint8 bountySeed) external {
@@ -138,6 +154,7 @@ contract VaultHandler is Test {
         uint256 n = vault.nextBountyId();
         if (n == 1) return;
         uint256 b = 1 + (uint256(bountySeed) % (n - 1));
+        _skipAll(b);
         uint256 before = owner.balance;
         bool pending = _winnableBreachPending(b);
         try vault.finalizeWithdraw(b) {
@@ -193,16 +210,22 @@ contract VaultInvariantTest is Test {
         bytes[3] memory pks = [_key(hex"d0"), _key(hex"d1"), _key(hex"d2")];
         for (uint256 i = 0; i < 3; i++) keys.setKey(ps[i], pks[i]);
 
-        bytes32 td = keccak256("RedZone.Deploy(bytes32 domainTag,uint256 chainId,address deployer)");
-        bytes32 rd = keccak256(abi.encode(td, keccak256("RedZone.RobotRegistry.v3"), block.chainid, admin));
-        bytes32 vd = keccak256(abi.encode(td, keccak256("RedZone.EscrowVault.v2"), block.chainid, admin));
-        vm.startPrank(admin);
-        reg = new RobotRegistryV3(refereePk, "qorechain-diana", _sig(adminPk, rd), _sig(refereePk, rd));
-        vault = new EscrowVaultV2(reg, "qorechain-diana", _sig(adminPk, vd));
-        vm.stopPrank();
+        {
+            bytes32 td = keccak256("RedZone.Deploy(bytes32 domainTag,uint256 chainId,address deployer)");
+            bytes32 rd = keccak256(abi.encode(td, keccak256("RedZone.RobotRegistry.v3"), block.chainid, admin));
+            bytes32 vd = keccak256(abi.encode(td, keccak256("RedZone.EscrowVault.v2"), block.chainid, admin));
+            vm.startPrank(admin);
+            reg = new RobotRegistryV3(refereePk, "qorechain-diana", _sig(adminPk, rd), _sig(refereePk, rd));
+            vault = new EscrowVaultV2(reg, "qorechain-diana", _sig(adminPk, vd));
+            vm.stopPrank();
+        }
 
-        vm.prank(owner);
-        uint256 robotId = reg.registerRobot("Guard Dog", keccak256("brain"));
+        uint256 robotId;
+        {
+            uint256 dl = block.timestamp + 5 minutes;
+            bytes32 rgd = reg.registerRobotDigest(owner, keccak256("Guard Dog"), keccak256("brain"), 0, dl);
+            robotId = reg.registerRobotFor(owner, "Guard Dog", keccak256("brain"), dl, _sig(ownerPk, rgd));
+        }
 
         handler = new VaultHandler(reg, vault, robotId, owner, ownerPk, admin, adminPk, refereePk, ps, pks);
         targetContract(address(handler));
@@ -218,12 +241,18 @@ contract VaultInvariantTest is Test {
         assertEq(handler.deposited(), vault.totalLocked() + handler.paidToPlayers() + handler.paidToOwner());
     }
 
+    function _amountStatus(uint256 i) internal view returns (uint256 amount, EscrowVaultV2.Status st) {
+        (, bytes memory raw) = address(vault).staticcall(abi.encodeCall(vault.bounties, (i)));
+        EscrowVaultV2.Bounty memory x = abi.decode(raw, (EscrowVaultV2.Bounty));
+        return (x.amount, x.status);
+    }
+
     /// totalLocked equals the sum of open bounties, and closed bounties hold nothing.
     function invariant_LockedMatchesOpenBounties() public view {
         uint256 sum;
         uint256 n = vault.nextBountyId();
         for (uint256 i = 1; i < n; i++) {
-            (, uint256 amount,,,,, EscrowVaultV2.Status st) = vault.bounties(i);
+            (uint256 amount, EscrowVaultV2.Status st) = _amountStatus(i);
             if (st == EscrowVaultV2.Status.Open) sum += amount;
             else assertEq(amount, 0);
         }
@@ -241,8 +270,8 @@ contract VaultInvariantTest is Test {
         handler.deposit(5 ether);
         handler.deposit(3 ether);
         handler.play(0, true, 60); // breach, judged in time
-        handler.claim(0, 0);
-        handler.claim(1, 0);
+        handler.claim(0);
+        handler.claim(1);
         assertEq(handler.paidToPlayers(), 8 ether);
         handler.deposit(2 ether);
         handler.requestWithdraw(2);

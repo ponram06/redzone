@@ -24,13 +24,13 @@ contract Reenterer {
 
     function arm(uint256 b, uint256 s) external {
         bountyId = b;
-        sessionId = s;
+        sessionId = s; // kept for readability: the vault pays the earliest breach itself
     }
 
     receive() external payable {
         if (tried) return;
         tried = true;
-        try vault.claimBounty(bountyId, sessionId) {
+        try vault.claimBounty(bountyId) {
             reentered = true;
         } catch {}
     }
@@ -170,7 +170,7 @@ contract RedZoneV3Test is Test {
     }
 
     function _status(uint256 id) internal view returns (EscrowVaultV2.Status st) {
-        (,,,,,, st) = vault.bounties(id);
+        (,,,,,,, st) = vault.bounties(id);
     }
 
     // ------------------------------------------------------ happy paths
@@ -180,7 +180,7 @@ contract RedZoneV3Test is Test {
         uint256 sid = _start(player, playerPk);
         _record(sid, true);
         vm.prank(attacker); // anyone can trigger; money still goes to the player
-        vault.claimBounty(id, sid);
+        vault.claimBounty(id);
         assertEq(player.balance, 5 ether);
         assertEq(vault.totalLocked(), 0);
         assertEq(address(vault).balance, 0);
@@ -189,7 +189,7 @@ contract RedZoneV3Test is Test {
 
     function test_BountyBelongsToRobotOwnerNotFunder() public {
         uint256 id = _deposit(2 ether);
-        (,, address o,,,,) = vault.bounties(id);
+        (,,, address o,,,,) = vault.bounties(id);
         assertEq(o, owner);
     }
 
@@ -209,17 +209,19 @@ contract RedZoneV3Test is Test {
     function test_Attack_ClaimWithoutBreach() public {
         uint256 id = _deposit(1 ether);
         uint256 sid = _start(player, playerPk);
-        vm.expectRevert(EscrowVaultV2.NotBreached.selector); // no result yet
-        vault.claimBounty(id, sid);
+        vm.expectRevert(abi.encodeWithSelector(EscrowVaultV2.NothingToClaim.selector, EscrowVaultV2.Next.None)); // no verdict yet
+        vault.claimBounty(id);
         _record(sid, false);
-        vm.expectRevert(EscrowVaultV2.NotBreached.selector); // defended
-        vault.claimBounty(id, sid);
+        vm.expectRevert(abi.encodeWithSelector(EscrowVaultV2.NothingToClaim.selector, EscrowVaultV2.Next.None)); // defended
+        vault.claimBounty(id);
     }
 
-    function test_Attack_ClaimWithUnknownSession() public {
+    function test_Attack_ClaimWithNoBreaches() public {
         uint256 id = _deposit(1 ether);
-        vm.expectRevert(EscrowVaultV2.WrongRobot.selector);
-        vault.claimBounty(id, 999);
+        vm.expectRevert(abi.encodeWithSelector(EscrowVaultV2.NothingToClaim.selector, EscrowVaultV2.Next.None));
+        vault.claimBounty(id);
+        (EscrowVaultV2.Next st,) = vault.nextBreach(id);
+        assertEq(uint8(st), uint8(EscrowVaultV2.Next.None));
     }
 
     function test_Attack_ClaimWithBreachOfOtherRobot() public {
@@ -229,26 +231,26 @@ contract RedZoneV3Test is Test {
         bytes32 dg = reg.startSessionDigest(other, player, reg.nonces(player), d);
         uint256 sid = reg.startSessionFor(other, player, d, _sig(playerPk, dg));
         _record(sid, true);
-        vm.expectRevert(EscrowVaultV2.WrongRobot.selector);
-        vault.claimBounty(id, sid);
+        vm.expectRevert(abi.encodeWithSelector(EscrowVaultV2.NothingToClaim.selector, EscrowVaultV2.Next.None)); // a breach of another robot is not in this robot's list
+        vault.claimBounty(id);
     }
 
     function test_Attack_OldBreachCannotTakeNewBounty() public {
         uint256 sid = _start(player, playerPk);
         _record(sid, true);
         vm.warp(block.timestamp + 1);
-        uint256 id = _deposit(1 ether);
-        vm.expectRevert(EscrowVaultV2.SessionBeforeBounty.selector);
-        vault.claimBounty(id, sid);
+        uint256 id = _deposit(1 ether); // cursor starts after the existing breach
+        vm.expectRevert(abi.encodeWithSelector(EscrowVaultV2.NothingToClaim.selector, EscrowVaultV2.Next.None));
+        vault.claimBounty(id);
     }
 
     function test_Attack_DoubleClaim() public {
         uint256 id = _deposit(1 ether);
         uint256 sid = _start(player, playerPk);
         _record(sid, true);
-        vault.claimBounty(id, sid);
+        vault.claimBounty(id);
         vm.expectRevert(EscrowVaultV2.BountyNotOpen.selector);
-        vault.claimBounty(id, sid);
+        vault.claimBounty(id);
     }
 
     function test_OneBreachClaimsEveryOpenBounty() public {
@@ -256,8 +258,8 @@ contract RedZoneV3Test is Test {
         uint256 b = _deposit(2 ether);
         uint256 sid = _start(player, playerPk);
         _record(sid, true);
-        vault.claimBounty(a, sid);
-        vault.claimBounty(b, sid);
+        vault.claimBounty(a);
+        vault.claimBounty(b);
         assertEq(player.balance, 3 ether);
     }
 
@@ -271,7 +273,7 @@ contract RedZoneV3Test is Test {
         uint256 sid = reg.startSessionFor(robotId, address(r), d, _sig(_key(hex"0e0e"), dg));
         _record(sid, true);
         r.arm(b, sid);
-        vault.claimBounty(a, sid);
+        vault.claimBounty(a);
         assertTrue(r.tried());
         assertFalse(r.reentered());
         assertEq(uint8(_status(b)), uint8(EscrowVaultV2.Status.Open));
@@ -287,7 +289,7 @@ contract RedZoneV3Test is Test {
         uint256 sid = reg.startSessionFor(robotId, address(r), d, _sig(_key(hex"0f0f"), dg));
         _record(sid, true);
         vm.expectRevert(abi.encodeWithSelector(EscrowVaultV2.TransferFailed.selector, address(r), 1 ether));
-        vault.claimBounty(id, sid);
+        vault.claimBounty(id);
         assertEq(uint8(_status(id)), uint8(EscrowVaultV2.Status.Open));
         assertEq(vault.totalLocked(), 1 ether);
     }
@@ -300,7 +302,7 @@ contract RedZoneV3Test is Test {
         _requestWithdraw(id, owner); // owner sees the attack coming and tries to pull out
         vm.warp(block.timestamp + 70 minutes); // latest moment the result can still be recorded
         _record(sid, true);
-        vault.claimBounty(id, sid);
+        vault.claimBounty(id);
         assertEq(player.balance, 4 ether);
         vm.warp(block.timestamp + 3 hours);
         vm.expectRevert(EscrowVaultV2.BountyNotOpen.selector);
@@ -313,8 +315,11 @@ contract RedZoneV3Test is Test {
         vm.warp(block.timestamp + 10 minutes + 1);
         uint256 sid = _start(player, playerPk);
         _record(sid, true);
-        vm.expectRevert(EscrowVaultV2.SessionAfterWithdrawRequest.selector);
-        vault.claimBounty(id, sid);
+        vm.expectRevert(abi.encodeWithSelector(EscrowVaultV2.NothingToClaim.selector, EscrowVaultV2.Next.Skippable));
+        vault.claimBounty(id);
+        vault.skipBreach(id);
+        (EscrowVaultV2.Next st,) = vault.nextBreach(id);
+        assertEq(uint8(st), uint8(EscrowVaultV2.Next.None));
     }
 
     function test_Attack_WithdrawSignedByOthers() public {
@@ -371,7 +376,7 @@ contract RedZoneV3Test is Test {
         assertEq(vault.totalLocked(), address(vault).balance);
         uint256 sid = _start(player, playerPk);
         _record(sid, true);
-        vault.claimBounty(claimFirst ? i : j, sid);
+        vault.claimBounty(claimFirst ? i : j);
         assertEq(vault.totalLocked(), address(vault).balance);
         assertEq(vault.totalLocked(), claimFirst ? y : x);
     }
@@ -390,7 +395,7 @@ contract RedZoneV3Test is Test {
         _record(sid, true);
         vm.warp(block.timestamp + 1);
         _pause(true);
-        vault.claimBounty(id, sid);
+        vault.claimBounty(id);
         assertEq(player.balance, 1 ether);
     }
 
@@ -399,10 +404,13 @@ contract RedZoneV3Test is Test {
         uint256 sid = _start(player, playerPk);
         _pause(true);
         _record(sid, true); // registry is not paused
-        vm.expectRevert(EscrowVaultV2.ResultDuringPause.selector);
-        vault.claimBounty(id, sid);
+        vm.expectRevert(abi.encodeWithSelector(EscrowVaultV2.NothingToClaim.selector, EscrowVaultV2.Next.Waiting));
+        vault.claimBounty(id);
+        vm.expectRevert(abi.encodeWithSelector(EscrowVaultV2.NothingToSkip.selector, EscrowVaultV2.Next.Waiting));
+        vault.skipBreach(id); // a waiting win can't be skipped either
         _pause(false);
-        vault.claimBounty(id, sid);
+        vault.claimBounty(id);
+        assertEq(player.balance, 1 ether);
     }
 
     function test_Pause_FreezesDepositsAndPayouts() public {
@@ -437,7 +445,7 @@ contract RedZoneV3Test is Test {
         _pause(false);
         vm.expectRevert(EscrowVaultV2.WithdrawLocked.selector);
         vault.finalizeWithdraw(id);
-        vault.claimBounty(id, sid);
+        vault.claimBounty(id);
         assertEq(player.balance, 2 ether);
     }
 
@@ -468,7 +476,7 @@ contract RedZoneV3Test is Test {
         uint256 sid = _start(player, playerPk);
         vm.warp(block.timestamp + 70 minutes);
         _record(sid, true);
-        vault.claimBounty(id, sid);
+        vault.claimBounty(id);
         assertEq(player.balance, 1 ether);
     }
 
@@ -525,7 +533,7 @@ contract RedZoneV3Test is Test {
         reg.transferAdmin(player, d, _sig(adminPk, dg));
         assertEq(reg.admin(), admin); // nothing changes until accepted
 
-        dg = reg.acceptAdminDigest(player, reg.nonces(player), d);
+        dg = reg.acceptAdminDigest(player, reg.adminProposalId(), reg.nonces(player), d);
         vm.expectRevert(PQGuard.PQCSignatureInvalid.selector);
         reg.acceptAdmin(d, _sig(attackerPk, dg));
         reg.acceptAdmin(d, _walletSig(reg, playerPk, "AcceptAdmin", dg));
@@ -632,16 +640,15 @@ contract RedZoneV3Test is Test {
 
     function test_Attack_BadNames() public {
         string[5] memory bad = ["", " lead", "trail ", "tab\there", "\xe2\x80\xaeevil"];
+        uint256 d = _dl();
         for (uint256 i = 0; i < bad.length; i++) {
-            vm.prank(owner);
             vm.expectRevert(RobotRegistryV3.BadName.selector);
-            reg.registerRobot(bad[i], keccak256("b"));
+            reg.registerRobotFor(owner, bad[i], keccak256("b"), d, "");
         }
         bytes memory long = new bytes(65);
         for (uint256 i = 0; i < 65; i++) long[i] = "a";
-        vm.prank(owner);
         vm.expectRevert(RobotRegistryV3.BadName.selector);
-        reg.registerRobot(string(long), keccak256("b"));
+        reg.registerRobotFor(owner, string(long), keccak256("b"), d, "");
     }
 
     function test_Utility_ReplayAndBounds() public {
@@ -670,7 +677,7 @@ contract RedZoneV3Test is Test {
         uint256 d = _dl();
         reg.transferAdmin(player, d, _sig(adminPk, reg.transferAdminDigest(player, reg.nonces(admin), d)));
         reg.transferAdmin(address(0), d, _sig(adminPk, reg.transferAdminDigest(address(0), reg.nonces(admin), d)));
-        bytes32 dg = reg.acceptAdminDigest(player, reg.nonces(player), d);
+        bytes32 dg = reg.acceptAdminDigest(player, reg.adminProposalId(), reg.nonces(player), d);
         vm.expectRevert(PQAccess.NotPendingAdmin.selector);
         reg.acceptAdmin(d, _sig(playerPk, dg));
         assertEq(reg.admin(), admin);
@@ -791,7 +798,7 @@ contract RedZoneV3Test is Test {
         uint256 sid = reg.startSessionFor(robotId, address(r), d, _sig(_key(hex"0e0e"), dg));
         _record(sid, true);
         r.arm(a, sid); // tries to claim the same bounty again from inside the payment
-        vault.claimBounty(a, sid);
+        vault.claimBounty(a);
         assertTrue(r.tried());
         assertFalse(r.reentered());
         assertEq(address(r).balance, 1 ether);
@@ -914,20 +921,18 @@ contract RedZoneV3Test is Test {
         assertEq(reg.walletMessage("StartSession", dg), abi.encodePacked("qorechain-msg-v1|qorechain-diana|", reg.walletText("StartSession", dg)));
     }
 
-    function test_DirectCallsNeedMLDSA87Key() public {
-        vm.prank(attacker);
-        uint256 id = reg.registerRobot("Mine", keccak256("b")); // attacker has a valid key
-        assertEq(reg.robotOwner(id), attacker);
-        address noKey = makeAddr("noKey");
-        vm.prank(noKey);
-        vm.expectRevert();
-        reg.registerRobot("Nope", keccak256("b"));
-        vm.prank(noKey);
-        vm.expectRevert();
-        reg.startSession(robotId);
+    /// Audit L-01: there is no msg.sender (ECDSA) path. Holding a player's ECDSA key is not enough.
+    function test_NoEcdsaShortcuts() public {
+        uint256 d = _dl();
+        bytes32 dg = reg.startSessionDigest(robotId, player, reg.nonces(player), d);
+        vm.prank(player); // the attacker controls the player's EVM key
+        vm.expectRevert(PQGuard.PQCSignatureInvalid.selector);
+        reg.startSessionFor(robotId, player, d, _sig(attackerPk, dg));
+        assertEq(reg.attemptsLeftToday(player), 5);
+        bytes32 rg = reg.registerRobotDigest(player, keccak256("Mine"), keccak256("b"), reg.nonces(player), d);
         vm.prank(player);
-        uint256 sid = reg.startSession(robotId);
-        assertEq(reg.getSession(sid).player, player);
+        vm.expectRevert(PQGuard.PQCSignatureInvalid.selector);
+        reg.registerRobotFor(player, "Mine", keccak256("b"), d, _sig(attackerPk, rg));
     }
 
     function test_UnknownRobotAndUtilityChecks() public {
@@ -1004,5 +1009,123 @@ contract RedZoneV3Test is Test {
         vm.expectRevert(PQGuard.PQCSignatureInvalid.selector); // right key, wrong signer
         reg.recordResult(sid, true, keccak256("r"), d, refereePk, _sig(attackerPk, dg));
         assertEq(reg.refereeKeyHash(), keccak256(refereePk));
+    }
+
+    // ================================================ audit 3 (adversarial review) regressions
+
+    /// M-01: a stored-up sybil breach can no longer steal a later honest win, and the caller
+    /// cannot choose which breach is paid.
+    function test_Audit3_StockpiledBreachExpires() public {
+        address sybil = makeAddr("sybil");
+        bytes memory sybilPk = _key(hex"5b1b");
+        keys.setKey(sybil, sybilPk);
+        uint256 id = _deposit(5 ether);
+        uint256 sybilSid = _start(sybil, sybilPk);
+        _record(sybilSid, true); // owner's own account "breaches" via a backdoor
+        vm.warp(block.timestamp + 1 days + 1); // ... and keeps it for later
+        uint256 honestSid = _start(player, playerPk);
+        _record(honestSid, true);
+        // the sybil breach expired: it can't be paid, only skipped
+        vm.expectRevert(abi.encodeWithSelector(EscrowVaultV2.NothingToClaim.selector, EscrowVaultV2.Next.Skippable));
+        vault.claimBounty(id);
+        vault.skipBreach(id);
+        vault.claimBounty(id); // pays the earliest valid breach: the honest player
+        assertEq(player.balance, 5 ether);
+        assertEq(sybil.balance, 0);
+    }
+
+    /// M-01: with two valid breaches, the earlier one is paid whoever calls.
+    function test_Audit3_EarliestBreachWinsWhoeverCalls() public {
+        uint256 id = _deposit(2 ether);
+        uint256 a = _start(player, playerPk);
+        uint256 b = _start(player2, player2Pk);
+        _record(a, true);
+        _record(b, true);
+        vm.prank(player2); // the later breacher tries to claim
+        vault.claimBounty(id);
+        assertEq(player.balance, 2 ether);
+        assertEq(player2.balance, 0);
+    }
+
+    /// M-01: the owner can't finish a withdrawal while a win is waiting to be claimed.
+    function test_Audit3_WithdrawWaitsForPendingWin() public {
+        uint256 id = _deposit(3 ether);
+        uint256 sid = _start(player, playerPk);
+        _record(sid, true);
+        _requestWithdraw(id, owner);
+        vm.warp(block.timestamp + 3 hours);
+        vm.expectRevert(EscrowVaultV2.WinPending.selector);
+        vault.finalizeWithdraw(id);
+        vault.claimBounty(id);
+        assertEq(player.balance, 3 ether);
+    }
+
+    /// M-01: an unclaimed win expires after CLAIM_WINDOW; then the owner may withdraw.
+    function test_Audit3_ExpiredWinCanBeSkippedThenWithdraw() public {
+        uint256 id = _deposit(1 ether);
+        uint256 sid = _start(player, playerPk);
+        _record(sid, true);
+        _requestWithdraw(id, owner);
+        vm.warp(block.timestamp + 1 days + 1);
+        vm.expectRevert(EscrowVaultV2.WinPending.selector);
+        vault.finalizeWithdraw(id);
+        vault.skipBreach(id);
+        vault.finalizeWithdraw(id);
+        assertEq(owner.balance, 1 ether);
+    }
+
+    /// L-02: a withdrawal request that is never finalised lapses; the bounty is winnable again.
+    function test_Audit3_StaleWithdrawRequestLapses() public {
+        uint256 id = _deposit(1 ether);
+        _requestWithdraw(id, owner);
+        vm.warp(block.timestamp + 3 hours + 7 days + 1);
+        vm.expectRevert(EscrowVaultV2.WithdrawExpired.selector);
+        vault.finalizeWithdraw(id);
+        uint256 sid = _start(player, playerPk);
+        _record(sid, true);
+        vault.claimBounty(id);
+        assertEq(player.balance, 1 ether);
+    }
+
+    /// A win recorded during a pause gets a full claim window after the pause ends.
+    function test_Audit3_PauseExtendsClaimWindow() public {
+        uint256 id = _deposit(1 ether);
+        uint256 sid = _start(player, playerPk);
+        _pause(true);
+        _record(sid, true);
+        vm.warp(block.timestamp + 3 days);
+        _pause(false);
+        assertEq(vault.claimDeadline(reg.getSession(sid).resultAt), block.timestamp + 1 days);
+        vm.warp(block.timestamp + 23 hours);
+        vault.claimBounty(id);
+        assertEq(player.balance, 1 ether);
+    }
+
+    /// I-04: an acceptance signature is bound to one admin proposal.
+    function test_Audit3_AcceptBoundToProposal() public {
+        uint256 d = _dl();
+        reg.transferAdmin(player, d, _sig(adminPk, reg.transferAdminDigest(player, reg.nonces(admin), d)));
+        bytes32 oldAccept = reg.acceptAdminDigest(player, reg.adminProposalId(), reg.nonces(player), d);
+        bytes memory oldSig = _sig(playerPk, oldAccept);
+        reg.transferAdmin(address(0), d, _sig(adminPk, reg.transferAdminDigest(address(0), reg.nonces(admin), d)));
+        reg.transferAdmin(player, d, _sig(adminPk, reg.transferAdminDigest(player, reg.nonces(admin), d)));
+        vm.expectRevert(PQGuard.PQCSignatureInvalid.selector);
+        reg.acceptAdmin(d, oldSig);
+    }
+
+    /// I-02: a pending referee proposal can be cancelled.
+    function test_Audit3_CancelRefereeProposal() public {
+        uint256 d = _dl();
+        bytes memory newPk = _key(hex"7777");
+        bytes32 dg = reg.proposeRefereeDigest(keccak256(newPk), reg.nonces(admin), d);
+        reg.proposeReferee(newPk, d, _sig(adminPk, dg), _sig(newPk, dg));
+        bytes32 cg = reg.cancelRefereeDigest(keccak256(newPk), reg.nonces(admin), d);
+        vm.expectRevert(PQGuard.PQCSignatureInvalid.selector);
+        reg.cancelReferee(d, _sig(attackerPk, cg));
+        reg.cancelReferee(d, _sig(adminPk, cg));
+        assertEq(reg.pendingRefereeKeyHash(), bytes32(0));
+        vm.warp(block.timestamp + 2 days);
+        vm.expectRevert(RobotRegistryV3.NoPendingReferee.selector);
+        reg.activateReferee();
     }
 }

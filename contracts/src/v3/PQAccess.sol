@@ -36,7 +36,7 @@ abstract contract PQAccess {
 
     bytes32 public constant SET_PAUSED_TYPEHASH = keccak256("RedZone.SetPaused(bool paused,uint256 nonce,uint256 deadline)");
     bytes32 public constant TRANSFER_ADMIN_TYPEHASH = keccak256("RedZone.TransferAdmin(address newAdmin,uint256 nonce,uint256 deadline)");
-    bytes32 public constant ACCEPT_ADMIN_TYPEHASH = keccak256("RedZone.AcceptAdmin(address newAdmin,uint256 nonce,uint256 deadline)");
+    bytes32 public constant ACCEPT_ADMIN_TYPEHASH = keccak256("RedZone.AcceptAdmin(address newAdmin,uint256 proposalId,uint256 nonce,uint256 deadline)");
 
     bytes32 public constant DEPLOY_TYPEHASH = keccak256("RedZone.Deploy(bytes32 domainTag,uint256 chainId,address deployer)");
 
@@ -60,6 +60,11 @@ abstract contract PQAccess {
     uint64 public pausedAt;
     /// @notice Time the last pause ended (0 if never paused).
     uint64 public unpausedAt;
+    /// @notice Start time of the most recent pause (kept after it ends).
+    uint64 public lastPauseStart;
+    /// @notice Increases with every admin proposal; an acceptance signature is bound to one proposal,
+    ///         so a cancelled proposal's signature can never be reused for a later one.
+    uint256 public adminProposalId;
     /// @notice Per-signer nonce for signed admin and user actions (replay protection).
     mapping(address => uint256) public nonces;
     /// @notice Every signed digest that has been used (second replay layer on top of nonces).
@@ -148,6 +153,7 @@ abstract contract PQAccess {
         if (paused_) {
             if (unpausedAt != 0 && block.timestamp < uint256(unpausedAt) + PAUSE_COOLDOWN) revert PauseCooldown();
             pausedAt = uint64(block.timestamp);
+            lastPauseStart = uint64(block.timestamp);
         } else {
             uint256 end = uint256(pausedAt) + MAX_PAUSE;
             unpausedAt = uint64(block.timestamp < end ? block.timestamp : end);
@@ -166,6 +172,7 @@ abstract contract PQAccess {
     {
         if (newAdmin != address(0)) MLDSA87.requireKey(newAdmin); // must hold an ML-DSA-87 key
         pendingAdmin = newAdmin;
+        adminProposalId = adminProposalId + 1;
         if (newAdmin == address(0)) emit AdminTransferCancelled(admin);
         else emit AdminTransferStarted(admin, newAdmin);
     }
@@ -175,7 +182,7 @@ abstract contract PQAccess {
     function acceptAdmin(uint256 deadline, bytes calldata newAdminSig) external validDeadline(deadline) {
         address p = pendingAdmin;
         if (p == address(0)) revert NotPendingAdmin();
-        _useUserSig(p, ACTION_ACCEPT_ADMIN, acceptAdminDigest(p, nonces[p], deadline), newAdminSig);
+        _useUserSig(p, ACTION_ACCEPT_ADMIN, acceptAdminDigest(p, adminProposalId, nonces[p], deadline), newAdminSig);
         emit AdminTransferred(admin, p);
         admin = p;
         pendingAdmin = address(0);
@@ -221,8 +228,8 @@ abstract contract PQAccess {
         return _digest(abi.encode(TRANSFER_ADMIN_TYPEHASH, newAdmin, nonce, deadline));
     }
 
-    function acceptAdminDigest(address newAdmin, uint256 nonce, uint256 deadline) public view returns (bytes32) {
-        return _digest(abi.encode(ACCEPT_ADMIN_TYPEHASH, newAdmin, nonce, deadline));
+    function acceptAdminDigest(address newAdmin, uint256 proposalId, uint256 nonce, uint256 deadline) public view returns (bytes32) {
+        return _digest(abi.encode(ACCEPT_ADMIN_TYPEHASH, newAdmin, proposalId, nonce, deadline));
     }
 
     /// @notice The exact bytes the QoreX wallet's ML-DSA key signs for an action.

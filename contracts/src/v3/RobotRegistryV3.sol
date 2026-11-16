@@ -81,6 +81,7 @@ contract RobotRegistryV3 is PQAccess {
     bytes32 public constant START_SESSION_TYPEHASH = keccak256("RedZone.StartSession(uint256 robotId,address player,uint256 nonce,uint256 deadline)");
     bytes32 public constant REGISTER_ROBOT_TYPEHASH =
         keccak256("RedZone.RegisterRobot(address owner,bytes32 nameHash,bytes32 brainHash,uint256 nonce,uint256 deadline)");
+    bytes32 public constant CANCEL_REFEREE_TYPEHASH = keccak256("RedZone.CancelReferee(bytes32 pubkeyHash,uint256 nonce,uint256 deadline)");
     bytes32 public constant PROPOSE_REFEREE_TYPEHASH = keccak256("RedZone.ProposeReferee(bytes32 pubkeyHash,uint256 nonce,uint256 deadline)");
 
     string public constant ACTION_START_SESSION = "StartSession";
@@ -102,6 +103,9 @@ contract RobotRegistryV3 is PQAccess {
     uint256 public nextSessionId = 1;
     mapping(uint256 => Robot) internal _robots;
     mapping(uint256 => Session) internal _sessions;
+    /// @dev robotId => Breached session ids in the order they were recorded (the vault pays the
+    ///      earliest eligible one, so nobody can choose which breach wins a bounty).
+    mapping(uint256 => uint256[]) internal _breaches;
     /// @notice player => UTC day number => sessions started that day
     mapping(address => mapping(uint256 => uint256)) public attemptsOnDay;
 
@@ -115,6 +119,7 @@ contract RobotRegistryV3 is PQAccess {
     event UtilityRecorded(uint256 indexed robotId, uint8 tasksPassed, bytes32 replayHash);
     event RefereeProposed(bytes32 indexed pubkeyHash, uint256 activatesAt, bytes pubkey);
     event RefereeUpdated(bytes32 indexed pubkeyHash);
+    event RefereeCancelled(bytes32 indexed pubkeyHash);
 
     // --------------------------------------------------------------------- errors
 
@@ -194,6 +199,23 @@ contract RobotRegistryV3 is PQAccess {
         emit RefereeProposed(h, block.timestamp + REFEREE_DELAY, newPubkey);
     }
 
+    /// @notice Cancel the pending referee proposal. Admin only (ML-DSA signature).
+    function cancelReferee(uint256 deadline, bytes calldata adminSig)
+        external
+        validDeadline(deadline)
+        onlyAdmin(_digest(abi.encode(CANCEL_REFEREE_TYPEHASH, pendingRefereeKeyHash, nonces[admin], deadline)), adminSig)
+    {
+        bytes32 pending = pendingRefereeKeyHash;
+        if (pending == bytes32(0)) revert NoPendingReferee();
+        pendingRefereeKeyHash = bytes32(0);
+        refereeActivatesAt = 0;
+        emit RefereeCancelled(pending);
+    }
+
+    function cancelRefereeDigest(bytes32 pubkeyHash, uint256 nonce, uint256 deadline) external view returns (bytes32) {
+        return _digest(abi.encode(CANCEL_REFEREE_TYPEHASH, pubkeyHash, nonce, deadline));
+    }
+
     /// @notice Make the proposed referee key active once the delay is over. Anyone may call.
     function activateReferee() external {
         bytes32 pending = pendingRefereeKeyHash;
@@ -206,12 +228,6 @@ contract RobotRegistryV3 is PQAccess {
     }
 
     // --------------------------------------------------------------------- robots
-
-    /// @notice Register a robot owned by the sender (the sender needs a registered ML-DSA key).
-    function registerRobot(string calldata name, bytes32 brainHash) external whenNotPaused returns (uint256 robotId) {
-        MLDSA87.requireKey(msg.sender); // sender must hold an ML-DSA-87 key
-        return _register(msg.sender, name, brainHash);
-    }
 
     /// @notice Register a robot for `owner`, authorised by the owner's ML-DSA signature. Anyone may relay.
     function registerRobotFor(address owner, string calldata name, bytes32 brainHash, uint256 deadline, bytes calldata ownerSig)
@@ -247,12 +263,6 @@ contract RobotRegistryV3 is PQAccess {
     }
 
     // ------------------------------------------------------------------- sessions
-
-    /// @notice Start a session as the sender (for wallets that can send EVM transactions).
-    function startSession(uint256 robotId) external whenNotPaused returns (uint256 sessionId) {
-        MLDSA87.requireKey(msg.sender); // sender must hold an ML-DSA-87 key
-        return _startSession(robotId, msg.sender);
-    }
 
     /// @notice Start a session for `player`, authorised by the player's ML-DSA signature.
     ///         Anyone may relay; the session always belongs to `player`. The signature covers the
@@ -311,6 +321,7 @@ contract RobotRegistryV3 is PQAccess {
         if (currentBrain) r.attacks = r.attacks + 1;
         if (breached) {
             s.outcome = Outcome.Breached;
+            _breaches[s.robotId].push(sessionId);
             if (currentBrain) r.breached = r.breached + 1;
             emit Breached(sessionId, s.robotId, s.player, replayHash);
         } else {
@@ -351,6 +362,16 @@ contract RobotRegistryV3 is PQAccess {
     /// @notice Owner of a robot (address(0) if it does not exist).
     function robotOwner(uint256 robotId) external view returns (address) {
         return _robots[robotId].owner;
+    }
+
+    /// @notice Number of recorded breaches of a robot.
+    function breachCount(uint256 robotId) external view returns (uint256) {
+        return _breaches[robotId].length;
+    }
+
+    /// @notice The i-th recorded breach (session id) of a robot, in recording order.
+    function breachAt(uint256 robotId, uint256 i) external view returns (uint256) {
+        return _breaches[robotId][i];
     }
 
     function getSession(uint256 sessionId) external view returns (Session memory) {
