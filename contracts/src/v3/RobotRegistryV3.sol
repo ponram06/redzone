@@ -130,7 +130,9 @@ contract RobotRegistryV3 is PQAccess {
     // ------------------------------------------------------------------ modifiers
 
     /// @notice Only the referee, proven by its ML-DSA-87 signature over `digest`.
-    /// @dev Referee digests are single use by construction, so no separate nonce is needed: a
+    /// @dev Like onlyAdmin, this replaces a msg.sender check with a post-quantum signature check:
+    ///      only the holder of the referee ML-DSA-87 key can produce a passing signature.
+    ///      Referee digests are single use by construction, so no separate nonce is needed: a
     ///      result can be recorded once per session (the AlreadyRecorded check on its outcome),
     ///      only within SESSION_TTL + RESULT_GRACE of its start, and a utility digest includes the
     ///      robot's utilityNonce.

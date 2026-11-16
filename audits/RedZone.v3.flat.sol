@@ -195,7 +195,12 @@ abstract contract PQAccess {
     // ------------------------------------------------------------------ modifiers
 
     /// @notice Only the current admin, proven by its ML-DSA-87 signature over `digest`.
-    /// @dev The digest must include nonces[admin]; the nonce is consumed before the function body
+    /// @dev This is this contract's replacement for `require(msg.sender == admin)`, and it is
+    ///      strictly stronger: msg.sender is proven by an ECDSA signature, which a quantum computer
+    ///      can forge, while this check needs the admin's post-quantum ML-DSA-87 signature, verified
+    ///      on chain against the key registered for the admin account. No caller without that
+    ///      signature can pass, whatever msg.sender is, so the transaction may be relayed by anyone.
+    ///      The digest must include nonces[admin]; the nonce is consumed before the function body
     ///      runs, so the same signature can never be used twice.
     modifier onlyAdmin(bytes32 digest, bytes calldata adminSig) {
         address a = admin;
@@ -463,7 +468,9 @@ contract RobotRegistryV3 is PQAccess {
     // ------------------------------------------------------------------ modifiers
 
     /// @notice Only the referee, proven by its ML-DSA-87 signature over `digest`.
-    /// @dev Referee digests are single use by construction, so no separate nonce is needed: a
+    /// @dev Like onlyAdmin, this replaces a msg.sender check with a post-quantum signature check:
+    ///      only the holder of the referee ML-DSA-87 key can produce a passing signature.
+    ///      Referee digests are single use by construction, so no separate nonce is needed: a
     ///      result can be recorded once per session (the AlreadyRecorded check on its outcome),
     ///      only within SESSION_TTL + RESULT_GRACE of its start, and a utility digest includes the
     ///      robot's utilityNonce.
