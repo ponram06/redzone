@@ -24,6 +24,18 @@
       "deployTx": "0xd699e6de6a01f680b1804b28bd8e653a875504991d46f82bacf1df205210cd69",
       "deployBlock": 10183479,
       "nativeChainId": "qorechain-diana"
+    },
+    "RobotRegistryV3": {
+      "address": "0x5398b7983ac5c1b9818c51298c4886cf9bef5308",
+      "deployTx": "0x9bdd266425fea598dc45da35c01c37bcae2fb72c930eb42e4118565567a2f373",
+      "deployBlock": 10207941,
+      "nativeChainId": "qorechain-diana"
+    },
+    "EscrowVaultV2": {
+      "address": "0x26b9e47adf2e8e239729c0e3354998e06aa2c638",
+      "deployTx": "0x101c0399a8c2e12f477a574d8ba317887444203f985e304e4d4d32d014d6abda",
+      "deployBlock": 10207970,
+      "registry": "0x5398b7983ac5c1b9818c51298c4886cf9bef5308"
     }
   },
   "setup": {

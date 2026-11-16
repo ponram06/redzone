@@ -66,8 +66,19 @@ if (dryRun) {
   process.exit(0);
 }
 
-const regHash = await wallet.sendTransaction({ data: regData });
-const regRcpt = await pub.waitForTransactionReceipt({ hash: regHash });
+// --registry <address> <txHash>: the registry is already deployed; deploy only the vault.
+const ri = process.argv.indexOf("--registry");
+let regHash: Hex;
+let regRcpt: { contractAddress?: Address | null; blockNumber: bigint; status: string };
+if (ri > 0) {
+  regHash = process.argv[ri + 2] as Hex;
+  const r = await pub.getTransactionReceipt({ hash: regHash });
+  if (r.status !== "success" || r.contractAddress?.toLowerCase() !== process.argv[ri + 1].toLowerCase()) throw new Error("registry tx does not match the address");
+  regRcpt = r;
+} else {
+  regHash = await wallet.sendTransaction({ data: regData });
+  regRcpt = await pub.waitForTransactionReceipt({ hash: regHash });
+}
 if (regRcpt.status !== "success" || !regRcpt.contractAddress) throw new Error(`registry deploy failed: ${regHash}`);
 console.log(`RobotRegistryV3 ${regRcpt.contractAddress} (tx ${regHash}, block ${regRcpt.blockNumber})`);
 
