@@ -1,0 +1,44 @@
+# QCAI Stage 2: findings and responses
+
+- **Report:** [`QCAI-stage2-try1.pdf`](QCAI-stage2-try1.pdf), generated 16 Nov 2026 for the v3 contracts.
+- **Blockchain setting:** QoreChain.
+- **Result:** 85/100, risk MEDIUM, **Quantum Readiness: QUANTUM-SAFE**, 5 findings.
+
+None of the five findings from [Stage 1](QCAI-stage1-response.md) came back. The five new ones are answered below.
+The updated bundle is [`RedZone.v3.flat.sol`](RedZone.v3.flat.sol). It contains `PQAccess`, `RobotRegistryV3`,
+`EscrowVaultV2`, the new `MLDSA87` library and OpenZeppelin `ReentrancyGuard` v5.1.0.
+
+## Findings
+
+| # | QCAI finding | Severity | Was it real? | What changed | Tests |
+|---|---|---|---|---|---|
+| 1 | Potential ML-DSA-87 signature malleability | High | **No.** ML-DSA signing is hedged (randomised), so one message legitimately has many valid signatures. RedZone never uses signature bytes as a replay key; every digest carries a per-signer nonce. | Two extra layers. **(a)** Every signed digest (admin, user, referee) is recorded in `usedDigests`, so a second, different valid signature over a used digest reverts `DigestUsed`. **(b)** The new `MLDSA87` library enforces the exact format: algorithm id 1, a 2592-byte public key and a 4627-byte signature. These values were checked against `pqcKeyStatus` on qorechain-diana and a real signature. | `test_Stage2_SecondSignatureOverUsedDigestRefused`, `…UserDigestsMarkedUsed`, `…WrongSignatureLengthRefused`, `…NonMLDSA87KeyRefused`, `…RefereeKeyMustBeMLDSA87` |
+| 2 | Reentrancy risk in EscrowVaultV2 | Medium | **No.** The hand-written lock and checks-effects-interactions were already in place (and tested). | Now uses OpenZeppelin `ReentrancyGuard` (v5.1.0) on `depositBounty`, `claimBounty` and `finalizeWithdraw`. State is still updated before every transfer. | `test_Stage2_OZGuardBlocksCrossFunctionReentry`, `test_Attack_ReentrancyOnClaim`, invariant suite |
+| 3 | Incorrect session expiry handling ("timing differences between nodes") | Medium | **No.** `block.timestamp` is agreed by consensus, so every node sees the same time, and the windows are minutes long. | One source of truth: `sessionExpiresAt(id)` and `resultDeadline(id)`, inclusive everywhere, with NatSpec explaining the timing model. `SessionStarted` and `recordResult` both use them. | `test_Stage2_SessionBoundaries` (last valid second, and one second late), `testFuzz_Stage2_ResultWindow` (5,000 runs) |
+| 4 | Missing input validation for chain id | Low | **No.** `QoreXMessage.checkChainId` already limited it to 1–64 characters. | v3 also has a named constant, `MAX_CHAIN_ID_LENGTH = 64`, with an explicit check in the constructor (`BadChainId`). | `test_Stage2_ChainIdLength` (0 and 65 refused, 64 accepted) |
+| 5 | Precompile availability assumption | Info | **Intended.** Verification fails closed. Falling back to ECDSA, or skipping the check, would remove the quantum safety. | NatSpec says so. A new `isPQAvailable()` view never reverts, so frontends can show a clear message. | `test_Stage2_PrecompileAvailability`, `test_Attack_PrecompileMissingFailsClosed` |
+
+## Full test results (16 Nov 2026)
+
+| Check | Result |
+|---|---|
+| Foundry tests | **154 passed, 0 failed** (5 suites: the deployed contracts' 92 tests, plus 62 v3 tests) |
+| Fuzzing | 5,000 runs per fuzz test, all passing |
+| Invariant testing | 4 invariants × 1,000 runs × 100 random calls = **100,000 calls**, 0 violations. Random sequences of deposits, rounds, verdicts, claims, withdrawals, pauses and time jumps (up to 8 days) were checked for:<br>• the vault balance always covers `totalLocked`;<br>• money in = money locked + money paid out;<br>• `totalLocked` = the sum of open bounties;<br>• no bounty is paid twice.<br>A sanity test confirms the random calls really reach both payout paths. |
+| Coverage of `src/v3` | **99.66% of lines** (295/296), 97.6% of statements, 86.6% of branches, 98.4% of functions |
+| Slither 0.11.6 | No High or Medium findings. The remaining notices are by design: `arbitrary-send-eth` (payees come from the registry or the owner's signature), `timestamp`, `low-level-calls` (native QOR payment), `incorrect-equality` (exact brain-version comparison), and `pragma`. |
+| Backend tests | 73 passed (unchanged; the deployed contracts are untouched) |
+
+Run them with:
+
+```sh
+cd contracts
+pnpm forge-std                                   # forge-std and OpenZeppelin v5.1.0 into lib/
+FOUNDRY_FUZZ_RUNS=5000 FOUNDRY_INVARIANT_RUNS=1000 FOUNDRY_INVARIANT_DEPTH=100 forge test
+forge coverage --match-path "test/v3/*" --no-match-coverage "test|script|lib|src/[A-Z]"
+python -m slither src/v3/EscrowVaultV2.sol --exclude-dependencies
+```
+
+## About the score
+
+QCAI is an AI auditor: each run lists about five observations, and the score stayed at 85. The same score appears on QoreChain's public sample reports. What matters for the drill is that every finding is checked, either fixed or explained, and covered by a test. Across both stages, that is true for all ten findings, and the contracts are rated **QUANTUM-SAFE**.

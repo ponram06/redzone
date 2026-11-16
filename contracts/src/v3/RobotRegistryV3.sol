@@ -4,6 +4,7 @@ pragma solidity 0.8.28;
 import {PQGuard} from "../PQGuard.sol";
 import {QoreXMessage} from "../QoreXMessage.sol";
 import {PQAccess} from "./PQAccess.sol";
+import {MLDSA87} from "./MLDSA87.sol";
 
 /// @title RobotRegistryV3
 /// @notice Public record of RedZone robots, attack sessions and safety ratings.
@@ -137,7 +138,8 @@ contract RobotRegistryV3 is PQAccess {
     ///      only within SESSION_TTL + RESULT_GRACE of its start, and a utility digest includes the
     ///      robot's utilityNonce.
     modifier onlyReferee(bytes32 digest, bytes calldata refereeSig) {
-        PQGuard.requirePubkeySig(refereePubkey, digest, refereeSig);
+        if (!MLDSA87.verify(refereePubkey, refereeSig, abi.encodePacked(digest))) revert PQGuard.PQCSignatureInvalid();
+        _useDigest(digest);
         _;
     }
 
@@ -150,6 +152,7 @@ contract RobotRegistryV3 is PQAccess {
 
     constructor(bytes memory refereePubkey_, bytes memory nativeChainId_) PQAccess("RedZone.RobotRegistry.v3", nativeChainId_) {
         if (refereePubkey_.length == 0) revert EmptyPubkey();
+        MLDSA87.checkPubkey(refereePubkey_);
         refereePubkey = refereePubkey_;
         emit RefereeUpdated(keccak256(refereePubkey_));
     }
@@ -164,6 +167,7 @@ contract RobotRegistryV3 is PQAccess {
         onlyAdmin(proposeRefereeDigest(keccak256(newPubkey), nonces[admin], deadline), adminSig)
     {
         if (newPubkey.length == 0) revert EmptyPubkey();
+        MLDSA87.checkPubkey(newPubkey);
         pendingRefereePubkey = newPubkey;
         uint256 activatesAt = block.timestamp + REFEREE_DELAY;
         refereeActivatesAt = uint64(activatesAt);
@@ -184,7 +188,7 @@ contract RobotRegistryV3 is PQAccess {
 
     /// @notice Register a robot owned by the sender (the sender needs a registered ML-DSA key).
     function registerRobot(string calldata name, bytes32 brainHash) external whenNotPaused returns (uint256 robotId) {
-        if (!PQGuard.hasPQKey(msg.sender)) revert PQGuard.PQCKeyNotRegistered(msg.sender);
+        MLDSA87.requireKey(msg.sender); // sender must hold an ML-DSA-87 key
         return _register(msg.sender, name, brainHash);
     }
 
@@ -197,8 +201,7 @@ contract RobotRegistryV3 is PQAccess {
     {
         _checkName(name);
         bytes32 digest = registerRobotDigest(owner, keccak256(bytes(name)), brainHash, nonces[owner], deadline);
-        _requireUserSig(owner, ACTION_REGISTER_ROBOT, digest, ownerSig);
-        nonces[owner] = nonces[owner] + 1;
+        _useUserSig(owner, ACTION_REGISTER_ROBOT, digest, ownerSig);
         return _register(owner, name, brainHash);
     }
 
@@ -210,8 +213,7 @@ contract RobotRegistryV3 is PQAccess {
     {
         Robot storage r = _robot(robotId);
         address owner = r.owner;
-        _requireUserSig(owner, ACTION_UPDATE_BRAIN, updateBrainDigest(robotId, brainHash, nonces[owner], deadline), ownerSig);
-        nonces[owner] = nonces[owner] + 1;
+        _useUserSig(owner, ACTION_UPDATE_BRAIN, updateBrainDigest(robotId, brainHash, nonces[owner], deadline), ownerSig);
 
         r.brainHash = brainHash;
         r.attacks = 0;
@@ -227,7 +229,7 @@ contract RobotRegistryV3 is PQAccess {
 
     /// @notice Start a session as the sender (for wallets that can send EVM transactions).
     function startSession(uint256 robotId) external whenNotPaused returns (uint256 sessionId) {
-        if (!PQGuard.hasPQKey(msg.sender)) revert PQGuard.PQCKeyNotRegistered(msg.sender);
+        MLDSA87.requireKey(msg.sender); // sender must hold an ML-DSA-87 key
         return _startSession(robotId, msg.sender);
     }
 
@@ -241,8 +243,7 @@ contract RobotRegistryV3 is PQAccess {
         returns (uint256 sessionId)
     {
         if (deadline > block.timestamp + MAX_START_TTL) revert StartRequestTooLong();
-        _requireUserSig(player, ACTION_START_SESSION, startSessionDigest(robotId, player, nonces[player], deadline), playerSig);
-        nonces[player] = nonces[player] + 1;
+        _useUserSig(player, ACTION_START_SESSION, startSessionDigest(robotId, player, nonces[player], deadline), playerSig);
         return _startSession(robotId, player);
     }
 
@@ -261,7 +262,7 @@ contract RobotRegistryV3 is PQAccess {
         Session storage s = _sessions[sessionId];
         if (s.player == address(0)) revert UnknownSession();
         if (s.outcome != Outcome.None) revert AlreadyRecorded();
-        if (block.timestamp > uint256(s.startedAt) + SESSION_TTL + RESULT_GRACE) revert ResultTooLate();
+        if (block.timestamp > resultDeadline(sessionId)) revert ResultTooLate();
 
         s.replayHash = replayHash;
         s.resultAt = uint64(block.timestamp);
@@ -307,6 +308,22 @@ contract RobotRegistryV3 is PQAccess {
 
     function getSession(uint256 sessionId) external view returns (Session memory) {
         return _sessions[sessionId];
+    }
+
+    /// @notice Last second (inclusive) the player may play the session (startedAt + SESSION_TTL).
+    /// @dev All session times use block.timestamp, which every node agrees on through consensus, so
+    ///      "timing differences between nodes" cannot change an outcome. The windows are minutes
+    ///      long, so the few seconds a block producer can shift a timestamp do not matter. Bounds
+    ///      are inclusive everywhere: a deadline T means "at or before T".
+    function sessionExpiresAt(uint256 sessionId) public view returns (uint256) {
+        Session storage s = _sessions[sessionId];
+        if (s.player == address(0)) revert UnknownSession();
+        return uint256(s.startedAt) + SESSION_TTL;
+    }
+
+    /// @notice Last second (inclusive) the referee's verdict can be recorded (expiry + RESULT_GRACE).
+    function resultDeadline(uint256 sessionId) public view returns (uint256) {
+        return sessionExpiresAt(sessionId) + RESULT_GRACE;
     }
 
     /// @notice Safety x utility rating in basis points (0..10000).
@@ -406,7 +423,7 @@ contract RobotRegistryV3 is PQAccess {
             outcome: Outcome.None,
             replayHash: bytes32(0)
         });
-        emit SessionStarted(sessionId, robotId, player, block.timestamp + SESSION_TTL);
+        emit SessionStarted(sessionId, robotId, player, sessionExpiresAt(sessionId));
     }
 
     /// @dev Printable ASCII only: no control characters, no look-alike or right-to-left tricks.

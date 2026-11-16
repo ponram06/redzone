@@ -1,0 +1,207 @@
+// SPDX-License-Identifier: MIT
+pragma solidity 0.8.28;
+
+import {Test} from "forge-std/Test.sol";
+import {PQAccess} from "../../src/v3/PQAccess.sol";
+import {MLDSA87} from "../../src/v3/MLDSA87.sol";
+import {RobotRegistryV3} from "../../src/v3/RobotRegistryV3.sol";
+import {EscrowVaultV2} from "../../src/v3/EscrowVaultV2.sol";
+import {MockPQC87} from "../mocks/MockPQC87.sol";
+
+/// @dev Drives random sequences of deposits, rounds, verdicts, claims, withdrawals, pauses and
+///      time jumps. Every call is allowed to fail; the invariants must hold whatever happens.
+contract VaultHandler is Test {
+    RobotRegistryV3 internal reg;
+    EscrowVaultV2 internal vault;
+    uint256 internal robotId;
+    address internal owner;
+    address internal admin;
+    bytes internal ownerPk;
+    bytes internal adminPk;
+    bytes internal refereePk;
+    address[3] internal players;
+    bytes[3] internal playerPks;
+
+    uint256[] public sessionIds;
+    uint256 public paidToPlayers;
+    uint256 public paidToOwner;
+    uint256 public deposited;
+
+    constructor(
+        RobotRegistryV3 r,
+        EscrowVaultV2 v,
+        uint256 id,
+        address o,
+        bytes memory oPk,
+        address a,
+        bytes memory aPk,
+        bytes memory refPk,
+        address[3] memory ps,
+        bytes[3] memory pks
+    ) {
+        reg = r;
+        vault = v;
+        robotId = id;
+        owner = o;
+        ownerPk = oPk;
+        admin = a;
+        adminPk = aPk;
+        refereePk = refPk;
+        players = ps;
+        playerPks = pks;
+    }
+
+    function _sig(bytes memory pk, bytes32 digest) internal pure returns (bytes memory) {
+        return abi.encodePacked(keccak256(abi.encode(pk, abi.encodePacked(digest))), new bytes(MLDSA87.SIGNATURE_LENGTH - 32));
+    }
+
+    function deposit(uint96 amount) external {
+        uint256 a = bound(uint256(amount), 1 ether, 50 ether);
+        vm.deal(address(this), a);
+        try vault.depositBounty{value: a}(robotId) {
+            deposited += a;
+        } catch {}
+    }
+
+    function play(uint8 who, bool breach, uint32 thinkTime) external {
+        uint256 i = who % 3;
+        uint256 d = block.timestamp + 5 minutes;
+        bytes32 dg = reg.startSessionDigest(robotId, players[i], reg.nonces(players[i]), d);
+        try reg.startSessionFor(robotId, players[i], d, _sig(playerPks[i], dg)) returns (uint256 sid) {
+            sessionIds.push(sid);
+            vm.warp(block.timestamp + bound(uint256(thinkTime), 0, 80 minutes));
+            uint256 rd = block.timestamp + 1;
+            bytes32 rdg = reg.resultDigest(sid, robotId, players[i], breach, keccak256(abi.encode(sid)), rd);
+            try reg.recordResult(sid, breach, keccak256(abi.encode(sid)), rd, _sig(refereePk, rdg)) {} catch {}
+        } catch {}
+    }
+
+    function claim(uint8 bountySeed, uint8 sessionSeed) external {
+        uint256 n = vault.nextBountyId();
+        if (n == 1 || sessionIds.length == 0) return;
+        uint256 b = 1 + (uint256(bountySeed) % (n - 1));
+        uint256 sid = sessionIds[uint256(sessionSeed) % sessionIds.length];
+        address p = reg.getSession(sid).player;
+        uint256 before = p.balance;
+        try vault.claimBounty(b, sid) {
+            paidToPlayers += p.balance - before;
+        } catch {}
+    }
+
+    function requestWithdraw(uint8 bountySeed) external {
+        uint256 n = vault.nextBountyId();
+        if (n == 1) return;
+        uint256 b = 1 + (uint256(bountySeed) % (n - 1));
+        uint256 d = block.timestamp + 5 minutes;
+        bytes32 dg = vault.withdrawDigest(b, owner, vault.nonces(owner), d);
+        try vault.requestWithdraw(b, owner, d, _sig(ownerPk, dg)) {} catch {}
+    }
+
+    function finalize(uint8 bountySeed) external {
+        uint256 n = vault.nextBountyId();
+        if (n == 1) return;
+        uint256 b = 1 + (uint256(bountySeed) % (n - 1));
+        uint256 before = owner.balance;
+        try vault.finalizeWithdraw(b) {
+            paidToOwner += owner.balance - before;
+        } catch {}
+    }
+
+    function togglePause() external {
+        bool p = !vault.paused();
+        uint256 d = block.timestamp + 5 minutes;
+        bytes32 dg = vault.setPausedDigest(p, vault.nonces(admin), d);
+        try vault.setPaused(p, d, _sig(adminPk, dg)) {} catch {}
+    }
+
+    function wait(uint32 secs) external {
+        vm.warp(block.timestamp + bound(uint256(secs), 1, 8 days));
+    }
+}
+
+contract VaultInvariantTest is Test {
+    address constant VERIFY = 0x0000000000000000000000000000000000000a01;
+    address constant STATUS = 0x0000000000000000000000000000000000000a02;
+
+    RobotRegistryV3 internal reg;
+    EscrowVaultV2 internal vault;
+    VaultHandler internal handler;
+
+    function _key(bytes memory seed) internal pure returns (bytes memory pk) {
+        pk = new bytes(MLDSA87.PUBKEY_LENGTH);
+        for (uint256 i = 0; i < seed.length; i++) pk[i] = seed[i];
+    }
+
+    function setUp() public {
+        vm.warp(1_700_000_000);
+        MockPQC87 impl = new MockPQC87();
+        vm.etch(VERIFY, address(impl).code);
+        vm.etch(STATUS, address(impl).code);
+        MockPQC87 keys = MockPQC87(STATUS);
+
+        address admin = makeAddr("admin");
+        address owner = makeAddr("owner");
+        bytes memory adminPk = _key(hex"a1");
+        bytes memory ownerPk = _key(hex"b2");
+        bytes memory refereePk = _key(hex"c3");
+        keys.setKey(admin, adminPk);
+        keys.setKey(owner, ownerPk);
+        address[3] memory ps = [makeAddr("p0"), makeAddr("p1"), makeAddr("p2")];
+        bytes[3] memory pks = [_key(hex"d0"), _key(hex"d1"), _key(hex"d2")];
+        for (uint256 i = 0; i < 3; i++) keys.setKey(ps[i], pks[i]);
+
+        vm.startPrank(admin);
+        reg = new RobotRegistryV3(refereePk, "qorechain-diana");
+        vault = new EscrowVaultV2(reg, "qorechain-diana");
+        vm.stopPrank();
+
+        vm.prank(owner);
+        uint256 robotId = reg.registerRobot("Guard Dog", keccak256("brain"));
+
+        handler = new VaultHandler(reg, vault, robotId, owner, ownerPk, admin, adminPk, refereePk, ps, pks);
+        targetContract(address(handler));
+    }
+
+    /// The vault always holds at least what it owes.
+    function invariant_BalanceCoversLocked() public view {
+        assertGe(address(vault).balance, vault.totalLocked());
+    }
+
+    /// Money in = money still locked + money paid out. Nothing is created or lost.
+    function invariant_MoneyIsConserved() public view {
+        assertEq(handler.deposited(), vault.totalLocked() + handler.paidToPlayers() + handler.paidToOwner());
+    }
+
+    /// totalLocked equals the sum of open bounties, and closed bounties hold nothing.
+    function invariant_LockedMatchesOpenBounties() public view {
+        uint256 sum;
+        uint256 n = vault.nextBountyId();
+        for (uint256 i = 1; i < n; i++) {
+            (, uint256 amount,,,,, EscrowVaultV2.Status st) = vault.bounties(i);
+            if (st == EscrowVaultV2.Status.Open) sum += amount;
+            else assertEq(amount, 0);
+        }
+        assertEq(sum, vault.totalLocked());
+    }
+
+    /// No bounty is ever paid twice: payouts never exceed deposits.
+    function invariant_NoDoublePay() public view {
+        assertLe(handler.paidToPlayers() + handler.paidToOwner(), handler.deposited());
+    }
+
+    /// Sanity: the handler really reaches payouts (so the invariants are not vacuous).
+    function test_HandlerReachesPayouts() public {
+        handler.deposit(5 ether);
+        handler.deposit(3 ether);
+        handler.play(0, true, 60); // breach, judged in time
+        handler.claim(0, 0);
+        handler.claim(1, 0);
+        assertEq(handler.paidToPlayers(), 8 ether);
+        handler.deposit(2 ether);
+        handler.requestWithdraw(2);
+        handler.wait(4 hours);
+        handler.finalize(2);
+        assertEq(handler.paidToOwner(), 2 ether);
+        assertEq(vault.totalLocked(), 0);
+    }
+}

@@ -6,7 +6,9 @@ import {PQGuard} from "../../src/PQGuard.sol";
 import {PQAccess} from "../../src/v3/PQAccess.sol";
 import {RobotRegistryV3} from "../../src/v3/RobotRegistryV3.sol";
 import {EscrowVaultV2} from "../../src/v3/EscrowVaultV2.sol";
-import {MockPQC} from "../mocks/MockPQC.sol";
+import {MockPQC87} from "../mocks/MockPQC87.sol";
+import {MLDSA87} from "../../src/v3/MLDSA87.sol";
+import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 /// @dev Re-enters the vault from its receive hook.
 contract Reenterer {
@@ -48,7 +50,7 @@ contract RedZoneV3Test is Test {
 
     RobotRegistryV3 internal reg;
     EscrowVaultV2 internal vault;
-    MockPQC internal keys;
+    MockPQC87 internal keys;
 
     address internal admin = makeAddr("admin");
     address internal owner = makeAddr("owner");
@@ -68,10 +70,16 @@ contract RedZoneV3Test is Test {
 
     function setUp() public {
         vm.warp(1_700_000_000);
-        MockPQC impl = new MockPQC();
+        adminPk = _key(adminPk);
+        ownerPk = _key(ownerPk);
+        playerPk = _key(playerPk);
+        player2Pk = _key(player2Pk);
+        refereePk = _key(refereePk);
+        attackerPk = _key(attackerPk);
+        MockPQC87 impl = new MockPQC87();
         vm.etch(VERIFY, address(impl).code);
         vm.etch(STATUS, address(impl).code);
-        keys = MockPQC(STATUS);
+        keys = MockPQC87(STATUS);
         keys.setKey(admin, adminPk);
         keys.setKey(owner, ownerPk);
         keys.setKey(player, playerPk);
@@ -90,13 +98,23 @@ contract RedZoneV3Test is Test {
 
     // -------------------------------------------------------------- helpers
 
-    /// @dev Same scheme as MockPQC.sign, computed locally so vm.expectRevert targets the contract call.
+    /// @dev A 2592-byte test public key derived from a short seed.
+    function _key(bytes memory seed) internal pure returns (bytes memory pk) {
+        pk = new bytes(MLDSA87.PUBKEY_LENGTH);
+        for (uint256 i = 0; i < seed.length; i++) pk[i] = seed[i];
+    }
+
+    /// @dev Same scheme as MockPQC87, computed locally so vm.expectRevert targets the contract call.
+    function _sigOver(bytes memory pk, bytes memory message) internal pure returns (bytes memory) {
+        return abi.encodePacked(keccak256(abi.encode(pk, message)), new bytes(MLDSA87.SIGNATURE_LENGTH - 32));
+    }
+
     function _sig(bytes memory pk, bytes32 digest) internal pure returns (bytes memory) {
-        return abi.encodePacked(keccak256(abi.encode(pk, abi.encodePacked(digest))));
+        return _sigOver(pk, abi.encodePacked(digest));
     }
 
     function _walletSig(PQAccess c, bytes memory pk, string memory action, bytes32 digest) internal view returns (bytes memory) {
-        return abi.encodePacked(MockPQC(VERIFY).sign(pk, c.walletMessage(action, digest)));
+        return _sigOver(pk, c.walletMessage(action, digest));
     }
 
     function _dl() internal view returns (uint256) {
@@ -229,12 +247,12 @@ contract RedZoneV3Test is Test {
 
     function test_Attack_ReentrancyOnClaim() public {
         Reenterer r = new Reenterer(vault);
-        keys.setKey(address(r), hex"0e0e");
+        keys.setKey(address(r), _key(hex"0e0e"));
         uint256 a = _deposit(1 ether);
         uint256 b = _deposit(1 ether);
         uint256 d = _dl();
         bytes32 dg = reg.startSessionDigest(robotId, address(r), reg.nonces(address(r)), d);
-        uint256 sid = reg.startSessionFor(robotId, address(r), d, _sig(hex"0e0e", dg));
+        uint256 sid = reg.startSessionFor(robotId, address(r), d, _sig(_key(hex"0e0e"), dg));
         _record(sid, true);
         r.arm(b, sid);
         vault.claimBounty(a, sid);
@@ -246,11 +264,11 @@ contract RedZoneV3Test is Test {
 
     function test_FailedPaymentRevertsEverything() public {
         Refuser r = new Refuser();
-        keys.setKey(address(r), hex"0f0f");
+        keys.setKey(address(r), _key(hex"0f0f"));
         uint256 id = _deposit(1 ether);
         uint256 d = _dl();
         bytes32 dg = reg.startSessionDigest(robotId, address(r), reg.nonces(address(r)), d);
-        uint256 sid = reg.startSessionFor(robotId, address(r), d, _sig(hex"0f0f", dg));
+        uint256 sid = reg.startSessionFor(robotId, address(r), d, _sig(_key(hex"0f0f"), dg));
         _record(sid, true);
         vm.expectRevert(abi.encodeWithSelector(EscrowVaultV2.TransferFailed.selector, address(r), 1 ether));
         vault.claimBounty(id, sid);
@@ -514,7 +532,7 @@ contract RedZoneV3Test is Test {
 
     function test_RefereeChange_IsTimeLocked() public {
         uint256 d = _dl();
-        bytes memory newPk = hex"7777";
+        bytes memory newPk = _key(hex"7777");
         bytes32 dg = reg.proposeRefereeDigest(keccak256(newPk), reg.nonces(admin), d);
         reg.proposeReferee(newPk, d, _sig(adminPk, dg));
 
@@ -684,5 +702,228 @@ contract RedZoneV3Test is Test {
         vault.setPaused(true, d, _sig(adminPk, dg));
         vault.finalizeWithdraw(id);
         assertEq(owner.balance, 1 ether);
+    }
+
+    // ================================================ QCAI stage 2 findings
+
+    /// HIGH "signature malleability": a different valid signature over a used digest is refused.
+    function test_Stage2_SecondSignatureOverUsedDigestRefused() public {
+        uint256 sid = _start(player, playerPk);
+        uint256 d = uint256(reg.getSession(sid).startedAt) + 70 minutes;
+        bytes32 dg = reg.resultDigest(sid, robotId, player, true, keccak256("r"), d);
+        bytes memory s1 = _sig(refereePk, dg);
+        reg.recordResult(sid, true, keccak256("r"), d, s1);
+        assertTrue(reg.usedDigests(dg));
+        bytes memory s2 = bytes.concat(s1); // same message, different bytes (another valid ML-DSA signature)
+        s2[4626] = 0x01;
+        vm.expectRevert(abi.encodeWithSelector(PQAccess.DigestUsed.selector, dg));
+        reg.recordResult(sid, true, keccak256("r"), d, s2);
+    }
+
+    function test_Stage2_UserDigestsMarkedUsed() public {
+        uint256 d = _dl();
+        bytes32 dg = reg.startSessionDigest(robotId, player, reg.nonces(player), d);
+        reg.startSessionFor(robotId, player, d, _sig(playerPk, dg));
+        assertTrue(reg.usedDigests(dg));
+        assertEq(reg.nonces(player), 1);
+    }
+
+    function test_Stage2_WrongSignatureLengthRefused() public {
+        uint256 d = _dl();
+        bytes32 dg = reg.startSessionDigest(robotId, player, reg.nonces(player), d);
+        bytes memory good = _sig(playerPk, dg);
+        bytes memory short_ = new bytes(4626);
+        bytes memory long_ = bytes.concat(good, hex"00");
+        for (uint256 i = 0; i < 32; i++) short_[i] = good[i];
+        vm.expectRevert(abi.encodeWithSelector(MLDSA87.BadSignatureLength.selector, 4626));
+        reg.startSessionFor(robotId, player, d, short_);
+        vm.expectRevert(abi.encodeWithSelector(MLDSA87.BadSignatureLength.selector, 4628));
+        reg.startSessionFor(robotId, player, d, long_);
+        vm.expectRevert(abi.encodeWithSelector(MLDSA87.BadSignatureLength.selector, 0));
+        reg.startSessionFor(robotId, player, d, "");
+    }
+
+    function test_Stage2_NonMLDSA87KeyRefused() public {
+        keys.setKeyWithAlgorithm(player2, player2Pk, 2); // e.g. another PQ scheme
+        uint256 d = _dl();
+        bytes32 dg = reg.startSessionDigest(robotId, player2, reg.nonces(player2), d);
+        vm.expectRevert(abi.encodeWithSelector(MLDSA87.NotMLDSA87Key.selector, player2, uint8(2)));
+        reg.startSessionFor(robotId, player2, d, _sig(player2Pk, dg));
+        keys.setKey(player2, hex"0d0d"); // wrong key length
+        vm.expectRevert(abi.encodeWithSelector(MLDSA87.BadPubkeyLength.selector, 2));
+        reg.startSessionFor(robotId, player2, d, _sig(hex"0d0d", dg));
+    }
+
+    function test_Stage2_RefereeKeyMustBeMLDSA87() public {
+        uint256 d = _dl();
+        bytes memory shortKey = hex"7777";
+        bytes32 dg = reg.proposeRefereeDigest(keccak256(shortKey), reg.nonces(admin), d);
+        vm.expectRevert(abi.encodeWithSelector(MLDSA87.BadPubkeyLength.selector, 2));
+        reg.proposeReferee(shortKey, d, _sig(adminPk, dg));
+        vm.prank(admin);
+        vm.expectRevert(abi.encodeWithSelector(MLDSA87.BadPubkeyLength.selector, 3));
+        new RobotRegistryV3(hex"5e5e5e", CHAIN);
+    }
+
+    /// MEDIUM reentrancy: OpenZeppelin ReentrancyGuard blocks re-entry into any guarded function.
+    function test_Stage2_OZGuardBlocksCrossFunctionReentry() public {
+        Reenterer r = new Reenterer(vault);
+        keys.setKey(address(r), _key(hex"0e0e"));
+        uint256 a = _deposit(1 ether);
+        uint256 d = _dl();
+        bytes32 dg = reg.startSessionDigest(robotId, address(r), reg.nonces(address(r)), d);
+        uint256 sid = reg.startSessionFor(robotId, address(r), d, _sig(_key(hex"0e0e"), dg));
+        _record(sid, true);
+        r.arm(a, sid); // tries to claim the same bounty again from inside the payment
+        vault.claimBounty(a, sid);
+        assertTrue(r.tried());
+        assertFalse(r.reentered());
+        assertEq(address(r).balance, 1 ether);
+        assertEq(vault.totalLocked(), 0);
+    }
+
+    /// MEDIUM session expiry: exact, inclusive boundaries from one source of truth.
+    function test_Stage2_SessionBoundaries() public {
+        uint256 sid = _start(player, playerPk);
+        uint256 t0 = reg.getSession(sid).startedAt;
+        assertEq(reg.sessionExpiresAt(sid), t0 + 10 minutes);
+        assertEq(reg.resultDeadline(sid), t0 + 70 minutes);
+        vm.expectRevert(RobotRegistryV3.UnknownSession.selector);
+        reg.sessionExpiresAt(999);
+
+        vm.warp(t0 + 70 minutes); // last valid second
+        _record(sid, true);
+
+        uint256 sid2 = _start(player, playerPk);
+        uint256 t2 = reg.getSession(sid2).startedAt;
+        vm.warp(t2 + 70 minutes + 1); // one second late
+        uint256 d = block.timestamp;
+        bytes32 dg = reg.resultDigest(sid2, robotId, player, true, keccak256("r"), d);
+        vm.expectRevert(RobotRegistryV3.ResultTooLate.selector);
+        reg.recordResult(sid2, true, keccak256("r"), d, _sig(refereePk, dg));
+    }
+
+    function testFuzz_Stage2_ResultWindow(uint32 delay) public {
+        uint256 sid = _start(player, playerPk);
+        uint256 t0 = reg.getSession(sid).startedAt;
+        vm.warp(t0 + bound(uint256(delay), 0, 3 hours));
+        uint256 d = block.timestamp;
+        bytes32 dg = reg.resultDigest(sid, robotId, player, false, keccak256("r"), d);
+        bytes memory sg = _sig(refereePk, dg);
+        if (block.timestamp > t0 + 70 minutes) {
+            vm.expectRevert(RobotRegistryV3.ResultTooLate.selector);
+            reg.recordResult(sid, false, keccak256("r"), d, sg);
+        } else {
+            reg.recordResult(sid, false, keccak256("r"), d, sg);
+            assertEq(uint8(reg.getSession(sid).outcome), uint8(RobotRegistryV3.Outcome.Defended));
+        }
+    }
+
+    /// LOW chain id length: explicit limit in v3.
+    function test_Stage2_ChainIdLength() public {
+        assertEq(reg.MAX_CHAIN_ID_LENGTH(), 64);
+        bytes memory longId = new bytes(65);
+        for (uint256 i = 0; i < 65; i++) longId[i] = "a";
+        vm.startPrank(admin);
+        vm.expectRevert(PQAccess.BadChainId.selector);
+        new RobotRegistryV3(refereePk, longId);
+        vm.expectRevert(PQAccess.BadChainId.selector);
+        new RobotRegistryV3(refereePk, "");
+        bytes memory maxId = new bytes(64);
+        for (uint256 i = 0; i < 64; i++) maxId[i] = "a";
+        new RobotRegistryV3(refereePk, maxId); // exactly 64 is fine
+        vm.stopPrank();
+    }
+
+    /// INFO precompile availability: detectable without reverting; actions fail closed.
+    function test_Stage2_PrecompileAvailability() public {
+        assertTrue(reg.isPQAvailable());
+        uint256 d = _dl();
+        bytes memory sg = _sig(playerPk, reg.startSessionDigest(robotId, player, 0, d));
+        vm.etch(VERIFY, "");
+        assertFalse(reg.isPQAvailable());
+        vm.expectRevert(PQGuard.PQCPrecompileUnavailable.selector);
+        reg.startSessionFor(robotId, player, d, sg);
+        vm.etch(STATUS, "");
+        assertFalse(vault.isPQAvailable());
+    }
+
+    // ================================================ ratings and views
+
+    function _utility(uint8 n) internal {
+        uint256 d = _dl();
+        bytes32 dg = reg.utilityDigest(robotId, n, keccak256("u"), reg.getRobot(robotId).utilityNonce, d);
+        reg.recordUtility(robotId, n, keccak256("u"), d, _sig(refereePk, dg));
+    }
+
+    function _playMany(uint256 defended, uint256 breached) internal {
+        for (uint256 i = 0; i < defended + breached; i++) {
+            address p = makeAddr(string(abi.encode("p", i)));
+            bytes memory pk = _key(abi.encodePacked(uint16(i + 1000)));
+            keys.setKey(p, pk);
+            uint256 sid = _start(p, pk);
+            _record(sid, i >= defended);
+        }
+    }
+
+    function test_RatingAndTiers() public {
+        assertEq(reg.getRating(robotId), 0);
+        assertEq(uint8(reg.getTier(robotId)), uint8(RobotRegistryV3.Tier.Rookie));
+        _utility(10);
+        _playMany(9, 1); // 90% safe, full utility, 10 attacks
+        assertEq(reg.getRating(robotId), 9_000);
+        assertEq(uint8(reg.getTier(robotId)), uint8(RobotRegistryV3.Tier.Guard));
+        _playMany(40, 0); // 49/50 = 98%
+        assertEq(uint8(reg.getTier(robotId)), uint8(RobotRegistryV3.Tier.Sentinel));
+        _utility(5); // half utility halves the rating
+        assertEq(reg.getRating(robotId), 4_900);
+        assertEq(uint8(reg.getTier(robotId)), uint8(RobotRegistryV3.Tier.Rookie));
+    }
+
+    function test_Views() public {
+        assertEq(reg.attemptsLeftToday(player), 5);
+        _start(player, playerPk);
+        assertEq(reg.attemptsLeftToday(player), 4);
+        for (uint256 i = 0; i < 4; i++) _start(player, playerPk);
+        assertEq(reg.attemptsLeftToday(player), 0);
+        vm.warp(block.timestamp + 1 days);
+        assertEq(reg.attemptsLeftToday(player), 5); // new UTC day
+
+        RobotRegistryV3.Robot memory r = reg.getRobot(robotId);
+        assertEq(r.owner, owner);
+        assertEq(r.name, "Guard Dog");
+        assertEq(reg.robotOwner(robotId), owner);
+        assertEq(reg.robotOwner(999), address(0));
+        bytes32 dg = keccak256("x");
+        assertEq(reg.walletMessage("StartSession", dg), abi.encodePacked("qorechain-msg-v1|qorechain-diana|", reg.walletText("StartSession", dg)));
+    }
+
+    function test_DirectCallsNeedMLDSA87Key() public {
+        vm.prank(attacker);
+        uint256 id = reg.registerRobot("Mine", keccak256("b")); // attacker has a valid key
+        assertEq(reg.robotOwner(id), attacker);
+        address noKey = makeAddr("noKey");
+        vm.prank(noKey);
+        vm.expectRevert();
+        reg.registerRobot("Nope", keccak256("b"));
+        vm.prank(noKey);
+        vm.expectRevert();
+        reg.startSession(robotId);
+        vm.prank(player);
+        uint256 sid = reg.startSession(robotId);
+        assertEq(reg.getSession(sid).player, player);
+    }
+
+    function test_UnknownRobotAndUtilityChecks() public {
+        uint256 d = _dl();
+        bytes32 dg = reg.startSessionDigest(999, player, reg.nonces(player), d);
+        vm.expectRevert(RobotRegistryV3.UnknownRobot.selector);
+        reg.startSessionFor(999, player, d, _sig(playerPk, dg));
+        dg = reg.utilityDigest(999, 5, keccak256("u"), 0, d);
+        vm.expectRevert(RobotRegistryV3.UnknownRobot.selector);
+        reg.recordUtility(999, 5, keccak256("u"), d, _sig(refereePk, dg));
+        dg = reg.updateBrainDigest(robotId, keccak256("b"), reg.nonces(owner), d);
+        vm.expectRevert(PQGuard.PQCSignatureInvalid.selector);
+        reg.updateBrain(robotId, keccak256("b"), d, _sig(attackerPk, dg));
     }
 }

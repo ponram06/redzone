@@ -5,7 +5,7 @@
   "type": "module",
   "description": "A Foundry project for the QoreChain EVM, with a helper that opens the EVM authorisation window.",
   "scripts": {
-    "forge-std": "forge install foundry-rs/forge-std --no-git",
+    "forge-std": "forge install foundry-rs/forge-std --no-git && forge install OpenZeppelin/openzeppelin-contracts@v5.1.0 --no-git",
     "build": "forge build",
     "test": "forge test",
     "window": "tsx --env-file=.env scripts/window.ts",

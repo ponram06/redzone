@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.28;
 
+import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {PQAccess} from "./PQAccess.sol";
 import {RobotRegistryV3} from "./RobotRegistryV3.sol";
 
@@ -22,7 +23,7 @@ import {RobotRegistryV3} from "./RobotRegistryV3.sol";
 ///
 /// A bounty always belongs to the robot's on-chain owner, whoever funds it, so a relayer that
 /// deposits for a QoreX user never owns the money.
-contract EscrowVaultV2 is PQAccess {
+contract EscrowVaultV2 is PQAccess, ReentrancyGuard {
     enum Status {
         None,
         Open,
@@ -70,7 +71,6 @@ contract EscrowVaultV2 is PQAccess {
     uint256 public totalLocked;
     mapping(uint256 => Bounty) public bounties;
 
-    uint256 private _lock = 1;
 
     // --------------------------------------------------------------------- events
 
@@ -92,18 +92,8 @@ contract EscrowVaultV2 is PQAccess {
     error WithdrawNotRequested();
     error WithdrawLocked();
     error TransferFailed(address to, uint256 amount);
-    error Reentrancy();
     error DirectTransferRefused();
     error BadDelays();
-
-    // ------------------------------------------------------------------ modifiers
-
-    modifier nonReentrant() {
-        if (_lock != 1) revert Reentrancy();
-        _lock = 2;
-        _;
-        _lock = 1;
-    }
 
     // ---------------------------------------------------------------- constructor
 
@@ -180,8 +170,7 @@ contract EscrowVaultV2 is PQAccess {
         if (b.status != Status.Open) revert BountyNotOpen();
 
         address owner = b.owner;
-        _requireUserSig(owner, ACTION_WITHDRAW, withdrawDigest(bountyId, to, nonces[owner], deadline), ownerSig);
-        nonces[owner] = nonces[owner] + 1;
+        _useUserSig(owner, ACTION_WITHDRAW, withdrawDigest(bountyId, to, nonces[owner], deadline), ownerSig);
 
         b.withdrawRequestedAt = uint64(block.timestamp);
         b.withdrawTo = to;

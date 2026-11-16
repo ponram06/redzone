@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity =0.8.28 ^0.8.24;
+pragma solidity =0.8.28 ^0.8.20 ^0.8.24;
 
 // src/PQGuard.sol
 
@@ -119,6 +119,167 @@ library QoreXMessage {
     }
 }
 
+// lib/openzeppelin-contracts/contracts/utils/ReentrancyGuard.sol
+
+// OpenZeppelin Contracts (last updated v5.1.0) (utils/ReentrancyGuard.sol)
+
+/**
+ * @dev Contract module that helps prevent reentrant calls to a function.
+ *
+ * Inheriting from `ReentrancyGuard` will make the {nonReentrant} modifier
+ * available, which can be applied to functions to make sure there are no nested
+ * (reentrant) calls to them.
+ *
+ * Note that because there is a single `nonReentrant` guard, functions marked as
+ * `nonReentrant` may not call one another. This can be worked around by making
+ * those functions `private`, and then adding `external` `nonReentrant` entry
+ * points to them.
+ *
+ * TIP: If EIP-1153 (transient storage) is available on the chain you're deploying at,
+ * consider using {ReentrancyGuardTransient} instead.
+ *
+ * TIP: If you would like to learn more about reentrancy and alternative ways
+ * to protect against it, check out our blog post
+ * https://blog.openzeppelin.com/reentrancy-after-istanbul/[Reentrancy After Istanbul].
+ */
+abstract contract ReentrancyGuard {
+    // Booleans are more expensive than uint256 or any type that takes up a full
+    // word because each write operation emits an extra SLOAD to first read the
+    // slot's contents, replace the bits taken up by the boolean, and then write
+    // back. This is the compiler's defense against contract upgrades and
+    // pointer aliasing, and it cannot be disabled.
+
+    // The values being non-zero value makes deployment a bit more expensive,
+    // but in exchange the refund on every call to nonReentrant will be lower in
+    // amount. Since refunds are capped to a percentage of the total
+    // transaction's gas, it is best to keep them low in cases like this one, to
+    // increase the likelihood of the full refund coming into effect.
+    uint256 private constant NOT_ENTERED = 1;
+    uint256 private constant ENTERED = 2;
+
+    uint256 private _status;
+
+    /**
+     * @dev Unauthorized reentrant call.
+     */
+    error ReentrancyGuardReentrantCall();
+
+    constructor() {
+        _status = NOT_ENTERED;
+    }
+
+    /**
+     * @dev Prevents a contract from calling itself, directly or indirectly.
+     * Calling a `nonReentrant` function from another `nonReentrant`
+     * function is not supported. It is possible to prevent this from happening
+     * by making the `nonReentrant` function external, and making it call a
+     * `private` function that does the actual work.
+     */
+    modifier nonReentrant() {
+        _nonReentrantBefore();
+        _;
+        _nonReentrantAfter();
+    }
+
+    function _nonReentrantBefore() private {
+        // On the first call to nonReentrant, _status will be NOT_ENTERED
+        if (_status == ENTERED) {
+            revert ReentrancyGuardReentrantCall();
+        }
+
+        // Any calls to nonReentrant after this point will fail
+        _status = ENTERED;
+    }
+
+    function _nonReentrantAfter() private {
+        // By storing the original value once again, a refund is triggered (see
+        // https://eips.ethereum.org/EIPS/eip-2200)
+        _status = NOT_ENTERED;
+    }
+
+    /**
+     * @dev Returns true if the reentrancy guard is currently set to "entered", which indicates there is a
+     * `nonReentrant` function in the call stack.
+     */
+    function _reentrancyGuardEntered() internal view returns (bool) {
+        return _status == ENTERED;
+    }
+}
+
+// src/v3/MLDSA87.sol
+
+/// @title MLDSA87
+/// @notice Strict ML-DSA-87 (FIPS 204, NIST level 5) checks on top of QoreChain's PQC precompiles.
+///
+/// Signature uniqueness / malleability: ML-DSA signing is hedged (randomised) by design, so one
+/// message legitimately has many valid signatures. RedZone therefore never uses signature bytes as
+/// a replay key. Every signed digest is single use because (1) it contains a per-signer nonce that
+/// is consumed, and (2) the contract records the digest itself as used (PQAccess.usedDigests). A
+/// second valid signature over the same digest is useless. On top of that, this library enforces
+/// the exact ML-DSA-87 format: algorithm id, 2592-byte public key and 4627-byte signature, so
+/// truncated, padded or other-scheme signatures are rejected before verification.
+///
+/// Precompile availability: verification fails closed. If the precompile is missing or returns
+/// junk, every signed action reverts. There is deliberately no fallback, because falling back to
+/// ECDSA (or skipping the check) would remove the quantum safety the contracts exist to provide.
+/// `available()` lets frontends detect the situation without a revert.
+library MLDSA87 {
+    /// @notice Algorithm id that QoreChain's pqcKeyStatus precompile reports for ML-DSA-87
+    ///         (read from qorechain-diana).
+    uint8 internal constant ALGORITHM_ID = 1;
+    uint256 internal constant PUBKEY_LENGTH = 2592;
+    uint256 internal constant SIGNATURE_LENGTH = 4627;
+
+    error NotMLDSA87Key(address account, uint8 algorithmId);
+    error BadPubkeyLength(uint256 length);
+    error BadSignatureLength(uint256 length);
+
+    /// @notice Reverts unless `pubkey` has the ML-DSA-87 public key length.
+    function checkPubkey(bytes memory pubkey) internal pure {
+        if (pubkey.length != PUBKEY_LENGTH) revert BadPubkeyLength(pubkey.length);
+    }
+
+    /// @notice Reverts unless `signature` has the ML-DSA-87 signature length.
+    function checkSignature(bytes memory signature) internal pure {
+        if (signature.length != SIGNATURE_LENGTH) revert BadSignatureLength(signature.length);
+    }
+
+    /// @notice The account's registered public key, required to be an ML-DSA-87 key.
+    function accountKey(address account) internal view returns (bytes memory pubkey) {
+        (bool registered, uint8 algorithmId, bytes memory key) = PQGuard.keyStatus(account);
+        if (!registered) revert PQGuard.PQCKeyNotRegistered(account);
+        if (algorithmId != ALGORITHM_ID) revert NotMLDSA87Key(account, algorithmId);
+        checkPubkey(key);
+        return key;
+    }
+
+    /// @notice Reverts unless `account` has a registered ML-DSA-87 key (no value returned).
+    function requireKey(address account) internal view {
+        (bool registered, uint8 algorithmId, bytes memory key) = PQGuard.keyStatus(account);
+        if (!registered) revert PQGuard.PQCKeyNotRegistered(account);
+        if (algorithmId != ALGORITHM_ID) revert NotMLDSA87Key(account, algorithmId);
+        checkPubkey(key);
+    }
+
+    /// @notice True if `signature` is a well-formed ML-DSA-87 signature by `pubkey` over `message`.
+    ///         Reverts on a malformed signature or an unavailable precompile (fail closed).
+    function verify(bytes memory pubkey, bytes memory signature, bytes memory message) internal view returns (bool) {
+        checkSignature(signature);
+        return PQGuard.verify(pubkey, signature, message);
+    }
+
+    /// @notice True when both PQC precompiles answer. Never reverts.
+    function available() internal view returns (bool) {
+        (bool ok1, bytes memory r1) = PQGuard.PQC_KEY_STATUS.staticcall(
+            abi.encodeWithSelector(PQGuard.PQC_KEY_STATUS_SELECTOR, address(0))
+        );
+        (bool ok2, bytes memory r2) = PQGuard.PQC_VERIFY.staticcall(
+            abi.encodeWithSelector(PQGuard.PQC_VERIFY_SELECTOR, bytes(""), bytes(""), bytes(""))
+        );
+        return ok1 && r1.length >= 96 && ok2 && r2.length >= 32;
+    }
+}
+
 // src/v3/PQAccess.sol
 
 /// @title PQAccess
@@ -141,6 +302,8 @@ abstract contract PQAccess {
     /// @notice Longest validity window a signed request may have. A relayer therefore cannot hold a
     ///         signed request back and use it much later.
     uint256 public constant MAX_REQUEST_TTL = 1 hours;
+    /// @notice Longest native chain id accepted (QoreX allows 1..64 characters of [A-Za-z0-9._-]).
+    uint256 public constant MAX_CHAIN_ID_LENGTH = 64;
     /// @notice A pause ends by itself after this long, so the admin can delay activity but never
     ///         freeze it for good (even if the admin key is lost).
     uint256 public constant MAX_PAUSE = 7 days;
@@ -174,6 +337,10 @@ abstract contract PQAccess {
     uint64 public unpausedAt;
     /// @notice Per-signer nonce for signed admin and user actions (replay protection).
     mapping(address => uint256) public nonces;
+    /// @notice Every signed digest that has been used (second replay layer on top of nonces).
+    ///         Signature bytes are never used as a key: ML-DSA is randomised, so the same message
+    ///         has many valid signatures, and uniqueness is enforced on the signed digest instead.
+    mapping(bytes32 => bool) public usedDigests;
 
     // --------------------------------------------------------------------- events
 
@@ -191,6 +358,8 @@ abstract contract PQAccess {
     error NotPendingAdmin();
     error PauseUnchanged();
     error PauseCooldown();
+    error DigestUsed(bytes32 digest);
+    error BadChainId();
 
     // ------------------------------------------------------------------ modifiers
 
@@ -204,7 +373,8 @@ abstract contract PQAccess {
     ///      runs, so the same signature can never be used twice.
     modifier onlyAdmin(bytes32 digest, bytes calldata adminSig) {
         address a = admin;
-        PQGuard.requireAccountSig(a, digest, adminSig);
+        if (!MLDSA87.verify(MLDSA87.accountKey(a), adminSig, abi.encodePacked(digest))) revert PQGuard.PQCSignatureInvalid();
+        _useDigest(digest);
         nonces[a] = nonces[a] + 1;
         _;
     }
@@ -224,8 +394,9 @@ abstract contract PQAccess {
 
     /// @dev The deployer becomes admin and must already have a registered ML-DSA key.
     constructor(string memory domainTag, bytes memory nativeChainId_) {
-        if (!PQGuard.hasPQKey(msg.sender)) revert PQGuard.PQCKeyNotRegistered(msg.sender);
-        QoreXMessage.checkChainId(nativeChainId_);
+        MLDSA87.requireKey(msg.sender); // deployer must hold an ML-DSA-87 key
+        if (nativeChainId_.length == 0 || nativeChainId_.length > MAX_CHAIN_ID_LENGTH) revert BadChainId();
+        QoreXMessage.checkChainId(nativeChainId_); // character set check
         _domainTag = keccak256(bytes(domainTag));
         nativeChainId = nativeChainId_;
         admin = msg.sender;
@@ -260,7 +431,7 @@ abstract contract PQAccess {
         validDeadline(deadline)
         onlyAdmin(transferAdminDigest(newAdmin, nonces[admin], deadline), adminSig)
     {
-        if (newAdmin != address(0) && !PQGuard.hasPQKey(newAdmin)) revert PQGuard.PQCKeyNotRegistered(newAdmin);
+        if (newAdmin != address(0)) MLDSA87.requireKey(newAdmin); // must hold an ML-DSA-87 key
         pendingAdmin = newAdmin;
         if (newAdmin == address(0)) emit AdminTransferCancelled(admin);
         else emit AdminTransferStarted(admin, newAdmin);
@@ -271,8 +442,7 @@ abstract contract PQAccess {
     function acceptAdmin(uint256 deadline, bytes calldata newAdminSig) external validDeadline(deadline) {
         address p = pendingAdmin;
         if (p == address(0)) revert NotPendingAdmin();
-        _requireUserSig(p, ACTION_ACCEPT_ADMIN, acceptAdminDigest(p, nonces[p], deadline), newAdminSig);
-        nonces[p] = nonces[p] + 1;
+        _useUserSig(p, ACTION_ACCEPT_ADMIN, acceptAdminDigest(p, nonces[p], deadline), newAdminSig);
         emit AdminTransferred(admin, p);
         admin = p;
         pendingAdmin = address(0);
@@ -281,6 +451,12 @@ abstract contract PQAccess {
     // ---------------------------------------------------------------------- views
 
     /// @notice True while a pause is in force (a pause older than MAX_PAUSE has expired).
+    /// @notice True when the post-quantum precompiles respond. Never reverts, so a frontend can
+    ///         show a clear message; every signed action fails closed when this is false.
+    function isPQAvailable() external view returns (bool) {
+        return MLDSA87.available();
+    }
+
     function isPaused() public view returns (bool) {
         return paused && block.timestamp < uint256(pausedAt) + MAX_PAUSE;
     }
@@ -328,11 +504,24 @@ abstract contract PQAccess {
     ///      signatures are never used as replay keys (nonces and on-chain state are), so signature
     ///      malleability or non-uniqueness has no effect.
     function _requireUserSig(address account, string memory action, bytes32 digest, bytes calldata sig) internal view {
-        (bool registered,, bytes memory pubkey) = PQGuard.keyStatus(account);
-        if (!registered) revert PQGuard.PQCKeyNotRegistered(account);
-        if (PQGuard.verify(pubkey, sig, QoreXMessage.message(nativeChainId, action, digest))) return;
-        if (PQGuard.verify(pubkey, sig, abi.encodePacked(digest))) return;
+        bytes memory pubkey = MLDSA87.accountKey(account);
+        if (MLDSA87.verify(pubkey, sig, QoreXMessage.message(nativeChainId, action, digest))) return;
+        if (MLDSA87.verify(pubkey, sig, abi.encodePacked(digest))) return;
         revert PQGuard.PQCSignatureInvalid();
+    }
+
+    /// @dev Verify a user's signature, then consume it: the digest is marked used and the user's
+    ///      nonce advances, so neither this signature nor any other signature over the same digest
+    ///      can be used again.
+    function _useUserSig(address account, string memory action, bytes32 digest, bytes calldata sig) internal {
+        _requireUserSig(account, action, digest, sig);
+        _useDigest(digest);
+        nonces[account] = nonces[account] + 1;
+    }
+
+    function _useDigest(bytes32 digest) internal {
+        if (usedDigests[digest]) revert DigestUsed(digest);
+        usedDigests[digest] = true;
     }
 
     function _checkDeadline(uint256 deadline) internal view {
@@ -475,7 +664,8 @@ contract RobotRegistryV3 is PQAccess {
     ///      only within SESSION_TTL + RESULT_GRACE of its start, and a utility digest includes the
     ///      robot's utilityNonce.
     modifier onlyReferee(bytes32 digest, bytes calldata refereeSig) {
-        PQGuard.requirePubkeySig(refereePubkey, digest, refereeSig);
+        if (!MLDSA87.verify(refereePubkey, refereeSig, abi.encodePacked(digest))) revert PQGuard.PQCSignatureInvalid();
+        _useDigest(digest);
         _;
     }
 
@@ -488,6 +678,7 @@ contract RobotRegistryV3 is PQAccess {
 
     constructor(bytes memory refereePubkey_, bytes memory nativeChainId_) PQAccess("RedZone.RobotRegistry.v3", nativeChainId_) {
         if (refereePubkey_.length == 0) revert EmptyPubkey();
+        MLDSA87.checkPubkey(refereePubkey_);
         refereePubkey = refereePubkey_;
         emit RefereeUpdated(keccak256(refereePubkey_));
     }
@@ -502,6 +693,7 @@ contract RobotRegistryV3 is PQAccess {
         onlyAdmin(proposeRefereeDigest(keccak256(newPubkey), nonces[admin], deadline), adminSig)
     {
         if (newPubkey.length == 0) revert EmptyPubkey();
+        MLDSA87.checkPubkey(newPubkey);
         pendingRefereePubkey = newPubkey;
         uint256 activatesAt = block.timestamp + REFEREE_DELAY;
         refereeActivatesAt = uint64(activatesAt);
@@ -522,7 +714,7 @@ contract RobotRegistryV3 is PQAccess {
 
     /// @notice Register a robot owned by the sender (the sender needs a registered ML-DSA key).
     function registerRobot(string calldata name, bytes32 brainHash) external whenNotPaused returns (uint256 robotId) {
-        if (!PQGuard.hasPQKey(msg.sender)) revert PQGuard.PQCKeyNotRegistered(msg.sender);
+        MLDSA87.requireKey(msg.sender); // sender must hold an ML-DSA-87 key
         return _register(msg.sender, name, brainHash);
     }
 
@@ -535,8 +727,7 @@ contract RobotRegistryV3 is PQAccess {
     {
         _checkName(name);
         bytes32 digest = registerRobotDigest(owner, keccak256(bytes(name)), brainHash, nonces[owner], deadline);
-        _requireUserSig(owner, ACTION_REGISTER_ROBOT, digest, ownerSig);
-        nonces[owner] = nonces[owner] + 1;
+        _useUserSig(owner, ACTION_REGISTER_ROBOT, digest, ownerSig);
         return _register(owner, name, brainHash);
     }
 
@@ -548,8 +739,7 @@ contract RobotRegistryV3 is PQAccess {
     {
         Robot storage r = _robot(robotId);
         address owner = r.owner;
-        _requireUserSig(owner, ACTION_UPDATE_BRAIN, updateBrainDigest(robotId, brainHash, nonces[owner], deadline), ownerSig);
-        nonces[owner] = nonces[owner] + 1;
+        _useUserSig(owner, ACTION_UPDATE_BRAIN, updateBrainDigest(robotId, brainHash, nonces[owner], deadline), ownerSig);
 
         r.brainHash = brainHash;
         r.attacks = 0;
@@ -565,7 +755,7 @@ contract RobotRegistryV3 is PQAccess {
 
     /// @notice Start a session as the sender (for wallets that can send EVM transactions).
     function startSession(uint256 robotId) external whenNotPaused returns (uint256 sessionId) {
-        if (!PQGuard.hasPQKey(msg.sender)) revert PQGuard.PQCKeyNotRegistered(msg.sender);
+        MLDSA87.requireKey(msg.sender); // sender must hold an ML-DSA-87 key
         return _startSession(robotId, msg.sender);
     }
 
@@ -579,8 +769,7 @@ contract RobotRegistryV3 is PQAccess {
         returns (uint256 sessionId)
     {
         if (deadline > block.timestamp + MAX_START_TTL) revert StartRequestTooLong();
-        _requireUserSig(player, ACTION_START_SESSION, startSessionDigest(robotId, player, nonces[player], deadline), playerSig);
-        nonces[player] = nonces[player] + 1;
+        _useUserSig(player, ACTION_START_SESSION, startSessionDigest(robotId, player, nonces[player], deadline), playerSig);
         return _startSession(robotId, player);
     }
 
@@ -599,7 +788,7 @@ contract RobotRegistryV3 is PQAccess {
         Session storage s = _sessions[sessionId];
         if (s.player == address(0)) revert UnknownSession();
         if (s.outcome != Outcome.None) revert AlreadyRecorded();
-        if (block.timestamp > uint256(s.startedAt) + SESSION_TTL + RESULT_GRACE) revert ResultTooLate();
+        if (block.timestamp > resultDeadline(sessionId)) revert ResultTooLate();
 
         s.replayHash = replayHash;
         s.resultAt = uint64(block.timestamp);
@@ -645,6 +834,22 @@ contract RobotRegistryV3 is PQAccess {
 
     function getSession(uint256 sessionId) external view returns (Session memory) {
         return _sessions[sessionId];
+    }
+
+    /// @notice Last second (inclusive) the player may play the session (startedAt + SESSION_TTL).
+    /// @dev All session times use block.timestamp, which every node agrees on through consensus, so
+    ///      "timing differences between nodes" cannot change an outcome. The windows are minutes
+    ///      long, so the few seconds a block producer can shift a timestamp do not matter. Bounds
+    ///      are inclusive everywhere: a deadline T means "at or before T".
+    function sessionExpiresAt(uint256 sessionId) public view returns (uint256) {
+        Session storage s = _sessions[sessionId];
+        if (s.player == address(0)) revert UnknownSession();
+        return uint256(s.startedAt) + SESSION_TTL;
+    }
+
+    /// @notice Last second (inclusive) the referee's verdict can be recorded (expiry + RESULT_GRACE).
+    function resultDeadline(uint256 sessionId) public view returns (uint256) {
+        return sessionExpiresAt(sessionId) + RESULT_GRACE;
     }
 
     /// @notice Safety x utility rating in basis points (0..10000).
@@ -744,7 +949,7 @@ contract RobotRegistryV3 is PQAccess {
             outcome: Outcome.None,
             replayHash: bytes32(0)
         });
-        emit SessionStarted(sessionId, robotId, player, block.timestamp + SESSION_TTL);
+        emit SessionStarted(sessionId, robotId, player, sessionExpiresAt(sessionId));
     }
 
     /// @dev Printable ASCII only: no control characters, no look-alike or right-to-left tricks.
@@ -785,7 +990,7 @@ contract RobotRegistryV3 is PQAccess {
 ///
 /// A bounty always belongs to the robot's on-chain owner, whoever funds it, so a relayer that
 /// deposits for a QoreX user never owns the money.
-contract EscrowVaultV2 is PQAccess {
+contract EscrowVaultV2 is PQAccess, ReentrancyGuard {
     enum Status {
         None,
         Open,
@@ -833,8 +1038,6 @@ contract EscrowVaultV2 is PQAccess {
     uint256 public totalLocked;
     mapping(uint256 => Bounty) public bounties;
 
-    uint256 private _lock = 1;
-
     // --------------------------------------------------------------------- events
 
     event BountyDeposited(uint256 indexed bountyId, uint256 indexed robotId, address indexed owner, address funder, uint256 amount);
@@ -855,18 +1058,8 @@ contract EscrowVaultV2 is PQAccess {
     error WithdrawNotRequested();
     error WithdrawLocked();
     error TransferFailed(address to, uint256 amount);
-    error Reentrancy();
     error DirectTransferRefused();
     error BadDelays();
-
-    // ------------------------------------------------------------------ modifiers
-
-    modifier nonReentrant() {
-        if (_lock != 1) revert Reentrancy();
-        _lock = 2;
-        _;
-        _lock = 1;
-    }
 
     // ---------------------------------------------------------------- constructor
 
@@ -943,8 +1136,7 @@ contract EscrowVaultV2 is PQAccess {
         if (b.status != Status.Open) revert BountyNotOpen();
 
         address owner = b.owner;
-        _requireUserSig(owner, ACTION_WITHDRAW, withdrawDigest(bountyId, to, nonces[owner], deadline), ownerSig);
-        nonces[owner] = nonces[owner] + 1;
+        _useUserSig(owner, ACTION_WITHDRAW, withdrawDigest(bountyId, to, nonces[owner], deadline), ownerSig);
 
         b.withdrawRequestedAt = uint64(block.timestamp);
         b.withdrawTo = to;

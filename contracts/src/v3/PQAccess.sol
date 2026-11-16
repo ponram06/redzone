@@ -3,6 +3,7 @@ pragma solidity 0.8.28;
 
 import {PQGuard} from "../PQGuard.sol";
 import {QoreXMessage} from "../QoreXMessage.sol";
+import {MLDSA87} from "./MLDSA87.sol";
 
 /// @title PQAccess
 /// @notice Access control shared by the RedZone v3 contracts. Every privileged call is authorised
@@ -24,6 +25,8 @@ abstract contract PQAccess {
     /// @notice Longest validity window a signed request may have. A relayer therefore cannot hold a
     ///         signed request back and use it much later.
     uint256 public constant MAX_REQUEST_TTL = 1 hours;
+    /// @notice Longest native chain id accepted (QoreX allows 1..64 characters of [A-Za-z0-9._-]).
+    uint256 public constant MAX_CHAIN_ID_LENGTH = 64;
     /// @notice A pause ends by itself after this long, so the admin can delay activity but never
     ///         freeze it for good (even if the admin key is lost).
     uint256 public constant MAX_PAUSE = 7 days;
@@ -57,6 +60,10 @@ abstract contract PQAccess {
     uint64 public unpausedAt;
     /// @notice Per-signer nonce for signed admin and user actions (replay protection).
     mapping(address => uint256) public nonces;
+    /// @notice Every signed digest that has been used (second replay layer on top of nonces).
+    ///         Signature bytes are never used as a key: ML-DSA is randomised, so the same message
+    ///         has many valid signatures, and uniqueness is enforced on the signed digest instead.
+    mapping(bytes32 => bool) public usedDigests;
 
     // --------------------------------------------------------------------- events
 
@@ -74,6 +81,8 @@ abstract contract PQAccess {
     error NotPendingAdmin();
     error PauseUnchanged();
     error PauseCooldown();
+    error DigestUsed(bytes32 digest);
+    error BadChainId();
 
     // ------------------------------------------------------------------ modifiers
 
@@ -87,7 +96,8 @@ abstract contract PQAccess {
     ///      runs, so the same signature can never be used twice.
     modifier onlyAdmin(bytes32 digest, bytes calldata adminSig) {
         address a = admin;
-        PQGuard.requireAccountSig(a, digest, adminSig);
+        if (!MLDSA87.verify(MLDSA87.accountKey(a), adminSig, abi.encodePacked(digest))) revert PQGuard.PQCSignatureInvalid();
+        _useDigest(digest);
         nonces[a] = nonces[a] + 1;
         _;
     }
@@ -107,8 +117,9 @@ abstract contract PQAccess {
 
     /// @dev The deployer becomes admin and must already have a registered ML-DSA key.
     constructor(string memory domainTag, bytes memory nativeChainId_) {
-        if (!PQGuard.hasPQKey(msg.sender)) revert PQGuard.PQCKeyNotRegistered(msg.sender);
-        QoreXMessage.checkChainId(nativeChainId_);
+        MLDSA87.requireKey(msg.sender); // deployer must hold an ML-DSA-87 key
+        if (nativeChainId_.length == 0 || nativeChainId_.length > MAX_CHAIN_ID_LENGTH) revert BadChainId();
+        QoreXMessage.checkChainId(nativeChainId_); // character set check
         _domainTag = keccak256(bytes(domainTag));
         nativeChainId = nativeChainId_;
         admin = msg.sender;
@@ -143,7 +154,7 @@ abstract contract PQAccess {
         validDeadline(deadline)
         onlyAdmin(transferAdminDigest(newAdmin, nonces[admin], deadline), adminSig)
     {
-        if (newAdmin != address(0) && !PQGuard.hasPQKey(newAdmin)) revert PQGuard.PQCKeyNotRegistered(newAdmin);
+        if (newAdmin != address(0)) MLDSA87.requireKey(newAdmin); // must hold an ML-DSA-87 key
         pendingAdmin = newAdmin;
         if (newAdmin == address(0)) emit AdminTransferCancelled(admin);
         else emit AdminTransferStarted(admin, newAdmin);
@@ -154,8 +165,7 @@ abstract contract PQAccess {
     function acceptAdmin(uint256 deadline, bytes calldata newAdminSig) external validDeadline(deadline) {
         address p = pendingAdmin;
         if (p == address(0)) revert NotPendingAdmin();
-        _requireUserSig(p, ACTION_ACCEPT_ADMIN, acceptAdminDigest(p, nonces[p], deadline), newAdminSig);
-        nonces[p] = nonces[p] + 1;
+        _useUserSig(p, ACTION_ACCEPT_ADMIN, acceptAdminDigest(p, nonces[p], deadline), newAdminSig);
         emit AdminTransferred(admin, p);
         admin = p;
         pendingAdmin = address(0);
@@ -164,6 +174,12 @@ abstract contract PQAccess {
     // ---------------------------------------------------------------------- views
 
     /// @notice True while a pause is in force (a pause older than MAX_PAUSE has expired).
+    /// @notice True when the post-quantum precompiles respond. Never reverts, so a frontend can
+    ///         show a clear message; every signed action fails closed when this is false.
+    function isPQAvailable() external view returns (bool) {
+        return MLDSA87.available();
+    }
+
     function isPaused() public view returns (bool) {
         return paused && block.timestamp < uint256(pausedAt) + MAX_PAUSE;
     }
@@ -211,11 +227,24 @@ abstract contract PQAccess {
     ///      signatures are never used as replay keys (nonces and on-chain state are), so signature
     ///      malleability or non-uniqueness has no effect.
     function _requireUserSig(address account, string memory action, bytes32 digest, bytes calldata sig) internal view {
-        (bool registered,, bytes memory pubkey) = PQGuard.keyStatus(account);
-        if (!registered) revert PQGuard.PQCKeyNotRegistered(account);
-        if (PQGuard.verify(pubkey, sig, QoreXMessage.message(nativeChainId, action, digest))) return;
-        if (PQGuard.verify(pubkey, sig, abi.encodePacked(digest))) return;
+        bytes memory pubkey = MLDSA87.accountKey(account);
+        if (MLDSA87.verify(pubkey, sig, QoreXMessage.message(nativeChainId, action, digest))) return;
+        if (MLDSA87.verify(pubkey, sig, abi.encodePacked(digest))) return;
         revert PQGuard.PQCSignatureInvalid();
+    }
+
+    /// @dev Verify a user's signature, then consume it: the digest is marked used and the user's
+    ///      nonce advances, so neither this signature nor any other signature over the same digest
+    ///      can be used again.
+    function _useUserSig(address account, string memory action, bytes32 digest, bytes calldata sig) internal {
+        _requireUserSig(account, action, digest, sig);
+        _useDigest(digest);
+        nonces[account] = nonces[account] + 1;
+    }
+
+    function _useDigest(bytes32 digest) internal {
+        if (usedDigests[digest]) revert DigestUsed(digest);
+        usedDigests[digest] = true;
     }
 
     function _checkDeadline(uint256 deadline) internal view {
