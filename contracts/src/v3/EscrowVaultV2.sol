@@ -52,11 +52,13 @@ contract EscrowVaultV2 is PQAccess, ReentrancyGuard {
         uint256 robotId;
         uint256 amount; // full uint256: no down-casting of msg.value anywhere
         uint256 breachCursor; // index into the registry's breach list for this robot
+        // Packed: owner, depositedAt and status share one slot; the withdrawal fields share another
+        // that stays zero until requestWithdraw, so a deposit writes 4 slots instead of 5.
         address owner; // robot owner at deposit time (robots cannot change owner)
         uint64 depositedAt;
+        Status status;
         uint64 withdrawRequestedAt; // 0 = no withdrawal requested
         address withdrawTo;
-        Status status;
     }
 
     // ------------------------------------------------------------------ constants
@@ -139,17 +141,18 @@ contract EscrowVaultV2 is PQAccess, ReentrancyGuard {
         address owner = registry.robotOwner(robotId);
         if (owner == address(0)) revert UnknownRobot();
 
-        bountyId = nextBountyId++;
-        bounties[bountyId] = Bounty({
-            robotId: robotId,
-            amount: msg.value,
-            breachCursor: registry.breachCount(robotId),
-            owner: owner,
-            depositedAt: uint64(block.timestamp),
-            withdrawRequestedAt: 0,
-            withdrawTo: address(0),
-            status: Status.Open
-        });
+        bountyId = nextBountyId;
+        unchecked {
+            nextBountyId = bountyId + 1; // cannot overflow: one id per deposit of at least 1 QOR
+        }
+        // Field-by-field so the all-zero withdrawal slot is never written.
+        Bounty storage b = bounties[bountyId];
+        b.robotId = robotId;
+        b.amount = msg.value;
+        b.breachCursor = registry.breachCount(robotId);
+        b.owner = owner;
+        b.depositedAt = uint64(block.timestamp);
+        b.status = Status.Open;
         totalLocked += msg.value;
         emit BountyDeposited(bountyId, robotId, owner, msg.sender, msg.value);
     }
@@ -168,7 +171,9 @@ contract EscrowVaultV2 is PQAccess, ReentrancyGuard {
         uint256 amount = b.amount;
         b.status = Status.Claimed;
         b.amount = 0;
-        b.breachCursor = b.breachCursor + 1;
+        unchecked {
+            ++b.breachCursor; // cursor < registry.breachCount here (checked in _next)
+        }
         totalLocked -= amount;
         emit BountyClaimed(bountyId, sessionId, s.player, s.replayHash, amount);
         _send(s.player, amount);
@@ -180,7 +185,9 @@ contract EscrowVaultV2 is PQAccess, ReentrancyGuard {
         if (b.status != Status.Open) revert BountyNotOpen();
         (Next state, uint256 sessionId,) = _next(b);
         if (state != Next.Skippable) revert NothingToSkip(state);
-        b.breachCursor = b.breachCursor + 1;
+        unchecked {
+            ++b.breachCursor; // cursor < registry.breachCount here (checked in _next)
+        }
         emit BreachSkipped(bountyId, sessionId);
     }
 
@@ -250,19 +257,18 @@ contract EscrowVaultV2 is PQAccess, ReentrancyGuard {
 
     // ------------------------------------------------------------------- internal
 
-    /// @dev A withdrawal request is live from the request until WITHDRAW_EXPIRY after it unlocks.
-    function _withdrawLive(Bounty storage b) internal view returns (bool) {
-        uint256 r = b.withdrawRequestedAt;
-        return r != 0 && block.timestamp <= r + WITHDRAW_DELAY + WITHDRAW_EXPIRY;
-    }
-
-    /// @dev Classify the breach at the bounty's cursor.
+    /// @dev Classify the breach at the bounty's cursor. Storage fields are read once each.
     function _next(Bounty storage b) internal view returns (Next, uint256 sessionId, RobotRegistryV3.Session memory s) {
-        if (b.breachCursor >= registry.breachCount(b.robotId)) return (Next.None, 0, s);
-        sessionId = registry.breachAt(b.robotId, b.breachCursor);
+        uint256 robotId = b.robotId;
+        uint256 cursor = b.breachCursor;
+        if (cursor >= registry.breachCount(robotId)) return (Next.None, 0, s);
+        sessionId = registry.breachAt(robotId, cursor);
         s = registry.getSession(sessionId);
         if (s.startedAt < b.depositedAt) return (Next.Skippable, sessionId, s);
-        if (_withdrawLive(b) && s.startedAt > uint256(b.withdrawRequestedAt) + START_GRACE) return (Next.Skippable, sessionId, s);
+        // A withdrawal request is live from the request until WITHDRAW_EXPIRY after it unlocks.
+        uint256 r = b.withdrawRequestedAt;
+        bool withdrawLive = r != 0 && block.timestamp <= r + WITHDRAW_DELAY + WITHDRAW_EXPIRY;
+        if (withdrawLive && s.startedAt > r + START_GRACE) return (Next.Skippable, sessionId, s);
         if (isPaused() && s.resultAt >= pausedAt) return (Next.Waiting, sessionId, s);
         if (block.timestamp > claimDeadline(s.resultAt)) return (Next.Skippable, sessionId, s);
         return (Next.Claimable, sessionId, s);

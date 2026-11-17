@@ -170,7 +170,7 @@ contract RedZoneV3Test is Test {
     }
 
     function _status(uint256 id) internal view returns (EscrowVaultV2.Status st) {
-        (,,,,,,, st) = vault.bounties(id);
+        (,,,,, st,,) = vault.bounties(id);
     }
 
     // ------------------------------------------------------ happy paths
