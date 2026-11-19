@@ -14,16 +14,16 @@ const CHUNK = 10_000n;
 
 export type ResultEvent = { sessionId: number; robotId: number; player: Address; breached: boolean; replayHash: Hex; tx: Hex; block: bigint };
 export type SessionEvent = { sessionId: number; robotId: number; player: Address; expiresAt: number };
-export type DepositEvent = { bountyId: number; robotKey: Hex; owner: Address; amountWei: bigint; tx: Hex };
-export type ClaimEvent = { bountyId: number; claimer: Address; amountWei: bigint; replayHash: Hex; tx: Hex };
+export type DepositEvent = { bountyId: number; robotId: number; owner: Address; funder: Address; amountWei: bigint; tx: Hex };
+export type ClaimEvent = { bountyId: number; sessionId: number; player: Address; amountWei: bigint; replayHash: Hex; tx: Hex };
 export type Transfer = NativeTransfer & { txHash: string };
 
 const EV = {
   breached: parseAbiItem("event Breached(uint256 indexed sessionId, uint256 indexed robotId, address indexed player, bytes32 replayHash)"),
   started: parseAbiItem("event SessionStarted(uint256 indexed sessionId, uint256 indexed robotId, address indexed player, uint256 expiresAt)"),
   defended: parseAbiItem("event Defended(uint256 indexed sessionId, uint256 indexed robotId, address indexed player, bytes32 replayHash)"),
-  deposited: parseAbiItem("event BountyDeposited(uint256 indexed bountyId, bytes32 indexed robotId, address indexed owner, uint256 amount)"),
-  claimed: parseAbiItem("event BountyClaimed(uint256 indexed bountyId, address indexed claimer, bytes32 replayHash, uint256 amount)"),
+  deposited: parseAbiItem("event BountyDeposited(uint256 indexed bountyId, uint256 indexed robotId, address indexed owner, address funder, uint256 amount)"),
+  claimed: parseAbiItem("event BountyClaimed(uint256 indexed bountyId, uint256 indexed sessionId, address indexed player, bytes32 replayHash, uint256 amount)"),
 };
 
 /** What the game needs from the chain's history. Tests supply an in-memory version. */
@@ -114,10 +114,24 @@ export class ChainLedger implements LedgerReader {
         this.client.getLogs({ address: this.vault, event: EV.claimed, fromBlock: this.vaultFrom, toBlock: to }),
       ]);
       for (const l of dep) {
-        this.dep.push({ bountyId: Number(l.args.bountyId), robotKey: l.args.robotId!, owner: l.args.owner!, amountWei: l.args.amount!, tx: l.transactionHash! });
+        this.dep.push({
+          bountyId: Number(l.args.bountyId),
+          robotId: Number(l.args.robotId),
+          owner: l.args.owner!,
+          funder: l.args.funder!,
+          amountWei: l.args.amount!,
+          tx: l.transactionHash!,
+        });
       }
       for (const l of clm) {
-        this.clm.push({ bountyId: Number(l.args.bountyId), claimer: l.args.claimer!, amountWei: l.args.amount!, replayHash: l.args.replayHash!, tx: l.transactionHash! });
+        this.clm.push({
+          bountyId: Number(l.args.bountyId),
+          sessionId: Number(l.args.sessionId),
+          player: l.args.player!,
+          amountWei: l.args.amount!,
+          replayHash: l.args.replayHash!,
+          tx: l.transactionHash!,
+        });
       }
       this.vaultFrom = to + 1n;
     }

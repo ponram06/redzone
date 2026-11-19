@@ -8,18 +8,19 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { buildApp } from "../src/app.js";
 import { FACILITY } from "../src/arena.js";
 import { BrainRegistry, LEGACY_DEMO_HASH } from "../src/brains/registry.js";
-import { registryAbi, robotKey, vaultAbi, type RobotView, type SessionView } from "../src/chain.js";
+import { NEXT, registryAbi, vaultAbi, type RobotView, type SessionView } from "../src/chain.js";
 import { toQorAddress, walletMessage } from "../src/qorex.js";
 import type { NativeTransfer } from "../src/chain.js";
 import type { RelayReceipt, Relayer } from "../src/relayer.js";
-import { Game, attemptMessage, bountyBackDigest } from "../src/game.js";
+import { Game, attemptMessage } from "../src/game.js";
 import type { LedgerReader, ResultEvent, SessionEvent } from "../src/ledger.js";
-import { claimDigest, registerRobotDigest, resultDigest, startSessionDigest, updateBrainDigest, utilityDigest } from "../src/signer.js";
+import { registerRobotDigest, resultDigest, startSessionDigest, updateBrainDigest, utilityDigest, withdrawDigest } from "../src/signer.js";
 import { pqcSign } from "@qorechain/sdk";
 import { Store } from "../src/store.js";
 
-const REG = "0x354f71da76314cd74a18524899aeb43611d86448" as Address;
-const VAULT = "0xcd9aad1ad2d7981699f256e73f2780dac86f0266" as Address;
+const REG = "0x69564de848d807ea895e1987b53749e1648cadbf" as Address;
+const VAULT = "0x16cc5efcda75a788f597dd0c785862db1bdbeb7f" as Address;
+const WITHDRAW_DELAY = 3 * 3600;
 const kp = generatePqcKeypair();
 const key = { publicKey: toHex(kp.publicKey), secretKey: kp.secretKey };
 const player = privateKeyToAccount(generatePrivateKey());
@@ -30,8 +31,24 @@ const playerPq = generatePqcKeypair();
 const strangerPq = generatePqcKeypair();
 const qorexSign = (secret: Uint8Array, text: string) => Buffer.from(pqcSign(secret, walletMessage(text))).toString("base64");
 
-type FakeBounty = { id: number; owner: Address; robotKey: Hex; amountWei: bigint; status: number; tx: Hex; indexed: boolean };
-let vault: { next: number; bounties: Map<number, FakeBounty> };
+type FakeBounty = {
+  id: number;
+  robotId: number;
+  owner: Address;
+  funder: Address;
+  amountWei: bigint;
+  status: number;
+  depositedAt: number;
+  withdrawRequestedAt: number;
+  withdrawTo: Address;
+  tx: Hex;
+  indexed: boolean;
+};
+const ZERO = "0x0000000000000000000000000000000000000000" as Address;
+let vault: { next: number; bounties: Map<number, FakeBounty>; paid: { bountyId: number; sessionId: number; player: Address; replayHash: Hex }[] };
+/** Session ids of recorded breaches not yet paid or skipped, per bounty (the vault's cursor, simplified). */
+let unpaid: Map<number, number[]>;
+let clock: number;
 
 /** Records what would go on chain; answers startSessionFor with a SessionStarted log. */
 class FakeRelayer implements Relayer {
@@ -41,9 +58,6 @@ class FakeRelayer implements Relayer {
   /** Simulate "the deposit landed but we never got the receipt". */
   loseReceipt = 0;
   values: bigint[] = [];
-  pqSign(digest: Hex): Hex {
-    return ("0x" + digest.slice(2).repeat(2)) as Hex;
-  }
   async send(to: Address, data: Hex, value = 0n, onSent?: (hash: Hex) => void): Promise<RelayReceipt> {
     const abi = to.toLowerCase() === VAULT ? vaultAbi : registryAbi;
     const call = decodeFunctionData({ abi, data });
@@ -62,26 +76,50 @@ class FakeRelayer implements Relayer {
         data: encodeAbiParameters([{ type: "uint256" }], [BigInt(NOW + 600)]),
       } as unknown as Log);
     }
+    if (call.functionName === "recordResult") {
+      const [sid, breached] = call.args as unknown as [bigint, boolean];
+      const s = sessions[Number(sid)]!;
+      if (breached) for (const b of vault.bounties.values()) if (b.robotId === s.robotId && b.status === 1) unpaid.set(b.id, [...(unpaid.get(b.id) ?? []), Number(sid)]);
+    }
     if (call.functionName === "depositBounty") {
+      const robotId = Number((call.args as unknown as [bigint])[0]);
+      const owner = (robotId === 1 ? robot.owner : player.address) as Address;
       const id = vault.next++;
       const tx = ("0x" + id.toString(16).padStart(64, "d")) as Hex;
       onSent?.(tx);
       const lost = this.loseReceipt > 0;
       // A lost receipt also means getLogs hasn't indexed it yet: only its receipt shows it.
-      vault.bounties.set(id, { id, owner: this.address, robotKey: (call.args as unknown as [Hex])[0], amountWei: value, status: 1, tx, indexed: !lost });
+      vault.bounties.set(id, { id, robotId, owner, funder: this.address, amountWei: value, status: 1, depositedAt: clock, withdrawRequestedAt: 0, withdrawTo: ZERO, tx, indexed: !lost });
       if (lost) {
         this.loseReceipt--;
         throw new Error("receipt timeout");
       }
       logs.push({
         address: VAULT,
-        topics: encodeEventTopics({ abi: vaultAbi, eventName: "BountyDeposited", args: { bountyId: BigInt(id), robotId: (call.args as unknown as [Hex])[0], owner: this.address } }),
-        data: encodeAbiParameters([{ type: "uint256" }], [value]),
+        topics: encodeEventTopics({ abi: vaultAbi, eventName: "BountyDeposited", args: { bountyId: BigInt(id), robotId: BigInt(robotId), owner } }),
+        data: encodeAbiParameters([{ type: "address" }, { type: "uint256" }], [this.address, value]),
       } as unknown as Log);
     }
-    if (call.functionName === "withdrawBounty") {
-      const b = vault.bounties.get(Number((call.args as unknown as [bigint])[0]));
-      if (b) b.status = 3;
+    if (call.functionName === "claimBounty" || call.functionName === "skipBreach") {
+      const id = Number((call.args as unknown as [bigint])[0]);
+      const [sid, ...rest] = unpaid.get(id) ?? [];
+      if (sid === undefined) return { hash: ("0x" + "ee".repeat(32)) as Hex, status: "reverted", logs };
+      unpaid.set(id, rest);
+      if (call.functionName === "claimBounty") {
+        vault.bounties.get(id)!.status = 2;
+        vault.paid.push({ bountyId: id, sessionId: sid, player: sessions[sid]!.player, replayHash: ("0x" + "cd".repeat(32)) as Hex });
+      }
+    }
+    if (call.functionName === "requestWithdraw") {
+      const [id, to] = call.args as unknown as [bigint, Address];
+      const b = vault.bounties.get(Number(id))!;
+      b.withdrawRequestedAt = clock;
+      b.withdrawTo = to;
+    }
+    if (call.functionName === "finalizeWithdraw") {
+      const b = vault.bounties.get(Number((call.args as unknown as [bigint])[0]))!;
+      if (clock < b.withdrawRequestedAt + WITHDRAW_DELAY || (unpaid.get(b.id) ?? []).length) return { hash: ("0x" + "ee".repeat(32)) as Hex, status: "reverted", logs };
+      b.status = 3;
     }
     if (call.functionName === "registerRobotFor") {
       const [owner, , brainHash] = call.args as unknown as [Address, string, Hex];
@@ -126,6 +164,7 @@ const robot: RobotView = {
   breached: 0,
   utilityScore: 0,
   utilityNonce: 0,
+  brainVersion: 0,
   ratingBps: 0,
   tier: "Rookie",
   bounty: { open: [{ id: 1, amountWei: "1000000000000000000" }], totalWei: "1000000000000000000" },
@@ -138,11 +177,14 @@ const verifies = (digest: `0x${string}`, sig: `0x${string}`) => pqcVerify(kp.pub
 
 beforeEach(async () => {
   sessions = {
-    1: { id: 1, robotId: 1, player: player.address, startedAt: NOW - 60, outcome: 0 },
-    2: { id: 2, robotId: 1, player: player.address, startedAt: NOW - 60, outcome: 0 },
-    3: { id: 3, robotId: 1, player: player.address, startedAt: NOW - 3600, outcome: 0 },
-    4: { id: 4, robotId: 1, player: player.address, startedAt: NOW - 60, outcome: 1 },
+    1: { id: 1, robotId: 1, player: player.address, startedAt: NOW - 60, resultAt: 0, outcome: 0 },
+    2: { id: 2, robotId: 1, player: player.address, startedAt: NOW - 60, resultAt: 0, outcome: 0 },
+    3: { id: 3, robotId: 1, player: player.address, startedAt: NOW - 3600, resultAt: 0, outcome: 0 },
+    4: { id: 4, robotId: 1, player: player.address, startedAt: NOW - 60, resultAt: NOW - 30, outcome: 1 },
+    5: { id: 5, robotId: 2, player: stranger.address, startedAt: NOW - 60, resultAt: 0, outcome: 0 },
   };
+  unpaid = new Map();
+  clock = NOW;
   const dataDir = mkdtempSync(join(tmpdir(), "rz-api-"));
   const brains = new BrainRegistry(dataDir, null);
   const store = new Store(dataDir);
@@ -162,7 +204,15 @@ beforeEach(async () => {
     },
     readPlayer: async (a: Address) => ({ nonce: nonces[a.toLowerCase()] ?? 0n, attemptsLeft: 5 }),
     readNativeTransfer: async (h: string) => txs[h.replace(/^0x/, "").toUpperCase()] ?? null,
-    readBounty: async (id: number) => vault.bounties.get(id) ?? { id, owner: "0x0000000000000000000000000000000000000000" as Address, robotKey: ("0x" + "00".repeat(32)) as Hex, amountWei: 0n, status: 0 },
+    readBounty: async (id: number) =>
+      vault.bounties.get(id) ?? { id, robotId: 0, owner: ZERO, amountWei: 0n, status: 0, depositedAt: 0, withdrawRequestedAt: 0, withdrawTo: ZERO },
+    readNextBreach: async (id: number) => {
+      const b = vault.bounties.get(id);
+      const first = unpaid.get(id)?.[0];
+      if (!b || b.status !== 1 || first === undefined) return { state: NEXT.None, sessionId: 0 };
+      // A breach from a session that started before the deposit can never win it.
+      return { state: sessions[first]!.startedAt < b.depositedAt ? NEXT.Skippable : NEXT.Claimable, sessionId: first };
+    },
     readVaultNonce: async () => 0n,
     readNextRobotId: async () => 3,
     readDeposit: async (h: Hex) => {
@@ -183,11 +233,10 @@ beforeEach(async () => {
         .concat(extraResults),
     sessions: () => extraSessions,
     deposits: () =>
-      [...vault.bounties.values()].filter((b) => b.indexed).map((b) => ({ bountyId: b.id, robotKey: b.robotKey, owner: b.owner, amountWei: b.amountWei, tx: b.tx })),
-    claims: () =>
-      relayer.sent
-        .filter((x) => x.fn === "claimBounty")
-        .map((x) => ({ bountyId: Number(x.args[0]), claimer: x.args[1] as Address, amountWei: vault.bounties.get(Number(x.args[0]))!.amountWei, replayHash: x.args[2] as Hex, tx: "0x" as Hex })),
+      [...vault.bounties.values()]
+        .filter((b) => b.indexed)
+        .map((b) => ({ bountyId: b.id, robotId: b.robotId, owner: b.owner, funder: b.funder, amountWei: b.amountWei, tx: b.tx })),
+    claims: () => vault.paid.map((c) => ({ ...c, amountWei: vault.bounties.get(c.bountyId)!.amountWei, tx: "0x" as Hex })),
     transfers: async (from: string, to: string) =>
       Object.entries(txs)
         .filter(([, t]) => t.code === 0 && t.from === from && t.to === to)
@@ -195,7 +244,25 @@ beforeEach(async () => {
   };
   vault = {
     next: 2,
-    bounties: new Map([[1, { id: 1, owner: robot.owner as Address, robotKey: robotKey(1), amountWei: 10n ** 18n, status: 1, tx: ("0x" + "01".repeat(32)) as Hex, indexed: true }]]),
+    bounties: new Map([
+      [
+        1,
+        {
+          id: 1,
+          robotId: 1,
+          owner: robot.owner as Address,
+          funder: robot.owner as Address,
+          amountWei: 10n ** 18n,
+          status: 1,
+          depositedAt: NOW - 1000,
+          withdrawRequestedAt: 0,
+          withdrawTo: ZERO,
+          tx: ("0x" + "01".repeat(32)) as Hex,
+          indexed: true,
+        },
+      ],
+    ]),
+    paid: [],
   };
   txs = {};
   extraSessions = [];
@@ -213,7 +280,7 @@ beforeEach(async () => {
     [txHash(23)]: { code: 0, from: toQorAddress(stranger.address), to: PAY_TO, uqor: 2_000_000n, memo: "RedZone bounty #2", height: 23 },
     [txHash(24)]: { code: 0, from: toQorAddress(player.address), to: PAY_TO, uqor: 3_000_000n, memo: "RedZone bounty #2", height: 24 },
   };
-  const game = new Game({ arena: FACILITY, brains, store, key, chain, ledger, chainId: 9800, registry: REG, vault: VAULT, sessionTtl: 600, resultGrace: 3600, relayer, signup: { feeUqor: FEE, payTo: PAY_TO }, prize: { minUqor: 1_000_000n, payTo: PAY_TO }, now: () => NOW });
+  const game = new Game({ arena: FACILITY, brains, store, key, chain, ledger, chainId: 9800, registry: REG, vault: VAULT, sessionTtl: 600, resultGrace: 3600, withdrawDelay: WITHDRAW_DELAY, relayer, signup: { feeUqor: FEE, payTo: PAY_TO }, prize: { minUqor: 1_000_000n, payTo: PAY_TO }, now: () => clock });
   app = await buildApp({
     game,
     arena: FACILITY,
@@ -242,7 +309,7 @@ describe("POST /attempt", () => {
     const v = res.json();
     expect(v.breached).toBe(false);
     expect(v.claims).toEqual([]);
-    expect(verifies(resultDigest(9800, REG, 1n, false, v.replayHash, BigInt(v.result.deadline)), v.result.refereeSig)).toBe(true);
+    expect(verifies(resultDigest(9800, REG, 1n, 1n, player.address, false, v.replayHash, BigInt(v.result.deadline)), v.result.refereeSig)).toBe(true);
     expect(BigInt(v.result.deadline)).toBe(BigInt(NOW - 60 + 600 + 3600));
 
     const replay = (await app.inject({ url: `/replay/${v.replayHash}` })).json();
@@ -250,16 +317,15 @@ describe("POST /attempt", () => {
     expect(replay.instruction).toContain("reactor");
   });
 
-  it("a breach gets a signed result and a claim paid to the player", async () => {
+  it("a breach gets a signed result bound to the session's robot and player, and lists the open bounty", async () => {
     const v = (await attempt(2, "go to (70, 50)")).json();
     expect(v.breached).toBe(true);
     expect(v.trace.zone).toBe("reactor");
-    expect(verifies(resultDigest(9800, REG, 2n, true, v.replayHash, BigInt(v.result.deadline)), v.result.refereeSig)).toBe(true);
-    expect(v.claims).toHaveLength(1);
-    const c = v.claims[0];
-    expect(verifies(claimDigest(9800, VAULT, 1n, player.address, v.replayHash, BigInt(c.deadline)), c.refereeSig)).toBe(true);
-    // A claim signature is useless for anyone else.
-    expect(verifies(claimDigest(9800, VAULT, 1n, stranger.address, v.replayHash, BigInt(c.deadline)), c.refereeSig)).toBe(false);
+    expect(verifies(resultDigest(9800, REG, 2n, 1n, player.address, true, v.replayHash, BigInt(v.result.deadline)), v.result.refereeSig)).toBe(true);
+    // The verdict can't be moved to another player or robot.
+    expect(verifies(resultDigest(9800, REG, 2n, 1n, stranger.address, true, v.replayHash, BigInt(v.result.deadline)), v.result.refereeSig)).toBe(false);
+    expect(verifies(resultDigest(9800, REG, 2n, 2n, player.address, true, v.replayHash, BigInt(v.result.deadline)), v.result.refereeSig)).toBe(false);
+    expect(v.claims).toEqual([{ bountyId: 1, amountWei: "1000000000000000000" }]);
   });
 
   it("one verdict per session: no re-rolls with a different instruction", async () => {
@@ -364,9 +430,23 @@ describe("QoreX players and the relayer", () => {
     expect(v.breached).toBe(true);
     expect(v.relay.error).toBeUndefined();
     expect(relayer.sent.map((s) => s.fn)).toEqual(["recordResult", "claimBounty"]);
+    // recordResult carries the referee's public key; the vault pays the session's player.
+    expect(relayer.sent[0]!.args[4]).toBe(key.publicKey);
     const claim = relayer.sent[1]!;
     expect(claim.to.toLowerCase()).toBe(VAULT);
-    expect((claim.args[1] as string).toLowerCase()).toBe(player.address.toLowerCase());
+    expect(claim.args).toEqual([1n]);
+    expect(vault.paid[0]).toMatchObject({ bountyId: 1, sessionId: 2, player: player.address });
+    expect(v.relay.claimTxs).toHaveLength(1);
+  });
+
+  it("breaches that can never win a bounty are skipped before the claim", async () => {
+    // Session 3 started before the deposit of a bounty added now: the vault reports it as skippable.
+    vault.bounties.get(1)!.depositedAt = NOW - 120;
+    unpaid.set(1, [3]);
+    const v = (await pqAttempt(2, "go to (70, 50)")).json();
+    expect(v.relay.error).toBeUndefined();
+    expect(relayer.sent.map((s) => s.fn)).toEqual(["recordResult", "skipBreach", "claimBounty"]);
+    expect(vault.paid[0]).toMatchObject({ sessionId: 2, player: player.address });
   });
 
   it("leaderboard: wins and paid prizes per player", async () => {
@@ -543,7 +623,9 @@ describe("QoreX players and the relayer", () => {
       expect(r.statusCode).toBe(200);
       expect(r.json()).toMatchObject({ robotId: 2, bountyIds: [2], lockedUqor: "2000000" });
       expect(relayer.values.at(-1)).toBe(2n * 10n ** 18n);
-      expect(deposits().at(-1)?.args[0]).toBe(robotKey(2));
+      expect(deposits().at(-1)?.args[0]).toBe(2n);
+      // The vault makes the robot's owner the bounty's owner, not the relayer that funded it.
+      expect(vault.bounties.get(2)!.owner).toBe(player.address);
       // The same payment again: the chain already shows it locked, so nothing is sent.
       expect((await addBounty(20)).json()).toMatchObject({ bountyIds: [2], depositTx: null });
       expect(deposits()).toHaveLength(1);
@@ -571,39 +653,58 @@ describe("QoreX players and the relayer", () => {
       expect(deposits()).toHaveLength(1);
     });
 
-    it("only the robot's owner can take its bounty back, to their own account", async () => {
+    const takeBack = async (bountyId: number, secret = playerPq.secretKey) => {
+      const q = (await app.inject({ url: `/owner/bounty/back/request?bountyId=${bountyId}&owner=${player.address}` })).json();
+      return app.inject({ method: "POST", url: "/owner/bounty/back", payload: { bountyId, owner: player.address, deadline: q.deadline, pqSignature: qorexSign(secret, q.text) } });
+    };
+    const finish = (bountyId: number) => app.inject({ method: "POST", url: "/owner/bounty/back/finish", payload: { bountyId } });
+
+    it("only the robot's owner can take its bounty back: a signed request, then the payout after the delay", async () => {
       await addBounty(20);
-      expect((await app.inject({ url: `/owner/${player.address}/bounties` })).json().bounties).toEqual([{ robotId: 2, bountyId: 2, uqor: "2000000" }]);
-      // Robot 1's bounty wasn't added through RedZone, so nobody can take it here.
-      expect((await app.inject({ url: `/owner/bounty/back/request?bountyId=1&owner=${robot.owner}` })).statusCode).toBe(403);
+      expect((await app.inject({ url: `/owner/${player.address}/bounties` })).json().bounties).toEqual([{ robotId: 2, bountyId: 2, uqor: "2000000", withdraw: null }]);
+      // Robot 1's bounty belongs to robot 1's owner.
+      expect((await app.inject({ url: `/owner/bounty/back/request?bountyId=1&owner=${player.address}` })).statusCode).toBe(403);
       expect((await app.inject({ url: `/owner/bounty/back/request?bountyId=2&owner=${stranger.address}` })).statusCode).toBe(403);
       const q = (await app.inject({ url: `/owner/bounty/back/request?bountyId=2&owner=${player.address}` })).json();
-      expect(q.digest).toBe(bountyBackDigest(9800, VAULT, 2, player.address, q.deadline));
+      expect(q.text).toContain("action: WithdrawBounty");
+      expect(q.digest).toBe(withdrawDigest(9800, VAULT, 2n, player.address, 0n, BigInt(q.deadline)));
       const before = relayer.sent.length;
-      const forged = await app.inject({ method: "POST", url: "/owner/bounty/back", payload: { bountyId: 2, owner: player.address, deadline: q.deadline, pqSignature: qorexSign(strangerPq.secretKey, q.text) } });
-      expect(forged.statusCode).toBe(401);
+      expect((await takeBack(2, strangerPq.secretKey)).statusCode).toBe(401);
       expect(relayer.sent.length).toBe(before);
-      const ok = await app.inject({ method: "POST", url: "/owner/bounty/back", payload: { bountyId: 2, owner: player.address, deadline: q.deadline, pqSignature: qorexSign(playerPq.secretKey, q.text) } });
+
+      const ok = await takeBack(2);
       expect(ok.statusCode).toBe(200);
+      expect(ok.json().unlocksAt).toBe(NOW + WITHDRAW_DELAY);
       const w = relayer.sent.at(-1)!;
-      expect(w.fn).toBe("withdrawBounty");
+      expect(w.fn).toBe("requestWithdraw");
       expect((w.args[1] as string).toLowerCase()).toBe(player.address.toLowerCase());
+      expect((await app.inject({ url: `/owner/${player.address}/bounties` })).json().bounties[0].withdraw).toEqual({ requestedAt: NOW, unlocksAt: NOW + WITHDRAW_DELAY });
+
+      // Too early: nothing is sent.
+      const sent = relayer.sent.length;
+      expect((await finish(2)).statusCode).toBe(425);
+      expect(relayer.sent.length).toBe(sent);
+      clock = NOW + WITHDRAW_DELAY;
+      const done = await finish(2);
+      expect(done.statusCode).toBe(200);
+      expect(relayer.sent.at(-1)!.fn).toBe("finalizeWithdraw");
       expect((await app.inject({ url: `/owner/bounty/back/request?bountyId=2&owner=${player.address}` })).statusCode).toBe(409);
       expect((await app.inject({ url: `/owner/${player.address}/bounties` })).json().bounties).toEqual([]);
     });
 
-    it("a bounty can't be taken back while a player may still win it", async () => {
+    it("a win recorded before the payout beats the owner's take-back", async () => {
       await addBounty(20);
-      const ask = () => app.inject({ url: `/owner/bounty/back/request?bountyId=2&owner=${player.address}` });
-      // A round against robot 2 is running.
-      extraSessions.push({ sessionId: 50, robotId: 2, player: stranger.address, expiresAt: NOW + 300 });
-      expect((await ask()).statusCode).toBe(409);
-      // The round ended in a breach whose payout hasn't gone through yet.
-      extraResults.push({ sessionId: 50, robotId: 2, player: stranger.address, breached: true, replayHash: ("0x" + "ab".repeat(32)) as Hex, tx: "0x" as Hex, block: 1n });
-      expect((await ask()).statusCode).toBe(409);
-      // A defended round doesn't block it.
-      extraResults[0] = { ...extraResults[0]!, breached: false };
-      expect((await ask()).statusCode).toBe(200);
+      expect((await takeBack(2)).statusCode).toBe(200);
+      // The stranger breaches robot 2 during the delay.
+      clock = NOW + 60;
+      unpaid.set(2, [5]);
+      sessions[5] = { ...sessions[5]!, startedAt: NOW + 30 };
+      clock = NOW + WITHDRAW_DELAY;
+      const res = await finish(2);
+      expect(res.statusCode).toBe(409);
+      expect(res.json().error).toMatch(/beat this robot first/);
+      expect(vault.paid).toEqual([expect.objectContaining({ bountyId: 2, sessionId: 5, player: stranger.address })]);
+      expect(relayer.sent.some((s) => s.fn === "finalizeWithdraw")).toBe(false);
     });
   });
 });

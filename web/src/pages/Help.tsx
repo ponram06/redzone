@@ -64,14 +64,14 @@ export function Help() {
             stolen or quantum-broken ECDSA key can't start sessions, register robots or move bounties.
           </li>
           <li>
-            The referee signs every verdict with its own ML-DSA-87 key. RobotRegistryV2 and EscrowVault verify it before recording a result or
-            paying a bounty.
+            The referee signs every verdict with its own ML-DSA-87 key. RobotRegistryV3 checks it before recording a result, and EscrowVaultV2
+            pays each bounty to the earliest recorded win. Nobody, not even the admin, can pick the winner or move the money.
           </li>
           <li>
             Known limitation: QoreX can’t send transactions to contracts yet. So makers pay their bounty to the RedZone relayer as a normal
-            QoreX transfer, and the relayer locks exactly that amount in the vault for their robot. Bounties are still only paid out by the
-            referee’s ML-DSA-87 verdict, and unwon bounties go back only to the maker who paid them. When QoreX supports contract calls, makers
-            will deposit directly.
+            QoreX transfer, and the relayer locks exactly that amount in the vault for their robot. The vault records the maker as the bounty’s
+            owner, so only the maker’s own QoreX signature can ask for an unwon bounty back, and it unlocks 3 hours later, after every round
+            already running has been judged. When QoreX supports contract calls, makers will deposit directly.
           </li>
           <li>
             A relayer pays gas, inside a QoreChain EVM window limited to the two RedZone contracts. The one-time sign-up fee funds it.
@@ -79,10 +79,10 @@ export function Help() {
           {health && (
             <>
               <li>
-                RobotRegistryV2: <code>{health.registry}</code>
+                RobotRegistryV3: <code>{health.registry}</code>
               </li>
               <li>
-                EscrowVault: <code>{health.vault}</code>
+                EscrowVaultV2: <code>{health.vault}</code>
               </li>
               <li>
                 Referee key hash: <code>{shortHash(health.refereePubkeyHash)}</code>

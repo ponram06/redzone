@@ -115,7 +115,7 @@ export type PlayerStatus = {
 
 export type LeaderRow = { rank: number; player: string; qor: string; attempts: number; wins: number; wonWei: string };
 /** A maker's bounty still in the vault (read from the chain). */
-export type OwnerBounty = { robotId: number; bountyId: number; uqor: string };
+export type OwnerBounty = { robotId: number; bountyId: number; uqor: string; withdraw: { requestedAt: number; unlocksAt: number } | null };
 export const bountyMemo = (robotId: number) => `RedZone bounty #${robotId}`;
 export type SignRequest = { deadline: number; digest: string; text: string };
 export type BrainConfig = { kind: "rule"; version: 1 } | { kind: "llm"; version: 1; models: string[]; systemPrompt: string };
@@ -133,7 +133,9 @@ export const api = {
   bountyBackRequest: (bountyId: number, owner: string) =>
     call<SignRequest>(`/owner/bounty/back/request?bountyId=${bountyId}&owner=${encodeURIComponent(owner)}`),
   takeBountyBack: (body: { bountyId: number; owner: string; deadline: number; pqSignature: string }) =>
-    call<{ bountyId: number; tx: string; uqor: string }>("/owner/bounty/back", { method: "POST", body: JSON.stringify(body) }),
+    call<{ bountyId: number; tx: string; uqor: string; unlocksAt: number }>("/owner/bounty/back", { method: "POST", body: JSON.stringify(body) }),
+  finishBountyBack: (bountyId: number) =>
+    call<{ bountyId: number; tx: string; to: string; uqor: string }>("/owner/bounty/back/finish", { method: "POST", body: JSON.stringify({ bountyId }) }),
   leaderboard: () => call<{ players: LeaderRow[] }>("/leaderboard").then((r) => r.players),
   publishBrain: (config: BrainConfig) => call<{ brainHash: string }>("/brains", { method: "POST", body: JSON.stringify({ config }) }),
   brain: (hash: string) => call<{ brainHash: string; config: BrainConfig }>(`/brains/${hash}`),

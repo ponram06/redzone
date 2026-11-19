@@ -3,21 +3,22 @@
  *
  *   digest = keccak256(abi.encodePacked(keccak256(domainTag), chainid, contract, keccak256(abi.encode(TYPEHASH, ...))))
  *
- * See PQAdmin._digest, RobotRegistry.resultDigest / utilityDigest and EscrowVault.claimDigest.
+ * See PQAccess._digest (contracts/src/v3) and RobotRegistryV3 / EscrowVaultV2's *Digest views.
  */
 import { readFileSync } from "node:fs";
 import { pqcSign, pqcVerify } from "@qorechain/sdk";
 import { encodeAbiParameters, encodePacked, hexToBytes, keccak256, stringToBytes, toHex, type Address, type Hex } from "viem";
 
-export const REGISTRY_DOMAIN = "RedZone.RobotRegistry.v2";
-export const VAULT_DOMAIN = "RedZone.EscrowVault.v1";
+export const REGISTRY_DOMAIN = "RedZone.RobotRegistry.v3";
+export const VAULT_DOMAIN = "RedZone.EscrowVault.v2";
 
 const typehash = (s: string) => keccak256(stringToBytes(s));
-export const RESULT_TYPEHASH = typehash("RedZone.Result(uint256 sessionId,bool breached,bytes32 replayHash,uint256 deadline)");
+export const RESULT_TYPEHASH = typehash(
+  "RedZone.Result(uint256 sessionId,uint256 robotId,address player,bool breached,bytes32 replayHash,uint256 deadline)",
+);
 export const UTILITY_TYPEHASH = typehash(
   "RedZone.Utility(uint256 robotId,uint8 tasksPassed,bytes32 replayHash,uint256 nonce,uint256 deadline)",
 );
-export const CLAIM_TYPEHASH = typehash("RedZone.Claim(uint256 bountyId,address claimer,bytes32 replayHash,uint256 deadline)");
 
 export function domainDigest(domain: string, chainId: number, contract: Address, structData: Hex): Hex {
   return keccak256(
@@ -28,10 +29,20 @@ export function domainDigest(domain: string, chainId: number, contract: Address,
   );
 }
 
-export function resultDigest(chainId: number, registry: Address, sessionId: bigint, breached: boolean, replayHash: Hex, deadline: bigint): Hex {
+/** RobotRegistryV3.resultDigest: binds the verdict to the session, its robot and its player. */
+export function resultDigest(
+  chainId: number,
+  registry: Address,
+  sessionId: bigint,
+  robotId: bigint,
+  player: Address,
+  breached: boolean,
+  replayHash: Hex,
+  deadline: bigint,
+): Hex {
   const data = encodeAbiParameters(
-    [{ type: "bytes32" }, { type: "uint256" }, { type: "bool" }, { type: "bytes32" }, { type: "uint256" }],
-    [RESULT_TYPEHASH, sessionId, breached, replayHash, deadline],
+    [{ type: "bytes32" }, { type: "uint256" }, { type: "uint256" }, { type: "address" }, { type: "bool" }, { type: "bytes32" }, { type: "uint256" }],
+    [RESULT_TYPEHASH, sessionId, robotId, player, breached, replayHash, deadline],
   );
   return domainDigest(REGISTRY_DOMAIN, chainId, registry, data);
 }
@@ -50,14 +61,6 @@ export function utilityDigest(
     [UTILITY_TYPEHASH, robotId, tasksPassed, replayHash, nonce, deadline],
   );
   return domainDigest(REGISTRY_DOMAIN, chainId, registry, data);
-}
-
-export function claimDigest(chainId: number, vault: Address, bountyId: bigint, claimer: Address, replayHash: Hex, deadline: bigint): Hex {
-  const data = encodeAbiParameters(
-    [{ type: "bytes32" }, { type: "uint256" }, { type: "address" }, { type: "bytes32" }, { type: "uint256" }],
-    [CLAIM_TYPEHASH, bountyId, claimer, replayHash, deadline],
-  );
-  return domainDigest(VAULT_DOMAIN, chainId, vault, data);
 }
 
 export type RefereeKey = { publicKey: Hex; secretKey: Uint8Array };
@@ -79,7 +82,7 @@ export function signDigest(key: RefereeKey, digest: Hex): Hex {
 
 export const START_SESSION_TYPEHASH = typehash("RedZone.StartSession(uint256 robotId,address player,uint256 nonce,uint256 deadline)");
 
-/** RobotRegistryV2.startSessionDigest: what the player authorises (via QoreX) to start a session. */
+/** RobotRegistryV3.startSessionDigest: what the player authorises (via QoreX) to start a session. */
 export function startSessionDigest(chainId: number, registry: Address, robotId: bigint, player: Address, nonce: bigint, deadline: bigint): Hex {
   const data = encodeAbiParameters(
     [{ type: "bytes32" }, { type: "uint256" }, { type: "address" }, { type: "uint256" }, { type: "uint256" }],
@@ -93,7 +96,7 @@ export const REGISTER_ROBOT_TYPEHASH = typehash(
 );
 export const UPDATE_BRAIN_TYPEHASH = typehash("RedZone.UpdateBrain(uint256 robotId,bytes32 brainHash,uint256 nonce,uint256 deadline)");
 
-/** RobotRegistryV2.registerRobotDigest, with nameHash = keccak256(bytes(name)). */
+/** RobotRegistryV3.registerRobotDigest, with nameHash = keccak256(bytes(name)). */
 export function registerRobotDigest(chainId: number, registry: Address, owner: Address, name: string, brain: Hex, nonce: bigint, deadline: bigint): Hex {
   const data = encodeAbiParameters(
     [{ type: "bytes32" }, { type: "address" }, { type: "bytes32" }, { type: "bytes32" }, { type: "uint256" }, { type: "uint256" }],
@@ -102,7 +105,7 @@ export function registerRobotDigest(chainId: number, registry: Address, owner: A
   return domainDigest(REGISTRY_DOMAIN, chainId, registry, data);
 }
 
-/** RobotRegistryV2.updateBrainDigest. */
+/** RobotRegistryV3.updateBrainDigest. */
 export function updateBrainDigest(chainId: number, registry: Address, robotId: bigint, brain: Hex, nonce: bigint, deadline: bigint): Hex {
   const data = encodeAbiParameters(
     [{ type: "bytes32" }, { type: "uint256" }, { type: "bytes32" }, { type: "uint256" }, { type: "uint256" }],
@@ -113,7 +116,7 @@ export function updateBrainDigest(chainId: number, registry: Address, robotId: b
 
 export const WITHDRAW_TYPEHASH = typehash("RedZone.Withdraw(uint256 bountyId,address to,uint256 nonce,uint256 deadline)");
 
-/** EscrowVault.withdrawDigest: what the bounty owner signs to take a bounty back. */
+/** EscrowVaultV2.withdrawDigest: what the bounty owner signs (requestWithdraw) to take a bounty back. */
 export function withdrawDigest(chainId: number, vault: Address, bountyId: bigint, to: Address, nonce: bigint, deadline: bigint): Hex {
   const data = encodeAbiParameters(
     [{ type: "bytes32" }, { type: "uint256" }, { type: "address" }, { type: "uint256" }, { type: "uint256" }],

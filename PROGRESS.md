@@ -6,7 +6,7 @@ the first unchecked item of the earliest unfinished phase.
 Rules: no Claude co-author line in commits. Never commit `.env`, `.referee-key.json`, `.attacker.json`.
 Do not spend drill-account QOR or touch the fest website without the owner.
 
-Overall: about **80%** (each phase's weight is in brackets; last updated 2026-11-16).
+Overall: about **88%** (each phase's weight is in brackets; last updated 2026-11-19).
 
 ## Phase 1. Setup and registration (5%): done
 - [x] Hackathon registration, Post-Quantum dApp category, project page on build.qorechain.io
@@ -16,12 +16,15 @@ Overall: about **80%** (each phase's weight is in brackets; last updated 2026-11
 ## Phase 2. Smart contracts (20%): done
 - [x] PQGuard, PQAdmin, EscrowVault, RobotRegistry, 47 Foundry tests
 - [x] Deployed to qorechain-diana (see deployments/testnet.json); demo robot and 1 QOR bounty
+- [x] v3 (RobotRegistryV3 + EscrowVaultV2, ML-DSA-only access, earliest-breach payouts): fixed the adversarial audit findings, redeployed 16 Nov; 167 Foundry tests
+- [x] Blockhertz gas findings applied to EscrowVaultV2 source (gas only; goes live with the next deploy)
 
-## Phase 3. Q-Day Drill (10%): 80%
-- [x] Registered for the drill: vault + RobotRegistryV2 (re-registered 16 Nov after the v2 deploy)
+## Phase 3. Q-Day Drill (10%): done
+- [x] Registered for the drill: RobotRegistryV3 + EscrowVaultV2
 - [x] Rehearsal: 22/22 attacks blocked, open-window weak spot fixed (docs/QDAY_DRILL.md)
-- [ ] 18 Nov: `npm run window status`, then `npm run window proof` in contracts/
-- [ ] Submit the proof hash on the project page by 19 Nov; check vault and balances afterwards
+- [x] 18 Nov: window none, proof `4CD4CBB8…` (hybrid self-transfer) sent and accepted on the project page
+- [x] 19 Nov: account unchanged apart from the proof fee; nothing taken (docs/QDAY_DRILL.md, "Drill result")
+- Results: attack log after the drill; Q-Day Survivor winners on 16 Dec
 
 ## Phase 4. Backend (`backend/`, Node + TypeScript) (20%): done
 - [x] Arena, geometry, referee simulation, route planner
@@ -46,20 +49,21 @@ Overall: about **80%** (each phase's weight is in brackets; last updated 2026-11
 - [x] Bounty is required when adding a robot (min 1 QOR): paid from QoreX to the relayer, checked on chain, locked with depositBounty by the relayer; makers can take unwon bounties back (relayer ML-DSA withdrawBounty). QoreX limitation explained in the README
 - [x] Website says "bounty" everywhere (was "prize")
 - [x] Chain is the source of truth: leaderboard from contract events, sign-ups and bounties from chain payments + vault events, game rules from contract constants, chain id from the deployment record; no numbers typed into the website (README "Where the data comes from")
-- [ ] After the drill: robot #1 updateBrain from the legacy demo hash to the rule brain config hash (admin account signs)
+- [x] Backend and website moved to v3 (19 Nov): new digests and ABIs, verdicts bound to robot + player, bounties settled through the vault's earliest-breach queue, take-back = signed requestWithdraw then finalizeWithdraw after 3 h, relayer reopens its window when scoped to old contracts; 74 tests + live parity against v3
+- [ ] Demo robot #1 on v3 with the rule brain's real fingerprint, plus a 1 QOR bounty (replaces the old updateBrain step: v3 starts empty)
 
 ## Phase 6. Integration on testnet (5%): 0%
 - [ ] End-to-end round from the website with the main QoreX account: verify, start, attack, verdict (planned after 19 Nov, after the drill)
 - [ ] Utility score recorded on chain for the demo robot(s)
 - [ ] Second demo robot with the LLM brain and a small bounty
 
-## Phase 7. QCAI two-stage audit (8%): 25%
+## Phase 7. Audits (8%): done
 - [x] Found it: QCAI Smart Contract Auditor at dashboard.qorechain.io/audit, a main requirement of the Post-Quantum dApp bounty; 150 QOR per audit
 - [x] Self-review before paying (audits/SELF_REVIEW.md); one-file bundle audits/RedZone.flat.sol so one run covers both contracts
 - [x] Server fix for finding 1: no bounty take-back while a win can still be recorded or paid
-- [ ] Get 150+ QOR per stage (account has ~87): ask organizers about audit credits or a faucet
-- [ ] Stage 1 audit, fix findings
-- [ ] Stage 2 audit, publish reports in `audits/`
+- [x] QCAI stage 1 and stage 2 (two runs on the deployed v3), with written answers (audits/QCAI-stage*-response.md)
+- [x] Adversarial audit of v3 (audits/ADVERSARIAL_AUDIT.md), fixed and redeployed; Blockhertz reports triaged
+- [ ] Ask the organisers how the Solidity PQC checks are verified for judging
 
 ## Phase 8. Hosting (4%): 0%
 - [ ] Host the backend (needs an account from the owner)
@@ -67,7 +71,8 @@ Overall: about **80%** (each phase's weight is in brackets; last updated 2026-11
 
 ## Phase 9. Submission (8%): 30%
 - [x] README with deployed addresses and credits; AI_USAGE.md log
-- [ ] README: architecture diagram, screenshots, how to play
+- [x] README: architecture diagram, how to play, v3 addresses and protections
+- [ ] README: screenshots
 - [ ] Cover image and demo video (owner, planned for 1 Dec)
 - [ ] Final check against the official rules and submit before 2 Dec
 
@@ -75,4 +80,4 @@ Overall: about **80%** (each phase's weight is in brackets; last updated 2026-11
 - Free AI key: done (OpenRouter key in backend/.env, git-ignored)
 - Hosting accounts (backend + web)
 - Cover image and demo video (planned for 1 Dec)
-- Drill day 18 Nov: say "drill day"; the proof is run and the hash handed over
+- Approve the QOR for demo robot #1 on v3 (1 QOR bounty from the drill/admin account)

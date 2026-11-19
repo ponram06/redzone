@@ -2,25 +2,28 @@
  * Game logic: judge an attack session, score utility, run practice rounds.
  * Chain reads are injected so tests run offline.
  */
-import { decodeEventLog, encodeAbiParameters, encodeFunctionData, keccak256, verifyMessage, type Address, type Hex } from "viem";
+import { decodeEventLog, encodeFunctionData, verifyMessage, type Address, type Hex } from "viem";
 import type { Arena } from "./arena.js";
 import { actionsToWaypoints } from "./brains/actions.js";
 import type { BrainRegistry } from "./brains/registry.js";
 import type { BrainOutput } from "./brains/types.js";
-import { registryAbi, robotKey, vaultAbi, type BountyView, type NativeTransfer, type RobotView, type SessionView } from "./chain.js";
+import { NEXT, registryAbi, vaultAbi, type BountyView, type NativeTransfer, type RobotView, type SessionView } from "./chain.js";
 import type { LedgerReader, Transfer } from "./ledger.js";
 import { SIGNUP_MEMO, decodePqSignature, toEvmAddress, toQorAddress, verifyWalletSignature, walletText } from "./qorex.js";
 import { simulate, taskPassed, type Trace } from "./referee.js";
 import type { Relayer } from "./relayer.js";
-import { claimDigest, registerRobotDigest, resultDigest, signDigest, startSessionDigest, updateBrainDigest, utilityDigest, withdrawDigest, type RefereeKey } from "./signer.js";
+import { registerRobotDigest, resultDigest, signDigest, startSessionDigest, updateBrainDigest, utilityDigest, withdrawDigest, type RefereeKey } from "./signer.js";
 import type { Store } from "./store.js";
 
-/** A signed StartSession request is valid for this long (the contract allows at most 1 hour). */
+/** A signed owner request is valid for this long (the contracts allow at most 1 hour). */
 export const REQUEST_TTL = 15 * 60;
+/** A signed StartSession request must reach the chain within MAX_START_TTL (10 minutes); keep a margin. */
+export const START_TTL = 8 * 60;
 
 export const MAX_INSTRUCTION = 500;
-export const CLAIM_WINDOW = 7 * 24 * 3600;
 export const UTILITY_WINDOW = 24 * 3600;
+/** Most vault calls made to settle one bounty (skips of unpayable breaches plus the claim). */
+const MAX_SETTLE_STEPS = 10;
 
 export class GameError extends Error {
   constructor(
@@ -39,28 +42,22 @@ export type ChainReader = {
   readPlayer(player: Address): Promise<{ nonce: bigint; attemptsLeft: number }>;
   readNativeTransfer(txHash: string): Promise<NativeTransfer | null>;
   readBounty(id: number): Promise<BountyView>;
+  /** EscrowVaultV2.nextBreach: state of the breach at the bounty's cursor (see NEXT). */
+  readNextBreach(bountyId: number): Promise<{ state: number; sessionId: number }>;
   readVaultNonce(account: Address): Promise<bigint>;
   readNextRobotId(): Promise<number>;
   /** A deposit we sent: pending (not mined or not found), success with its BountyDeposited, or reverted. */
   readDeposit(hash: Hex): Promise<{ status: "pending" | "success" | "reverted"; bountyId?: number; amountWei: bigint }>;
 };
 
-/** Makers pay bounties to the relayer (QoreX can't call contracts yet); the relayer locks them in the vault. */
+/** Makers pay bounties to the relayer (QoreX can't call contracts yet); the relayer locks them in the vault, owned by the robot's owner. */
 export type PrizeConfig = { minUqor: bigint; payTo: string };
 export const bountyMemo = (robotId: number) => `RedZone bounty #${robotId}`;
 /** 10,000 QOR: a sanity cap on a single bounty payment. */
 const MAX_BOUNTY_UQOR = 10_000n * 1_000_000n;
 const WEI_PER_UQOR = 10n ** 12n;
-
-/** What the maker signs (checked by the referee) to take a bounty back. */
-export function bountyBackDigest(chainId: number, vault: Address, bountyId: number, owner: Address, deadline: number): Hex {
-  return keccak256(
-    encodeAbiParameters(
-      [{ type: "string" }, { type: "uint256" }, { type: "address" }, { type: "uint256" }, { type: "address" }, { type: "uint256" }],
-      ["RedZone.TakeBountyBack", BigInt(chainId), vault, BigInt(bountyId), owner, BigInt(deadline)],
-    ),
-  );
-}
+/** EscrowVaultV2.WITHDRAW_EXPIRY: a take-back request lapses this long after it unlocks. */
+const WITHDRAW_EXPIRY = 7 * 24 * 3600;
 
 /** One-time sign-up: the player pays `feeUqor` once, with a QoreX (hybrid-signed) transfer to `payTo`. */
 export type SignupConfig = { feeUqor: bigint; payTo: string };
@@ -80,6 +77,8 @@ export type GameDeps = {
   vault: Address;
   sessionTtl: number;
   resultGrace: number;
+  /** EscrowVaultV2.WITHDRAW_DELAY: time between a take-back request and its payout. */
+  withdrawDelay: number;
   /** Sends startSessionFor / recordResult / claimBounty for players. Optional: without it, players relay. */
   relayer?: Relayer | null;
   /** When set, players pay a small one-time fee before their first session. */
@@ -91,6 +90,9 @@ export type GameDeps = {
 
 export type RelayStatus = { resultTx?: Hex; claimTxs?: { bountyId: number; tx: Hex }[]; error?: string };
 
+/** Contract enum EscrowVaultV2.Next, as names for errors. */
+const NEXT_NAMES = ["none", "claimable", "skippable", "waiting"];
+
 export type AttemptVerdict = {
   sessionId: number;
   robotId: number;
@@ -99,10 +101,11 @@ export type AttemptVerdict = {
   say: string;
   trace: Trace;
   replayHash: Hex;
-  /** Arguments for RobotRegistry.recordResult (anyone may relay). */
+  /** Arguments for RobotRegistryV3.recordResult (anyone may relay, with the referee's public key). */
   result: { deadline: string; refereeSig: Hex };
-  /** Arguments for EscrowVault.claimBounty, one per open bounty, paid to the player. */
-  claims: { bountyId: number; amountWei: string; deadline: string; refereeSig: Hex }[];
+  /** Bounties open on the robot at the verdict. On a breach, EscrowVaultV2.claimBounty(bountyId)
+   *  (anyone may call) pays each one to the robot's earliest unpaid breach. */
+  claims: { bountyId: number; amountWei: string }[];
   /** What the relayer sent on chain for this verdict, when a relayer is configured. */
   relay?: RelayStatus;
 };
@@ -234,17 +237,15 @@ export class Game {
       const resultDeadline = BigInt(session.startedAt + this.d.sessionTtl + this.d.resultGrace);
       const result = {
         deadline: resultDeadline.toString(),
-        refereeSig: signDigest(this.d.key, resultDigest(this.d.chainId, this.d.registry, BigInt(sessionId), trace.breached, replayHash, resultDeadline)),
+        refereeSig: signDigest(
+          this.d.key,
+          resultDigest(this.d.chainId, this.d.registry, BigInt(sessionId), BigInt(session.robotId), session.player, trace.breached, replayHash, resultDeadline),
+        ),
       };
 
-      const claims: AttemptVerdict["claims"] = [];
-      if (trace.breached) {
-        const claimDeadline = BigInt(this.now() + CLAIM_WINDOW);
-        for (const b of await this.d.chain.openBounties(session.robotId)) {
-          const digest = claimDigest(this.d.chainId, this.d.vault, BigInt(b.id), session.player, replayHash, claimDeadline);
-          claims.push({ bountyId: b.id, amountWei: b.amountWei, deadline: claimDeadline.toString(), refereeSig: signDigest(this.d.key, digest) });
-        }
-      }
+      const claims: AttemptVerdict["claims"] = trace.breached
+        ? (await this.d.chain.openBounties(session.robotId)).map((b) => ({ bountyId: b.id, amountWei: b.amountWei }))
+        : [];
 
       const verdict: AttemptVerdict = {
         sessionId,
@@ -266,7 +267,7 @@ export class Game {
     });
   }
 
-  /** Put a verdict on chain: recordResult, then claimBounty for each open bounty on a breach. */
+  /** Put a verdict on chain: recordResult, then settle each open bounty on a breach. */
   private async relayVerdict(v: AttemptVerdict): Promise<RelayStatus> {
     const relayer = this.d.relayer!;
     const status: RelayStatus = {};
@@ -276,27 +277,40 @@ export class Game {
         encodeFunctionData({
           abi: registryAbi,
           functionName: "recordResult",
-          args: [BigInt(v.sessionId), v.breached, v.replayHash, BigInt(v.result.deadline), v.result.refereeSig],
+          args: [BigInt(v.sessionId), v.breached, v.replayHash, BigInt(v.result.deadline), this.d.key.publicKey, v.result.refereeSig],
         }),
       );
       if (r.status !== "success") throw new Error(`recordResult reverted (${r.hash})`);
       status.resultTx = r.hash;
       for (const c of v.claims) {
-        const cr = await relayer.send(
-          this.d.vault,
-          encodeFunctionData({
-            abi: vaultAbi,
-            functionName: "claimBounty",
-            args: [BigInt(c.bountyId), v.player, v.replayHash, BigInt(c.deadline), c.refereeSig],
-          }),
-        );
-        if (cr.status !== "success") throw new Error(`claimBounty ${c.bountyId} reverted (${cr.hash})`);
-        (status.claimTxs ??= []).push({ bountyId: c.bountyId, tx: cr.hash });
+        const tx = await this.settleBounty(c.bountyId);
+        if (tx) (status.claimTxs ??= []).push({ bountyId: c.bountyId, tx });
       }
     } catch (e) {
       status.error = (e as Error).message.slice(0, 300);
     }
     return status;
+  }
+
+  /**
+   * Pay a bounty to its robot's earliest unpaid breach. The vault decides who is paid: we skip
+   * breaches it reports as never payable, then claim. Returns the claim tx, or null when the bounty
+   * is already closed or has no breach to pay.
+   */
+  private async settleBounty(bountyId: number): Promise<Hex | null> {
+    const relayer = this.d.relayer!;
+    for (let step = 0; step < MAX_SETTLE_STEPS; step++) {
+      const b = await this.d.chain.readBounty(bountyId);
+      if (b.status !== 1) return null;
+      const next = await this.d.chain.readNextBreach(bountyId);
+      if (next.state === NEXT.None) return null;
+      if (next.state === NEXT.Waiting) throw new Error(`bounty ${bountyId}: vault is paused, the win is paid after the pause`);
+      const fn = next.state === NEXT.Claimable ? "claimBounty" : "skipBreach";
+      const r = await relayer.send(this.d.vault, encodeFunctionData({ abi: vaultAbi, functionName: fn, args: [BigInt(bountyId)] }));
+      if (r.status !== "success") throw new Error(`${fn} ${bountyId} reverted (${r.hash})`);
+      if (fn === "claimBounty") return r.hash;
+    }
+    throw new Error(`bounty ${bountyId}: too many unpayable breaches (${NEXT_NAMES[NEXT.Skippable]}), try again`);
   }
 
   /** Retry relaying a stored verdict whose relay failed or was incomplete. */
@@ -418,7 +432,7 @@ export class Game {
     if (!key.registered) throw new GameError(409, "this account has no ML-DSA-87 key registered yet (register it in QoreX first)");
     if (!(await this.isSignedUp(player))) throw new GameError(402, "sign up first: a one-time payment verifies your account");
     if (state.attemptsLeft < 1) throw new GameError(429, "no attempts left today (5 per UTC day)");
-    const deadline = this.now() + REQUEST_TTL;
+    const deadline = this.now() + START_TTL;
     const digest = startSessionDigest(this.d.chainId, this.d.registry, BigInt(robotId), player, state.nonce, BigInt(deadline));
     return { robotId, player, nonce: state.nonce.toString(), deadline, digest, text: walletText("StartSession", digest), attemptsLeft: state.attemptsLeft };
   }
@@ -434,7 +448,7 @@ export class Game {
     if (!player) throw new GameError(400, "bad player address");
     if (!sig) throw new GameError(400, "pqSignature missing or malformed");
     if (!(await this.isSignedUp(player))) throw new GameError(402, "sign up first: a one-time payment verifies your account");
-    if (!Number.isSafeInteger(deadline) || deadline < this.now() || deadline > this.now() + 3600) {
+    if (!Number.isSafeInteger(deadline) || deadline < this.now() || deadline > this.now() + 600) {
       throw new GameError(400, "deadline expired or too far away: request a new one");
     }
 
@@ -467,15 +481,16 @@ export class Game {
 
   // ---------------------------------------------------------- bounties (paid in QoreX, locked by the relayer)
   //
-  // QoreX can't call contracts yet, so a maker can't call EscrowVault.depositBounty themselves.
+  // QoreX can't call contracts yet, so a maker can't call EscrowVaultV2.depositBounty themselves.
   // They pay the bounty to the relayer with a normal QoreX transfer (hybrid-signed), memo
-  // "RedZone bounty #<robotId>", and the relayer deposits it into the vault for that robot.
+  // "RedZone bounty #<robotId>", and the relayer deposits it into the vault for that robot. The
+  // vault makes the robot's owner the bounty's owner, so the relayer never owns the money.
   //
   // Everything here is worked out from the chain, not from files on this server:
   //   paid      = the robot owner's successful transfers to the relayer with that memo
-  //   deposited = the vault's BountyDeposited events by the relayer for that robot
+  //   deposited = the vault's BountyDeposited events funded by the relayer for that robot
   // The relayer deposits only paid - deposited, so retries, restarts or a lost database can never
-  // lock a payment twice. Withdrawals go only to the robot's on-chain owner.
+  // lock a payment twice. Only the owner's own ML-DSA signature can withdraw (requestWithdraw).
 
   /** Sum of valid bounty payments for a robot, from the chain. */
   private async paidFor(robotId: number, owner: Address): Promise<{ total: bigint; txs: Transfer[] }> {
@@ -487,9 +502,8 @@ export class Game {
   /** Bounties the relayer deposited for a robot: chain events plus our own sends still being indexed. */
   private async depositedFor(robotId: number): Promise<{ total: bigint; ids: number[]; txs: Set<string> }> {
     await this.d.ledger.sync();
-    const rk = robotKey(robotId).toLowerCase();
     const relayer = this.d.relayer!.address.toLowerCase();
-    const mine = this.d.ledger.deposits().filter((e) => e.robotKey.toLowerCase() === rk && e.owner.toLowerCase() === relayer);
+    const mine = this.d.ledger.deposits().filter((e) => e.robotId === robotId && e.funder.toLowerCase() === relayer);
     const txs = new Set(mine.map((e) => e.tx.toLowerCase()));
     let total = mine.reduce((s, e) => s + e.amountWei / WEI_PER_UQOR, 0n);
     const ids = mine.map((e) => e.bountyId);
@@ -542,7 +556,7 @@ export class Game {
       const pendingKey = `deposits-${robotId}`;
       const r = await this.d.relayer!.send(
         this.d.vault,
-        encodeFunctionData({ abi: vaultAbi, functionName: "depositBounty", args: [robotKey(robotId)] }),
+        encodeFunctionData({ abi: vaultAbi, functionName: "depositBounty", args: [BigInt(robotId)] }),
         missing * WEI_PER_UQOR,
         (hash) => this.d.store.saveVerdict(pendingKey, [...(this.d.store.getVerdict<string[]>(pendingKey) ?? []), hash]),
       ).catch((e: Error) => {
@@ -562,80 +576,55 @@ export class Game {
     });
   }
 
-  /** robotKey -> robot id, for every robot on chain. */
-  private async robotIdsByKey(): Promise<Map<string, number>> {
-    const next = await this.d.chain.readNextRobotId();
-    const m = new Map<string, number>();
-    for (let i = 1; i < next; i++) m.set(robotKey(i).toLowerCase(), i);
-    return m;
-  }
-
-  /** The maker's bounties still in the vault, read from the chain. */
+  /** The owner's bounties still in the vault, read from the chain, with any withdrawal in progress. */
   async ownerBounties(ownerRaw: unknown) {
     const owner = toEvmAddress(ownerRaw);
     if (!owner) throw new GameError(400, "bad owner address");
-    if (!this.d.relayer) return [];
     await this.d.ledger.sync();
-    const ids = await this.robotIdsByKey();
-    const relayer = this.d.relayer.address.toLowerCase();
-    const out: { robotId: number; bountyId: number; uqor: string }[] = [];
+    const out: { robotId: number; bountyId: number; uqor: string; withdraw: { requestedAt: number; unlocksAt: number } | null }[] = [];
     for (const e of this.d.ledger.deposits()) {
-      if (e.owner.toLowerCase() !== relayer) continue;
-      const robotId = ids.get(e.robotKey.toLowerCase());
-      if (!robotId) continue;
-      const robot = await this.d.chain.readRobot(robotId);
-      if (robot?.owner.toLowerCase() !== owner.toLowerCase()) continue;
+      if (e.owner.toLowerCase() !== owner.toLowerCase()) continue;
       const b = await this.d.chain.readBounty(e.bountyId);
-      if (b.status === 1) out.push({ robotId, bountyId: e.bountyId, uqor: (b.amountWei / WEI_PER_UQOR).toString() });
+      if (b.status !== 1) continue;
+      out.push({ robotId: b.robotId, bountyId: b.id, uqor: (b.amountWei / WEI_PER_UQOR).toString(), withdraw: this.withdrawState(b) });
     }
     return out;
   }
 
-  /** Checks shared by the take-back request and the take-back itself, all against the chain. */
+  /** A live withdrawal request (one that has not lapsed), or null. */
+  private withdrawState(b: BountyView): { requestedAt: number; unlocksAt: number } | null {
+    if (!b.withdrawRequestedAt) return null;
+    const unlocksAt = b.withdrawRequestedAt + this.d.withdrawDelay;
+    if (this.now() > unlocksAt + WITHDRAW_EXPIRY) return null;
+    return { requestedAt: b.withdrawRequestedAt, unlocksAt };
+  }
+
+  /** The bounty, checked to be open and owned (on chain) by `owner`. */
   private async bountyForOwner(bountyId: number, owner: Address) {
-    if (!this.d.relayer?.pqSign) throw new GameError(503, "no relayer configured");
+    if (!this.d.relayer) throw new GameError(503, "no relayer configured");
     const b = await this.d.chain.readBounty(bountyId);
-    if (b.owner.toLowerCase() !== this.d.relayer.address.toLowerCase()) throw new GameError(403, "this bounty wasn't added through RedZone");
-    const robotId = (await this.robotIdsByKey()).get(b.robotKey.toLowerCase());
-    const robot = robotId ? await this.d.chain.readRobot(robotId) : null;
-    if (!robot || robot.owner.toLowerCase() !== owner.toLowerCase()) throw new GameError(403, "only the robot's owner can take its bounty back");
+    if (b.status === 0) throw new GameError(404, "bounty not found");
+    if (b.owner.toLowerCase() !== owner.toLowerCase()) throw new GameError(403, "only the robot's owner can take its bounty back");
     if (b.status !== 1) throw new GameError(409, b.status === 2 ? "a player already won this bounty" : "this bounty is no longer in the vault");
-    await this.checkNoPendingWin(robotId!);
-    return { b, robotId: robotId! };
+    return b;
   }
 
   /**
-   * A bounty can't be taken back while a player may still win it: a round against the robot is
-   * running (or its result can still be recorded), or a recorded win has not been paid yet. This
-   * closes the race where an owner withdraws between a breach verdict and its payout.
+   * Step 1 of taking a bounty back: what the owner's wallet signs (EscrowVaultV2.requestWithdraw).
+   * The money stays winnable during WITHDRAW_DELAY; any win recorded first is paid first.
    */
-  private async checkNoPendingWin(robotId: number): Promise<void> {
-    await this.d.ledger.sync();
-    const now = this.now();
-    const results = this.d.ledger.results();
-    const recorded = new Set(results.map((r) => r.sessionId));
-    const live = this.d.ledger.sessions().some((s) => s.robotId === robotId && !recorded.has(s.sessionId) && s.expiresAt + this.d.resultGrace > now);
-    if (live) throw new GameError(409, "a player is in a round against this robot right now: try again when it ends");
-    const paid = new Set(this.d.ledger.claims().map((c) => c.replayHash.toLowerCase()));
-    const expiry = new Map(this.d.ledger.sessions().map((s) => [s.sessionId, s.expiresAt]));
-    const unpaid = results.some(
-      (r) => r.robotId === robotId && r.breached && !paid.has(r.replayHash.toLowerCase()) && (expiry.get(r.sessionId) ?? now) + CLAIM_WINDOW > now,
-    );
-    if (unpaid) throw new GameError(409, "a player beat this robot and their bounty is being paid: it can't be taken back");
-  }
-
-  /** What the maker's wallet signs to take a bounty back. */
   async bountyBackRequest(input: { bountyId: unknown; owner: unknown }) {
     const bountyId = Number(input.bountyId);
     const owner = toEvmAddress(input.owner);
     if (!Number.isSafeInteger(bountyId) || bountyId < 1 || !owner) throw new GameError(400, "bad request");
     await this.bountyForOwner(bountyId, owner);
+    const nonce = await this.d.chain.readVaultNonce(owner);
     const deadline = this.now() + REQUEST_TTL;
-    const digest = bountyBackDigest(this.d.chainId, this.d.vault, bountyId, owner, deadline);
-    return { bountyId, owner, deadline, digest, text: walletText("TakeBountyBack", digest) };
+    const digest = withdrawDigest(this.d.chainId, this.d.vault, BigInt(bountyId), owner, nonce, BigInt(deadline));
+    return { bountyId, owner, nonce: nonce.toString(), deadline, digest, text: walletText("WithdrawBounty", digest) };
   }
 
-  /** Withdraw a bounty to the robot's owner, after checking their QoreX ML-DSA signature. */
+  /** Relay the owner's QoreX-signed requestWithdraw. The signature is checked here first so bad ones cost no gas. */
   async takeBountyBack(input: { bountyId: unknown; owner: unknown; deadline: unknown; pqSignature: unknown }) {
     const bountyId = Number(input.bountyId);
     const owner = toEvmAddress(input.owner);
@@ -645,21 +634,44 @@ export class Game {
     if (!sig) throw new GameError(400, "pqSignature missing or malformed");
 
     return this.once(`bounty-${bountyId}`, async () => {
-      const key = await this.d.chain.readPqcKey(owner);
+      const b = await this.bountyForOwner(bountyId, owner);
+      const [key, nonce] = await Promise.all([this.d.chain.readPqcKey(owner), this.d.chain.readVaultNonce(owner)]);
       if (!key.registered) throw new GameError(409, "no ML-DSA-87 key registered for this account");
-      if (!verifyWalletSignature(key.pubkey, walletText("TakeBountyBack", bountyBackDigest(this.d.chainId, this.d.vault, bountyId, owner, deadline)), sig)) {
-        throw new GameError(401, "signature does not match this request");
+      const digest = withdrawDigest(this.d.chainId, this.d.vault, BigInt(bountyId), owner, nonce, BigInt(deadline));
+      if (!verifyWalletSignature(key.pubkey, walletText("WithdrawBounty", digest), sig)) {
+        throw new GameError(401, "signature does not match this request (it may be used already: request a new one)");
       }
-      const { b } = await this.bountyForOwner(bountyId, owner);
-      const vaultDeadline = BigInt(this.now() + 600);
-      const nonce = await this.d.chain.readVaultNonce(this.d.relayer!.address);
-      const relayerSig = this.d.relayer!.pqSign!(withdrawDigest(this.d.chainId, this.d.vault, BigInt(bountyId), owner, nonce, vaultDeadline));
       const r = await this.d.relayer!.send(
         this.d.vault,
-        encodeFunctionData({ abi: vaultAbi, functionName: "withdrawBounty", args: [BigInt(bountyId), owner, vaultDeadline, relayerSig] }),
+        encodeFunctionData({ abi: vaultAbi, functionName: "requestWithdraw", args: [BigInt(bountyId), owner, BigInt(deadline), sig] }),
       );
-      if (r.status !== "success") throw new GameError(502, `withdrawBounty reverted (${r.hash})`);
-      return { bountyId, tx: r.hash, uqor: (b.amountWei / WEI_PER_UQOR).toString() };
+      if (r.status !== "success") throw new GameError(502, `requestWithdraw reverted (${r.hash})`);
+      return { bountyId, tx: r.hash, uqor: (b.amountWei / WEI_PER_UQOR).toString(), unlocksAt: this.now() + this.d.withdrawDelay };
+    });
+  }
+
+  /**
+   * Step 2: once WITHDRAW_DELAY has passed, pay the bounty to the address the owner signed for.
+   * Anyone may call finalizeWithdraw; the vault refuses while a win is still payable.
+   */
+  async finishBountyBack(input: { bountyId: unknown }) {
+    const bountyId = Number(input.bountyId);
+    if (!Number.isSafeInteger(bountyId) || bountyId < 1) throw new GameError(400, "bad bountyId");
+    if (!this.d.relayer) throw new GameError(503, "no relayer configured");
+    return this.once(`bounty-${bountyId}`, async () => {
+      const b = await this.d.chain.readBounty(bountyId);
+      if (b.status !== 1) throw new GameError(409, b.status === 2 ? "a player already won this bounty" : "this bounty is no longer in the vault");
+      const w = this.withdrawState(b);
+      if (!w) throw new GameError(409, "no take-back request for this bounty (or it lapsed): ask again");
+      if (this.now() < w.unlocksAt) throw new GameError(425, `the bounty unlocks at ${new Date(w.unlocksAt * 1000).toISOString()}`);
+      // A payable win beats the owner: pay it (or skip breaches that can never be paid) first.
+      const claimTx = await this.settleBounty(bountyId).catch((e: Error) => {
+        throw new GameError(502, e.message.slice(0, 200));
+      });
+      if (claimTx) throw new GameError(409, `a player beat this robot first and was paid the bounty (${claimTx})`);
+      const r = await this.d.relayer!.send(this.d.vault, encodeFunctionData({ abi: vaultAbi, functionName: "finalizeWithdraw", args: [BigInt(bountyId)] }));
+      if (r.status !== "success") throw new GameError(502, `finalizeWithdraw reverted (${r.hash})`);
+      return { bountyId, tx: r.hash, to: b.withdrawTo, uqor: (b.amountWei / WEI_PER_UQOR).toString() };
     });
   }
 
@@ -667,7 +679,7 @@ export class Game {
 
   /**
    * Players ranked by robots tricked, then bounty won, then fewest rounds. Built only from the
-   * contracts' events: Breached / Defended (RobotRegistryV2) and BountyClaimed (EscrowVault).
+   * contracts' events: Breached / Defended (RobotRegistryV3) and BountyClaimed (EscrowVaultV2).
    */
   async leaderboard(limit = 50) {
     await this.d.ledger.sync();
@@ -683,7 +695,7 @@ export class Game {
       r.attempts++;
       if (e.breached) r.wins++;
     }
-    for (const c of this.d.ledger.claims()) row(c.claimer).wonWei += c.amountWei;
+    for (const c of this.d.ledger.claims()) row(c.player).wonWei += c.amountWei;
     return [...by.values()]
       .sort((a, b) => b.wins - a.wins || (b.wonWei > a.wonWei ? 1 : b.wonWei < a.wonWei ? -1 : 0) || a.attempts - b.attempts)
       .slice(0, limit)
@@ -885,7 +897,7 @@ export class Game {
         encodeFunctionData({
           abi: registryAbi,
           functionName: "recordUtility",
-          args: [BigInt(v.robotId), v.tasksPassed, v.replayHash, BigInt(v.deadline), v.refereeSig],
+          args: [BigInt(v.robotId), v.tasksPassed, v.replayHash, BigInt(v.deadline), this.d.key.publicKey, v.refereeSig],
         }),
       );
       relay = r.status === "success" ? { tx: r.hash } : { error: `recordUtility reverted (${r.hash})` };

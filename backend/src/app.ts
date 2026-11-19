@@ -106,6 +106,12 @@ export async function buildApp(d: AppDeps) {
     return d.game.takeBountyBack({ bountyId: b.bountyId, owner: b.owner, deadline: b.deadline, pqSignature: b.pqSignature });
   });
 
+  /** Step 2 of a take-back, after the vault's delay: anyone may trigger the payout to the signed address. */
+  app.post<{ Body: { bountyId?: unknown } }>("/owner/bounty/back/finish", async (req, reply) => {
+    if (!allow(req, reply, "session")) return reply;
+    return d.game.finishBountyBack({ bountyId: req.body?.bountyId });
+  });
+
   /** Top players, from the referee's own finished verdicts. */
   app.get("/leaderboard", async () => ({ players: await d.game.leaderboard() }));
 

@@ -7,7 +7,8 @@ alone can do. We ran the same attacks against ourselves on 16 Nov with `npm run 
 | | |
 |---|---|
 | Drill account | `qor1g4xu64wuhy25y9h7lvtncz6mf5nt4q9ze87qvv` (`0x454DCD55DCB9154216fEfb173C0B5B4D26bA80A2`) |
-| Contracts | EscrowVault `0xcD9AAd1ad2D7981699f256e73F2780dac86f0266`, RobotRegistryV2 `0x354f71Da76314Cd74A18524899Aeb43611d86448` (v1 `0x7733d4f2D707c2F8160831e2e0ca2b6B90Ef4940` superseded) |
+| Contracts (registered for the drill) | RobotRegistryV3 `0x69564de848d807ea895e1987b53749e1648cadbf`, EscrowVaultV2 `0x16cc5efcda75a788f597dd0c785862db1bdbeb7f` |
+| Older contracts (also held by the drill account's admin key) | EscrowVault v1 `0xcD9AAd1ad2D7981699f256e73F2780dac86f0266` (1 QOR bounty), RobotRegistryV2 `0x354f71Da76314Cd74A18524899Aeb43611d86448`, RobotRegistry v1 `0x7733d4f2D707c2F8160831e2e0ca2b6B90Ef4940` |
 
 ## Rehearsal result: 17 of 17 attacks blocked
 
@@ -82,3 +83,22 @@ Deployed with a window of 200 blocks, 2 transactions and a 0.8 QOR cap, closed r
 1. `npm run window status` must show `window: none`. If not, `npm run window close`.
 2. `npm run window proof` and submit the hash on the project page by 19 Nov.
 3. Do not open an EVM window during the drill.
+
+## Drill result (18 Nov)
+
+| Check | Before the drill (block 10280600) | After it ended (19 Nov, block 10353953) |
+|---|---|---|
+| Balance | 4.013710224992227284 QOR | 3.913710224992227284 QOR (the proof's 0.1 QOR fee only) |
+| Nonce | 24 | 25 (the proof) |
+| Code on the account (EIP-7702) | none | none |
+| EVM window | none | none |
+| v3 vault / v1 vault | 0 / 1 QOR | 0 / 1 QOR |
+| Registry | no pending referee change | no pending referee change |
+
+- Proof: hybrid-signed (ECDSA + ML-DSA-87) native self-transfer
+  `4CD4CBB800E8F8E7786F6A18B939A445B6C53DB99AAEC56D29C0CF910B4638D8` at height 10302476
+  (18 Nov 07:19 UTC), accepted on the project page.
+- It is the only transaction from the account since the pre-drill snapshot: no attack got through and
+  nothing was taken.
+- The organisers publish the full attack log after the drill. Q-Day Survivor winners are announced
+  on 16 Dec.

@@ -3,12 +3,12 @@
  * (startSessionFor, recordResult, claimBounty). Every one of them is authorised by an ML-DSA-87
  * signature checked inside the contract, so the relayer cannot forge or redirect anything.
  *
- * Its EVM window is opened with `allowedTargets` = [RobotRegistryV2, EscrowVault] (chain v3.2.3):
+ * Its EVM window is opened with `allowedTargets` = [RobotRegistryV3, EscrowVaultV2] (chain v3.2.3):
  * even with the relayer's ECDSA key, nothing can be sent anywhere else. Value is only sent for
  * prizes: makers pay the prize to this account with QoreX (QoreX can't call contracts yet), and the
  * relayer locks it in the vault with depositBounty. The window's value budget is sized per deposit.
- * As bounty owner on chain, only this account's ML-DSA-87 key can withdraw a prize, and the
- * referee only does that for the maker who paid it.
+ * The vault makes the robot's owner the bounty's owner, so only the maker's own ML-DSA-87 key can
+ * ask for it back; the relayer can never withdraw a prize.
  *
  * This account must NOT be the Q-Day Drill account (whose window must stay closed).
  */
@@ -109,8 +109,10 @@ export class ChainRelayer implements Relayer {
     const gasPrice = await client.getGasPrice();
     const perTxUqor = (MAX_GAS * ((gasPrice * 15n) / 10n)) / 10n ** 12n + 1n;
     const remainingValue = BigInt(w.maxValue ?? 0) - BigInt(w.usedValue ?? 0);
+    // A window scoped to other contracts (e.g. an older deployment) can't send to ours.
+    const scoped = this.targets.every((t) => (w.allowedTargets ?? []).some((a) => a.toLowerCase() === t.toLowerCase()));
     const fresh =
-      w.found && w.live && w.maxTxs - w.usedTxs >= 2n && w.expiryHeight > height + 20n && remainingValue >= valueUqor + perTxUqor * 2n;
+      w.found && w.live && scoped && w.maxTxs - w.usedTxs >= 2n && w.expiryHeight > height + 20n && remainingValue >= valueUqor + perTxUqor * 2n;
     if (fresh) return;
     const msg = openEvmWindowMsg({
       sender: this.acc.cosmos,

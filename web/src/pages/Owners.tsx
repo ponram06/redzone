@@ -381,10 +381,19 @@ function RobotPrize({ robotId, hasPrize, bounties, onChange }: { robotId: number
     s.run(async (address) => {
       const req = await api.bountyBackRequest(bountyId, address);
       const pqSignature = await signPq(address, req.text);
-      s.setBusy("Sending the bounty back to you…");
+      s.setBusy("Asking the vault for your bounty back…");
       await api.takeBountyBack({ bountyId, owner: address, deadline: req.deadline, pqSignature });
       await onChange();
     });
+
+  const collect = (bountyId: number) =>
+    s.run(async () => {
+      s.setBusy("Sending the bounty back to you…");
+      await api.finishBountyBack(bountyId);
+      await onChange();
+    });
+
+  const now = Math.floor(Date.now() / 1000);
 
   return (
     <div className="stack">
@@ -409,11 +418,22 @@ function RobotPrize({ robotId, hasPrize, bounties, onChange }: { robotId: number
           </div>
         </>
       )}
-      {open.map((p) => (
-        <button key={p.bountyId} className="btn small" disabled={!!s.busy} onClick={() => takeBack(p.bountyId)}>
-          Take my {qorAmount(p.uqor)} bounty back
-        </button>
-      ))}
+      {open.map((p) =>
+        !p.withdraw ? (
+          <button key={p.bountyId} className="btn small" disabled={!!s.busy} onClick={() => takeBack(p.bountyId)}>
+            Take my {qorAmount(p.uqor)} bounty back
+          </button>
+        ) : now < p.withdraw.unlocksAt ? (
+          <p key={p.bountyId} className="note">
+            Your {qorAmount(p.uqor)} bounty unlocks at {new Date(p.withdraw.unlocksAt * 1000).toLocaleTimeString()}. Players can still win it
+            until then, so rounds already running stay fair.
+          </p>
+        ) : (
+          <button key={p.bountyId} className="btn small" disabled={!!s.busy} onClick={() => collect(p.bountyId)}>
+            Collect my {qorAmount(p.uqor)} bounty
+          </button>
+        ),
+      )}
       {s.busy && <p className="note">{s.busy}</p>}
       {s.error && <p className="error-text">{s.error}</p>}
     </div>

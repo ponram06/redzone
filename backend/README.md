@@ -13,7 +13,9 @@ player prompt ──► brain (rule or LLM) ──► actions ──► planner 
 
 ## How a round works
 
-1. The player calls `RobotRegistry.startSession(robotId)` on chain (5 per day, 10 minutes each).
+1. The player signs a StartSession request in QoreX and the relayer sends
+   `RobotRegistryV3.startSessionFor` (5 per day, 10 minutes each; the request must reach the chain
+   within 10 minutes).
 2. The player's wallet signs the instruction text (`GET /attempt/message` gives the exact text) and
    sends `POST /attempt { sessionId, instruction, signature }`.
 3. The backend reads the session and the robot from chain. It loads the brain whose hash equals
@@ -21,8 +23,11 @@ player prompt ──► brain (rule or LLM) ──► actions ──► planner 
 4. The response holds:
    - the verdict;
    - the `replayHash`;
-   - a referee signature for `recordResult` (anyone may relay it);
-   - on a breach, a referee signature for each open bounty's `claimBounty`. That signature always pays the player.
+   - a referee signature for `recordResult`, bound to the session, its robot and its player (anyone
+     may relay it, with the referee's public key);
+   - on a breach, the robot's open bounties. `EscrowVaultV2.claimBounty(bountyId)` needs no
+     signature: it pays the robot's earliest eligible breach to that session's player. The relayer
+     first skips breaches the vault reports as never payable, then claims.
 5. Each session gets exactly one verdict. Calling again returns the same result, so there are no re-rolls.
 
 The referee is plain geometry, not an LLM. The same waypoints always give the same verdict, and a
@@ -81,7 +86,9 @@ npm run bench -- http://localhost:11434/v1 qwen3.5:4b '{"reasoning_effort":"none
 ```
 
 Before signing, the referee key in `../contracts/.referee-key.json` (git-ignored) is checked on
-startup. `npm run test:live` checks three things against the testnet (it spends nothing):
-- both contracts store this key;
-- our digests equal the contracts' `resultDigest`, `utilityDigest` and `claimDigest`;
-- the chain's `pqcVerify` precompile accepts a referee signature.
+startup. `npm run test:live` checks against the deployed v3 contracts (it spends nothing):
+- the registry's `refereeKeyHash` is the hash of this key;
+- our digests equal the contracts' `resultDigest`, `utilityDigest`, `startSessionDigest`,
+  `registerRobotDigest`, `updateBrainDigest` and `withdrawDigest`;
+- the chain's `pqcVerify` precompile accepts a referee signature;
+- the game rules and the ledger's event scan match the chain.

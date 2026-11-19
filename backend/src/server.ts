@@ -17,6 +17,7 @@ import {
   openBounties,
   readBounty,
   readDeposit,
+  readNextBreach,
   readNativeTransfer,
   readNextRobotId,
   readPlayer,
@@ -97,6 +98,7 @@ const game = new Game({
     readPlayer,
     readNativeTransfer: (h) => readNativeTransfer(h),
     readBounty,
+    readNextBreach,
     readVaultNonce,
     readNextRobotId,
     readDeposit,
@@ -111,6 +113,7 @@ const game = new Game({
   vault: VAULT,
   sessionTtl: rules.sessionTtl,
   resultGrace: rules.resultGrace,
+  withdrawDelay: rules.withdrawDelay,
 });
 
 const builtInBrains: Record<string, string> = { rule: brainHash(RULE_BRAIN), "demo-legacy (robot 1)": LEGACY_DEMO_HASH };
