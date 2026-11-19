@@ -6,7 +6,7 @@ the first unchecked item of the earliest unfinished phase.
 Rules: no Claude co-author line in commits. Never commit `.env`, `.referee-key.json`, `.attacker.json`.
 Do not spend drill-account QOR or touch the fest website without the owner.
 
-Overall: about **85%** (each phase's weight is in brackets; last updated 2026-11-19; v4 needs its own QCAI runs).
+Overall: about **88%** (each phase's weight is in brackets; last updated 2026-11-19).
 
 ## Phase 1. Setup and registration (5%): done
 - [x] Hackathon registration, Post-Quantum dApp category, project page on build.qorechain.io
@@ -59,13 +59,13 @@ Overall: about **85%** (each phase's weight is in brackets; last updated 2026-11
 - [x] Utility score recorded on chain for robot #1: 10/10
 - [ ] Second demo robot with the LLM brain and a small bounty
 
-## Phase 7. Audits (8%): 70% (v3 done; v4 needs its two QCAI runs)
+## Phase 7. Audits (8%): 100% (v3 and v4 both audited)
 - [x] Found it: QCAI Smart Contract Auditor at dashboard.qorechain.io/audit, a main requirement of the Post-Quantum dApp bounty; 150 QOR per audit
 - [x] Self-review before paying (audits/SELF_REVIEW.md); one-file bundle audits/RedZone.flat.sol so one run covers both contracts
 - [x] Server fix for finding 1: no bounty take-back while a win can still be recorded or paid
 - [x] QCAI stage 1 and stage 2 (two runs on the deployed v3), with written answers (audits/QCAI-stage*-response.md)
 - [x] Adversarial audit of v3 (audits/ADVERSARIAL_AUDIT.md), fixed and redeployed; Blockhertz reports triaged
-- [ ] QCAI stage 1 and stage 2 on v4 (audits/RedZone.v4.flat.sol; ~150 QOR each from the main account), fix findings, publish answers
+- [x] QCAI stage 1 (85/100) and stage 2 (87/100, QUANTUM-SAFE) on v4, answers in audits/QCAI-v4-stage*-response.md; no contract change needed
 - [x] Solidity PQC checks: the site can't auto-verify them; README section "Solidity PQC checks: where to look" for jurors
 
 ## Phase 8. Hosting (4%): 0%

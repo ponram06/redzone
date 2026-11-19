@@ -87,7 +87,7 @@ flowchart LR
 | `contracts/` v4: RobotRegistryV4, EscrowVaultV3 (on PQAccess, MLDSA87, QoreXMessage) | 253 Foundry tests passing: the whole v3 suite re-run on v4, new play-pass and paid-try tests, vault invariant tests, and the older v1/v2/v3 suites |
 | `backend/` robot brains + ML-DSA-87 referee API | Working on v4: 82 tests, plus a live parity test against the deployed v4 contracts ([backend/README.md](backend/README.md)) |
 | `web/` website for players, robot makers and buyers | Working: play (training-robot practice, play pass, bounty rounds, buy extra tries), safety rankings, robot pages, add a robot, take a bounty back, help. Sign-in with QoreX; a relayer pays gas |
-| `audits/` | v3: self-review, QCAI stage 1 and stage 2 (with written answers), an adversarial audit (all findings fixed), Blockhertz reports on the vault. v4: flattened for its QCAI runs ([audits/RedZone.v4.flat.sol](audits/RedZone.v4.flat.sol)) |
+| `audits/` | v3: self-review, QCAI stage 1 and stage 2 (with written answers), an adversarial audit (all findings fixed), Blockhertz reports on the vault. v4: QCAI stage 1 (85/100) and stage 2 (87/100, QUANTUM-SAFE), with written answers; no contract change needed ([audits/QCAI-v4-stage2-response.md](audits/QCAI-v4-stage2-response.md)) |
 | Q-Day Drill (18 Nov) | Hybrid-signed proof accepted; no successful attack, nothing taken from the drill account (drill ran on v3: [docs/QDAY_DRILL.md](docs/QDAY_DRILL.md)) |
 
 ## Deployed on testnet
