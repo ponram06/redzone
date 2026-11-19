@@ -7,8 +7,9 @@ import { Home } from "./pages/Home";
 import { Owners } from "./pages/Owners";
 import { Play } from "./pages/Play";
 import { Leaderboard, RobotPage } from "./pages/Rankings";
+import { Report } from "./pages/Report";
 
-/** Tiny hash router: #/, #/play, #/play/2, #/robots, #/robots/2, #/owners, #/help */
+/** Tiny hash router: #/, #/play, #/play/2, #/robots, #/robots/2, #/owners, #/report, #/help */
 function useRoute(): string[] {
   const read = () => location.hash.replace(/^#\/?/, "").split("/").filter(Boolean);
   const [parts, setParts] = useState(read);
@@ -38,6 +39,7 @@ const NAV = [
   ["play", "Play"],
   ["robots", "Leaderboard"],
   ["owners", "For robot makers"],
+  ["report", "Project report"],
   ["help", "Help"],
 ] as const;
 
@@ -53,6 +55,7 @@ function Shell() {
   else if (page === "players") content = <Leaderboard tab="players" />;
   else if (page === "owners") content = <Owners />;
   else if (page === "help") content = <Help />;
+  else if (page === "report") content = <Report />;
   else content = <Home />;
 
   return (
