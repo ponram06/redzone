@@ -100,8 +100,9 @@ flowchart LR
 
 Transactions and the live precompile check are in [deployments/testnet.json](deployments/testnet.json).
 The deployed EscrowVaultV2 is the audited build flattened in [audits/RedZone.v3.flat.sol](audits/RedZone.v3.flat.sol).
-The Blockhertz gas fixes in `contracts/src/v3/EscrowVaultV2.sol` came after it and change gas
-use only, not behaviour; they go live with the next deployment.
+The Blockhertz gas fixes in `contracts/src/v3/EscrowVaultV2.sol` came after it. They don't change
+behaviour, but they reorder the `Bounty` struct, so the `bounties()` getter returns its fields in a
+different order. The backend reads the deployed order; they go live with the next deployment.
 Q-Day Drill notes: [docs/QDAY_DRILL.md](docs/QDAY_DRILL.md).
 
 ## Network

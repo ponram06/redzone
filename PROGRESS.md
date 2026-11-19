@@ -50,11 +50,11 @@ Overall: about **88%** (each phase's weight is in brackets; last updated 2026-11
 - [x] Website says "bounty" everywhere (was "prize")
 - [x] Chain is the source of truth: leaderboard from contract events, sign-ups and bounties from chain payments + vault events, game rules from contract constants, chain id from the deployment record; no numbers typed into the website (README "Where the data comes from")
 - [x] Backend and website moved to v3 (19 Nov): new digests and ABIs, verdicts bound to robot + player, bounties settled through the vault's earliest-breach queue, take-back = signed requestWithdraw then finalizeWithdraw after 3 h, relayer reopens its window when scoped to old contracts; 74 tests + live parity against v3
-- [ ] Demo robot #1 on v3 with the rule brain's real fingerprint, plus a 1 QOR bounty (replaces the old updateBrain step: v3 starts empty)
+- [x] Demo robot #1 "Sentinel-01" on v3 (19 Nov) with the rule brain's real fingerprint and a 1 QOR bounty paid like a maker would (admin -> relayer with memo, relayer depositBounty; `backend/scripts/demo-robot.ts`): register 0x2d05c43c…, payment 0783348A…, deposit 0x5fcac388…
 
 ## Phase 6. Integration on testnet (5%): 0%
 - [ ] End-to-end round from the website with the main QoreX account: verify, start, attack, verdict (planned after 19 Nov, after the drill)
-- [ ] Utility score recorded on chain for the demo robot(s)
+- [x] Utility score recorded on chain for robot #1: 10/10
 - [ ] Second demo robot with the LLM brain and a small bounty
 
 ## Phase 7. Audits (8%): done
@@ -80,4 +80,4 @@ Overall: about **88%** (each phase's weight is in brackets; last updated 2026-11
 - Free AI key: done (OpenRouter key in backend/.env, git-ignored)
 - Hosting accounts (backend + web)
 - Cover image and demo video (planned for 1 Dec)
-- Approve the QOR for demo robot #1 on v3 (1 QOR bounty from the drill/admin account)
+- End-to-end round: play from the website with the main QoreX account (sign-up 0.1 QOR), ideally add the second robot (AI brain, 1 QOR bounty)

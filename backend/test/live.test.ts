@@ -5,7 +5,7 @@
  */
 import { keccak256, stringToBytes, encodeFunctionData, decodeFunctionResult, parseAbi, type Hex } from "viem";
 import { describe, expect, it } from "vitest";
-import { CHAIN_ID, PQC_VERIFY, REGISTRY, REGISTRY_DEPLOY_BLOCK, REST_URL, VAULT, VAULT_DEPLOY_BLOCK, client, readRules, registryAbi, vaultAbi } from "../src/chain.js";
+import { CHAIN_ID, PQC_VERIFY, REGISTRY, REGISTRY_DEPLOY_BLOCK, REST_URL, VAULT, VAULT_DEPLOY_BLOCK, client, readBounty, readRules, registryAbi, vaultAbi } from "../src/chain.js";
 import { ChainLedger } from "../src/ledger.js";
 import { loadRefereeKey, registerRobotDigest, resultDigest, signDigest, startSessionDigest, updateBrainDigest, utilityDigest, withdrawDigest } from "../src/signer.js";
 
@@ -46,6 +46,13 @@ describe("live contracts", { timeout: 60_000 }, () => {
     };
     expect(await call(digest)).toBe(true);
     expect(await call(resultDigest(CHAIN_ID, REGISTRY, 999_999_999n, 1n, player, false, H, 1n))).toBe(false);
+  });
+
+  it("bounty 1 decodes with the deployed field order: robot 1's open 1 QOR bounty, owned by the admin", async () => {
+    const b = await readBounty(1);
+    expect(b).toMatchObject({ id: 1, robotId: 1, amountWei: 10n ** 18n, withdrawRequestedAt: 0 });
+    expect(b.owner.toLowerCase()).toBe("0x454dcd55dcb9154216fefb173c0b5b4d26ba80a2");
+    expect([1, 2, 3]).toContain(b.status); // open, or later claimed / withdrawn
   });
 
   it("game rules are read from the contracts", async () => {

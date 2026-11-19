@@ -81,7 +81,9 @@ export const registryAbi = parseAbi([
 
 export const vaultAbi = parseAbi([
   "function nextBountyId() view returns (uint256)",
-  "function bounties(uint256 bountyId) view returns (uint256 robotId, uint256 amount, uint256 breachCursor, address owner, uint64 depositedAt, uint8 status, uint64 withdrawRequestedAt, address withdrawTo)",
+  // Field order of the DEPLOYED vault (audits/RedZone.v3.flat.sol). The gas-optimised source moves
+  // `status` before the withdrawal fields; switch this line if that version is ever deployed.
+  "function bounties(uint256 bountyId) view returns (uint256 robotId, uint256 amount, uint256 breachCursor, address owner, uint64 depositedAt, uint64 withdrawRequestedAt, address withdrawTo, uint8 status)",
   "function nextBreach(uint256 bountyId) view returns (uint8 state, uint256 sessionId)",
   "function claimBounty(uint256 bountyId)",
   "function skipBreach(uint256 bountyId)",
@@ -175,7 +177,7 @@ export type BountyView = {
 };
 
 export async function readBounty(id: number): Promise<BountyView> {
-  const [robotId, amount, , owner, depositedAt, status, withdrawRequestedAt, withdrawTo] = await client.readContract({
+  const [robotId, amount, , owner, depositedAt, withdrawRequestedAt, withdrawTo, status] = await client.readContract({
     address: VAULT,
     abi: vaultAbi,
     functionName: "bounties",
