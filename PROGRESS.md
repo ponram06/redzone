@@ -86,6 +86,8 @@ Overall: about **88%** (each phase's weight is in brackets; last updated 2026-11
 ## Checkpoint 19 Nov (resume here)
 - Done today: EscrowVaultV4 docs + QCAI bundle audits/RedZone.v5.flat.sol (de8bb18); realistic 3D arena (ce13624); Sentinel-01 pool 1 QOR / 0.5 per win; AI robots #2-#4 funded
 - [x] New Play flow (19 Nov): Start → sign in → choose opponent (hover record: job, recent attacks, skills, AI brain, bounty) → full-screen arena with docked message box and a "What happened" card; `/robots/:id/record`, signed robot job (`/owner/profile`), `scripts/set-job.ts`
+- [x] Power plant arena v2 (160x100, reactor, chemical store, substation, crane; workshop, canteen) with substation, gantry crane, truck, workers in 3D; compact game panels; home page with a live 3D arena hero, robot picker, header Play-now button (19 Nov)
+- Skills scores on chain were measured on the old arena; rerun `POST /utility/<id>` later if wanted (each run needs the next utilityNonce)
 - Next: owner tries a real bounty round in the new arena; owner runs QCAI stage 1 + 2 on RedZone.v5.flat.sol
 - Servers (local): backend `cd backend && npx tsx --env-file-if-exists=.env src/server.ts` on :8787, web `cd web && npx vite --port 5173`
 

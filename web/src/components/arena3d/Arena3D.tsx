@@ -315,7 +315,7 @@ const Facility = memo(function Facility({ arena, hotZone, labels, low }: { arena
       ))}
 
       {zoneGeo.map(({ z, g }) => (
-        <Zone key={z.id} id={z.id} name={z.name} poly={z.polygon} geo={g} hatch={tex.hatch} tape={tex.tape} hot={hotZone === z.id} />
+        <Zone key={z.id} id={z.id} name={z.name} poly={z.polygon} geo={g} hatch={tex.hatch} tape={tex.tape} hot={hotZone === z.id} label={labels || hotZone === z.id} />
       ))}
 
       {arena.places.map((p) => (
@@ -428,6 +428,7 @@ function Zone({
   hatch,
   tape,
   hot,
+  label = true,
 }: {
   id: string;
   name: string;
@@ -436,6 +437,7 @@ function Zone({
   hatch: THREE.Texture;
   tape: THREE.Texture;
   hot: boolean;
+  label?: boolean;
 }) {
   const barrier = useMemo(() => edgeWall(poly, 5), [poly]);
   const tapeGeo = useMemo(() => edgeTape(poly, 1), [poly]);
@@ -470,9 +472,11 @@ function Zone({
       {id === "chemstore" && <ChemTanks at={c} />}
       {id === "substation" && <Substation poly={poly} hot={hot} />}
       {id === "crane" && <Crane poly={poly} hot={hot} />}
-      <Html position={[c.x - OX, 9, c.y - OZ]} center distanceFactor={95} zIndexRange={[10, 0]}>
-        <div className={`a3-tag danger ${hot ? "hot" : ""}`}>⚠ {name}</div>
-      </Html>
+      {label && (
+        <Html position={[c.x - OX, 9, c.y - OZ]} center distanceFactor={95} zIndexRange={[10, 0]}>
+          <div className={`a3-tag danger ${hot ? "hot" : ""}`}>⚠ {name}</div>
+        </Html>
+      )}
     </group>
   );
 }
@@ -1068,7 +1072,7 @@ function AlarmLight({ at }: { at: THREE.Vector3 }) {
 type Run = { p: Point; heading: number; done: boolean; driven: Point[] };
 type Target = { p: Point; heading: number; done: boolean };
 
-function ActiveRobot({ path, trace, runKey, color, say, onMove }: { path: Point[]; trace: Trace | null; runKey: number; color: string; say?: string; onMove: (r: Run) => void }) {
+function ActiveRobot({ path, trace, runKey, color, say, quiet, onMove }: { path: Point[]; trace: Trace | null; runKey: number; color: string; say?: string; quiet?: boolean; onMove: (r: Run) => void }) {
   const g = useRef<THREE.Group>(null);
   const total = useMemo(() => pathLength(path), [path]);
   const start = useRef(0);
@@ -1116,12 +1120,12 @@ function ActiveRobot({ path, trace, runKey, color, say, onMove }: { path: Point[
         <ringGeometry args={[3.4, 3.9, 48]} />
         <meshBasicMaterial color={state === "breached" ? [4, 0.3, 0.3] : state === "defended" ? [0.4, 3, 1.2] : [2.6, 2, 0.3]} transparent opacity={0.8} toneMapped={false} />
       </mesh>
-      {say && state !== "idle" && (
+      {!quiet && say && state !== "idle" && (
         <Html position={[0, state === "moving" ? 12 : 17, 0]} center zIndexRange={[100, 50]}>
           <div className="a3-say">“{say.length > 90 ? `${say.slice(0, 88)}…` : say}”</div>
         </Html>
       )}
-      {state !== "moving" && state !== "idle" && (
+      {!quiet && state !== "moving" && state !== "idle" && (
         <Html position={[0, 11, 0]} center zIndexRange={[100, 50]}>
           <div className={`a3-verdict ${state}`}>{state === "breached" ? "BREACHED" : "DEFENDED"}</div>
         </Html>
@@ -1530,6 +1534,23 @@ const WORKERS: Record<string, { x: number; z: number; turn: number; vest: string
 
 // -------------------------------------------------------------------- camera
 
+/** Moves the rendered picture right by a fraction of the width (the camera itself stays put). */
+function ShiftView({ fraction }: { fraction: number }) {
+  const { camera, size } = useThree();
+  useEffect(() => {
+    const cam = camera as THREE.PerspectiveCamera;
+    // only on wide screens; on phones the copy sits under the arena instead
+    if (size.width < 760) cam.clearViewOffset();
+    else cam.setViewOffset(size.width, size.height, -size.width * fraction, 0, size.width, size.height);
+    cam.updateProjectionMatrix();
+    return () => {
+      cam.clearViewOffset();
+      cam.updateProjectionMatrix();
+    };
+  }, [camera, size.width, size.height, fraction]);
+  return null;
+}
+
 export type CamMode = "overview" | "follow" | "top";
 
 /** Aim a little in front of the middle, so the arena sits higher on screen, clear of the message dock. */
@@ -1620,6 +1641,7 @@ export default function Arena3D({
   robotId,
   others = [],
   say,
+  showcase = false,
 }: {
   arena: Arena;
   trace: Trace | null;
@@ -1627,6 +1649,8 @@ export default function Arena3D({
   robotId?: number;
   others?: Robot[];
   say?: string;
+  /** Home page: slow auto-rotating overview, no buttons, no verdicts. */
+  showcase?: boolean;
 }) {
   setDims(arena);
   const path = useMemo(() => trace?.path ?? [arena.start], [trace, arena.start]);
@@ -1643,13 +1667,13 @@ export default function Arena3D({
   }, [trace, run.done, arena]);
 
   useEffect(() => {
-    if (trace) setMode((m) => (m === "top" ? m : "follow"));
-  }, [runKey, trace]);
+    if (trace && !showcase) setMode((m) => (m === "top" ? m : "follow"));
+  }, [runKey, trace, showcase]);
 
   const breachAt = trace?.breached && run.done && trace.contact ? to3(trace.contact, 0.5) : null;
   // On a defended round: how close the robot came to a red zone, drawn as a measured gap.
   const story = useMemo(() => (trace ? describeRound(arena, trace) : null), [arena, trace]);
-  const gap = trace && run.done && story && !story.breached && !story.stayed && story.zone && story.zone.distance < 45 ? story.zone : null;
+  const gap = !showcase && trace && run.done && story && !story.breached && !story.stayed && story.zone && story.zone.distance < 45 ? story.zone : null;
   const breachKey = breachAt ? `${runKey}` : "";
   useEffect(() => {
     if (breachKey) shakeAt.current = performance.now();
@@ -1661,7 +1685,7 @@ export default function Arena3D({
   };
 
   return (
-    <div className={`arena3d ${breachAt ? "alarm" : ""}`}>
+    <div className={`arena3d ${breachAt ? "alarm" : ""} ${showcase ? "showcase" : ""}`}>
       <Canvas shadows={!low} dpr={low ? 1 : [1, 1.75]} camera={{ position: [0, 26, 70], fov: 45, near: 0.5, far: 700 }} gl={{ antialias: false, powerPreference: "high-performance" }}>
         <color attach="background" args={["#050609"]} />
         <fog attach="fog" args={["#050609", 120 * (OX / 50), 320 * (OX / 50)]} />
@@ -1688,13 +1712,13 @@ export default function Arena3D({
           <Lightformer intensity={1.5} position={[0, 10, 40]} scale={[60, 8, 1]} color="#ffffff" />
         </Environment>
 
-        <Facility arena={arena} hotZone={hotZone} labels={mode !== "follow"} low={low} />
-        <ParkedRobots robots={parked} labels={mode !== "follow"} />
+        <Facility arena={arena} hotZone={hotZone} labels={!showcase && mode !== "follow"} low={low} />
+        <ParkedRobots robots={parked} labels={!showcase && mode !== "follow"} />
         {!low && <Sparkles count={Math.round(160 * (OX / 50))} scale={[OX * 2, 18, OZ * 2]} position-y={9} size={2.2} speed={0.25} opacity={0.35} color="#b8c8ff" />}
 
         {trace && <Line points={path.map((p) => to3(p, 0.15))} color="#5b6375" lineWidth={1.2} dashed dashSize={1} gapSize={1} />}
         {run.driven.length > 1 && <Line points={run.driven.map((p) => to3(p, 0.2))} color={breachAt ? new THREE.Color(4, 0.4, 0.4) : new THREE.Color(3, 2.2, 0.4)} lineWidth={4} toneMapped={false} />}
-        <ActiveRobot path={path} trace={trace} runKey={runKey} color={robotColor(robotId ?? 1)} say={say} onMove={onMove} />
+        <ActiveRobot path={path} trace={trace} runKey={runKey} color={robotColor(robotId ?? 1)} say={say} quiet={showcase} onMove={onMove} />
         {gap && (
           <group key={`gap-${runKey}`}>
             <Line points={[to3(gap.from, 0.35), to3(gap.to, 0.35)]} color={new THREE.Color(3, 0.5, 0.5)} lineWidth={2.5} dashed dashSize={0.8} gapSize={0.6} toneMapped={false} />
@@ -1718,8 +1742,19 @@ export default function Arena3D({
         )}
 
         <CameraRig mode={mode} target={target} shakeAt={shakeAt} onIntroDone={() => setIntroDone(true)} />
+        {showcase && <ShiftView fraction={0.2} />}
         {mode === "overview" && introDone && (
-          <OrbitControls target={OVERVIEW_LOOK} maxPolarAngle={Math.PI / 2.2} minDistance={25} maxDistance={220} enablePan={false} enableDamping />
+          <OrbitControls
+            target={OVERVIEW_LOOK}
+            maxPolarAngle={Math.PI / 2.2}
+            minDistance={25}
+            maxDistance={260}
+            enablePan={false}
+            enableZoom={!showcase}
+            autoRotate={showcase}
+            autoRotateSpeed={0.35}
+            enableDamping
+          />
         )}
 
         {!low && (
@@ -1733,6 +1768,7 @@ export default function Arena3D({
           </EffectComposer>
         )}
       </Canvas>
+      {!showcase && (
       <div className="a3-cams" role="group" aria-label="Camera">
         {(["overview", "follow", "top"] as const).map((m) => (
           <button key={m} className={mode === m ? "on" : ""} onClick={() => setMode(m)}>
@@ -1740,7 +1776,8 @@ export default function Arena3D({
           </button>
         ))}
       </div>
-      {mode === "overview" && introDone && <p className="a3-hint">Drag to rotate · scroll to zoom</p>}
+      )}
+      {!showcase && mode === "overview" && introDone && <p className="a3-hint">Drag to rotate · scroll to zoom</p>}
     </div>
   );
 }

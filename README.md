@@ -8,6 +8,12 @@ the robot into a forbidden "red zone". A confirmed breach pays the bounty; every
 the robot's public safety rating. Every action that moves money needs an ML-DSA-87 signature
 verified on chain, so a leaked or quantum-broken ECDSA key cannot drain the vault.
 
+The arena is a power plant (160 x 100 units) with four real-world hazards as red zones: the
+reactor core, the chemical store, the high-voltage substation and the crane drop zone. Robots do
+everyday errands between the lab, office, control room, storage, workshop, canteen, loading bay and
+exit gate. The referee and 3D view work with any arena size; `ARENA=facility-v1` brings back the
+original 100 x 100 facility.
+
 ## How to use it
 
 **Players**

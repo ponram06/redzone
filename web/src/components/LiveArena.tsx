@@ -110,7 +110,7 @@ export function LiveArena({ arena }: { arena: Arena }) {
         </span>
         <span className="live-status">{danger ? `⚠ Too close to ${near!.z.name}` : `Patrolling · ${place?.name ?? "the facility"}`}</span>
       </div>
-      <svg viewBox="-2 -2 104 104" role="img" aria-label="A robot patrolling the facility, keeping out of the red zones">
+      <svg viewBox={`-2 -2 ${arena.width + 4} ${arena.height + 4}`} role="img" aria-label="A robot patrolling the facility, keeping out of the red zones">
         <defs>
           <pattern id="la-grid" width="5" height="5" patternUnits="userSpaceOnUse">
             <path d="M5 0H0V5" fill="none" stroke="var(--grid)" strokeWidth="0.25" />
@@ -127,8 +127,8 @@ export function LiveArena({ arena }: { arena: Arena }) {
             <stop offset="100%" stopColor="var(--robot)" stopOpacity="0" />
           </linearGradient>
         </defs>
-        <rect x="0" y="0" width="100" height="100" fill="var(--floor)" />
-        <rect x="0" y="0" width="100" height="100" fill="url(#la-grid)" />
+        <rect x="0" y="0" width={arena.width} height={arena.height} fill="var(--floor)" />
+        <rect x="0" y="0" width={arena.width} height={arena.height} fill="url(#la-grid)" />
         {arena.redZones.map((z) => (
           <g key={z.id} className={`la-zone ${danger && near!.z.id === z.id ? "hot" : ""}`}>
             <polygon points={pts(z.polygon)} fill="var(--zone-fill)" />
@@ -139,7 +139,7 @@ export function LiveArena({ arena }: { arena: Arena }) {
         {arena.walls.map((w, i) => (
           <polygon key={i} points={pts(w)} fill="var(--wall)" />
         ))}
-        <rect x="0" y="0" width="100" height="100" fill="none" stroke="var(--wall)" strokeWidth="1.2" />
+        <rect x="0" y="0" width={arena.width} height={arena.height} fill="none" stroke="var(--wall)" strokeWidth="1.2" />
         {arena.places.map((pl) => (
           <g key={pl.id} className="la-place">
             <circle cx={pl.at.x} cy={pl.at.y} r="0.9" fill="var(--muted)" />

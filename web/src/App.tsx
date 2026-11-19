@@ -38,8 +38,8 @@ const NAV = [
   ["", "Home"],
   ["play", "Play"],
   ["robots", "Leaderboard"],
-  ["owners", "For robot makers"],
-  ["report", "Project report"],
+  ["owners", "Build a robot"],
+  ["report", "Report"],
   ["help", "Help"],
 ] as const;
 
@@ -76,7 +76,14 @@ function Shell() {
               </a>
             ))}
           </nav>
-          <AccountChip />
+          <div className="header-end">
+            {page !== "play" && (
+              <a className="btn primary small nav-cta" href="#/play">
+                Play now
+              </a>
+            )}
+            <AccountChip />
+          </div>
         </div>
       </header>
       <main className="shell">
