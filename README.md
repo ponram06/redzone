@@ -133,6 +133,31 @@ account's ML-DSA-87 key opens with a hybrid-signed native message (`npm run wind
 `msg.sender` is never used for authorisation. Signed digests include the contract kind, chain id,
 contract address, a per-signer nonce and a deadline, so signatures cannot be replayed elsewhere.
 
+## Solidity PQC checks: where to look
+
+The fest site can't verify "Solidity PQC signature check" and "Solidity PQC key status"
+automatically, so here is the evidence in one place.
+
+| | Signature check (`pqcVerify`, `0x0A01`) | Key status (`pqcKeyStatus`, `0x0A02`) |
+|---|---|---|
+| Precompile call | [PQGuard.sol:24-29](contracts/src/PQGuard.sol#L24-L29) (`staticcall` to `0x…0a01`) | [PQGuard.sol:31-41](contracts/src/PQGuard.sol#L31-L41) (`staticcall` to `0x…0a02`) |
+| ML-DSA-87 wrapper (length checks, fail closed) | [MLDSA87.sol `verify`](contracts/src/v3/MLDSA87.sol#L61-L64) | [MLDSA87.sol `accountKey` / `requireKey`](contracts/src/v3/MLDSA87.sol#L43-L57) |
+| Used for | user requests ([PQAccess.sol:252-257](contracts/src/v3/PQAccess.sol#L252-L257)), admin actions ([PQAccess.sol:104-110](contracts/src/v3/PQAccess.sol#L104-L110)), referee verdicts ([RobotRegistryV3.sol:150-154](contracts/src/v3/RobotRegistryV3.sol#L150-L154)), deploy proofs | looking up each signer's registered key; new admin must hold an ML-DSA-87 key ([PQAccess.sol:173](contracts/src/v3/PQAccess.sol#L173)) |
+| Tests | [RedZoneV3.t.sol](contracts/test/v3/RedZoneV3.t.sol): forged, replayed and wrong-length signatures, `test_NoEcdsaShortcuts`, `test_Attack_PrecompileMissingFailsClosed` | `test_Stage2_NonMLDSA87KeyRefused`, `test_Stage2_RefereeKeyMustBeMLDSA87`, `test_Stage2_PrecompileAvailability` |
+
+Proven on testnet, not only in tests:
+
+- Both deployed contracts call the precompiles: their runtime code holds `PUSH2 0x0a01` and
+  `PUSH2 0x0a02` (check with `cast code 0x69564de848d807ea895e1987b53749e1648cadbf --rpc-url https://evm-testnet.qore.host | grep -o 610a0[12]`).
+- The constructors verify ML-DSA-87 deploy proofs with the live `pqcVerify`, so the deployments
+  themselves (RobotRegistryV3 `0xb0677bac…f694f`, EscrowVaultV2 `0xcd95d102…7ca39d`) could only
+  succeed with working post-quantum checks.
+- Live calls on 19 Nov: robot #1 registered with the owner's ML-DSA signature (`0x2d05c43c…3a7c`:
+  `pqcKeyStatus` + `pqcVerify`); a player's round recorded with the referee's ML-DSA verdict
+  (`0x1d33af4d…8c4d`) and its bounty paid (`0xeccb101f…4570`).
+- `cd backend && npm run test:live` signs with the referee key and has the chain's `pqcVerify`
+  accept the signature and reject a changed digest.
+
 ## Where the data comes from
 
 Nothing on the website is typed in or simulated. The chain is the source of truth. The server's
