@@ -2429,3 +2429,153 @@ body {
     opacity: 0;
   }
 }
+
+/* ---------- play: big arena stage + round story ---------- */
+
+/* The arena breaks out of the page column so it fills a laptop screen. */
+.play-stage {
+  width: min(1480px, calc(100vw - 32px));
+  margin-inline: calc(50% - min(740px, 50vw - 16px));
+}
+
+.play-stage .arena3d,
+.play-stage svg.arena {
+  aspect-ratio: 16 / 9;
+  height: auto;
+  max-height: calc(100vh - 96px);
+  min-height: 320px;
+}
+
+.play-stage svg.arena {
+  background: #07080c;
+  border: 1px solid var(--border);
+}
+
+@media (max-width: 760px) {
+  .play-stage .arena3d,
+  .play-stage svg.arena {
+    aspect-ratio: 4 / 5;
+  }
+}
+
+.arena-stage:fullscreen {
+  background: #050609;
+  display: grid;
+  place-items: stretch;
+}
+
+.arena-stage:fullscreen .arena3d,
+.arena-stage:fullscreen svg.arena {
+  aspect-ratio: auto;
+  width: 100vw;
+  height: 100vh;
+  max-height: none;
+  border-radius: 0 !important;
+  border: none;
+}
+
+.panel-title {
+  font-size: 16px;
+  margin: 0 0 14px;
+}
+
+.story h3 {
+  margin: 0;
+  font-size: 20px;
+}
+
+.story-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+.badge.ok {
+  background: var(--ok-soft);
+  color: var(--ok);
+}
+
+.badge.danger {
+  background: color-mix(in srgb, var(--danger) 18%, transparent);
+  color: var(--danger);
+}
+
+.story-steps {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 10px 16px;
+  margin: 0 0 12px;
+}
+
+.story-steps dt {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding-top: 3px;
+}
+
+.story-steps dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.story.win .story-steps strong {
+  color: var(--danger);
+}
+
+.story.lose .story-steps strong {
+  color: var(--ok);
+}
+
+@media (max-width: 520px) {
+  .story-steps {
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
+  .story-steps dd {
+    margin-bottom: 8px;
+  }
+}
+
+.story .how {
+  margin: 8px 0 12px;
+  padding-left: 20px;
+  display: grid;
+  gap: 8px;
+}
+
+.a3-say {
+  max-width: 260px;
+  width: max-content;
+  font-size: 13px;
+  line-height: 1.35;
+  color: #0a0b0f;
+  background: #f4f6fb;
+  border-radius: 10px;
+  padding: 6px 10px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+  pointer-events: none;
+  position: relative;
+  animation: pop 0.3s ease-out;
+}
+
+.a3-say::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -6px;
+  margin-left: -6px;
+  border: 6px solid transparent;
+  border-bottom: 0;
+  border-top-color: #f4f6fb;
+}
+
+.a3-tag.gap {
+  color: #ffb4b4;
+  border-color: rgba(255, 90, 90, 0.6);
+  background: rgba(30, 6, 8, 0.85);
+}

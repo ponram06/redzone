@@ -1,9 +1,9 @@
 import { useState } from "react";
-import type { Trace } from "../api";
 import { ArenaView } from "../components/ArenaView";
 import { PlayPanel } from "../components/PlayPanel";
 import { PracticePanel } from "../components/PracticePanel";
 import { RobotCard } from "../components/RobotCard";
+import { RoundStory, type RoundInfo } from "../components/RoundStory";
 import { AccountGate } from "../components/AccountGate";
 import { isListed, useData } from "../data";
 import { TRAINING_BRAIN } from "../api";
@@ -27,12 +27,13 @@ function PlayArena({ robotId }: { robotId?: number }) {
   const robots = all.filter(isListed).sort((a, b) => Number(b.bounty.totalWei !== "0") - Number(a.bounty.totalWei !== "0"));
   const [chosen, setChosen] = useState<number | undefined>(robotId);
   const [mode, setMode] = useState<"practice" | "real">("practice");
-  const [trace, setTrace] = useState<Trace | null>(null);
+  const [round, setRound] = useState<RoundInfo | null>(null);
   const [runKey, setRunKey] = useState(0);
+  const trace = round?.trace ?? null;
 
   const robot = robots.find((r) => r.id === chosen) ?? robots[0];
-  const show = (t: Trace) => {
-    setTrace(t);
+  const show = (r: Omit<RoundInfo, "robotName" | "practice">, practice: boolean) => {
+    setRound({ ...r, practice, robotName: practice ? "The training robot" : (robot?.name ?? "The robot") });
     setRunKey((k) => k + 1);
   };
 
@@ -60,7 +61,7 @@ function PlayArena({ robotId }: { robotId?: number }) {
             active={r.id === robot?.id}
             onClick={() => {
               setChosen(r.id);
-              setTrace(null);
+              setRound(null);
               history.replaceState(null, "", `#/play/${r.id}`);
             }}
           />
@@ -69,14 +70,16 @@ function PlayArena({ robotId }: { robotId?: number }) {
 
       {robot && arena && health && (
         <>
-          <h2 className="small-head">2. Talk to {robot.name}</h2>
+          <h2 className="small-head">2. Watch the arena</h2>
+          <div className="play-stage">
+            <ArenaView arena={arena} trace={trace} runKey={runKey} robotId={mode === "practice" ? undefined : robot.id} others={all} say={round?.said} />
+            <p className="note map-key">
+              <span className="key red" /> Red zone: off-limits <span className="key robot" /> Robot <span className="key path" /> Robot's route
+            </p>
+          </div>
+
+          <h2 className="small-head">3. Talk to {mode === "practice" ? "the training robot" : robot.name}</h2>
           <div className="play-grid">
-            <div className="panel">
-              <ArenaView arena={arena} trace={trace} runKey={runKey} robotId={robot.id} others={all} />
-              <p className="note map-key">
-                <span className="key red" /> Red zone: off-limits <span className="key robot" /> Robot <span className="key path" /> Robot's route
-              </p>
-            </div>
             <div className="panel">
               <div className="segmented" role="tablist" aria-label="Game mode">
                 <button role="tab" aria-selected={mode === "practice"} className={mode === "practice" ? "on" : ""} onClick={() => setMode("practice")}>
@@ -89,20 +92,31 @@ function PlayArena({ robotId }: { robotId?: number }) {
               {mode === "practice" ? (
                 <>
                   <p className="note">
-                    Practice is with a training robot that has no safety rules, so you can learn the map and how the robot moves. {robot.name}{" "}
-                    has its own defences: you only meet them in a bounty round.
+                    Practice uses a training robot with no safety rules, so you can learn the map. {robot.name} has its own defences: you only
+                    meet them in a bounty round.
                   </p>
                   <PracticePanel
                     key="training"
                     brainHash={TRAINING_BRAIN}
                     name="the training robot"
                     maxInstruction={arena.maxInstruction}
-                    onResult={(r) => show(r.trace)}
+                    onResult={(r, asked) => show({ trace: r.trace, said: r.say, asked }, true)}
                   />
                 </>
               ) : (
-                <PlayPanel key={robot.id} health={health} robot={robot} maxInstruction={arena.maxInstruction} onResult={show} onFinished={reloadRobots} />
+                <PlayPanel
+                  key={robot.id}
+                  health={health}
+                  robot={robot}
+                  maxInstruction={arena.maxInstruction}
+                  onResult={(v, asked) => show({ trace: v.trace, said: v.say, asked }, false)}
+                  onFinished={reloadRobots}
+                />
               )}
+            </div>
+            <div className="panel">
+              <h2 className="panel-title">What happened</h2>
+              <RoundStory arena={arena} round={round} />
             </div>
           </div>
         </>

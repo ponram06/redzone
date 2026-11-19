@@ -29,8 +29,20 @@ class Fallback extends Component<{ fallback: ReactNode; children: ReactNode }, {
  * The arena: a 3D facility by default (where WebGL works), or the 2D map. Both draw the same
  * arena and the referee's replayed route.
  */
-export function ArenaView(props: Props & { robotId?: number; others?: Robot[] }) {
+export function ArenaView(props: Props & { robotId?: number; others?: Robot[]; say?: string }) {
   const webgl = useMemo(hasWebGL, []);
+  const stage = useRef<HTMLDivElement>(null);
+  const [full, setFull] = useState(false);
+  useEffect(() => {
+    const on = () => setFull(document.fullscreenElement === stage.current);
+    document.addEventListener("fullscreenchange", on);
+    return () => document.removeEventListener("fullscreenchange", on);
+  }, []);
+  const toggleFull = () => {
+    if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+    else stage.current?.requestFullscreen?.().catch(() => {});
+  };
+  const canFull = typeof document !== "undefined" && !!document.fullscreenEnabled;
   const [view, setView] = useState<"3d" | "2d">(() => {
     try {
       return (localStorage.getItem(VIEW_KEY) as "3d" | "2d" | null) ?? "3d";
@@ -49,21 +61,28 @@ export function ArenaView(props: Props & { robotId?: number; others?: Robot[] })
   const flat = <ArenaView2D arena={props.arena} trace={props.trace} runKey={props.runKey} />;
   const show3d = webgl && view === "3d";
   return (
-    <div className="arena-stage">
-      {webgl && (
-        <div className="arena-switch" role="group" aria-label="Arena view">
-          <button className={show3d ? "on" : ""} onClick={() => pick("3d")}>
-            3D
+    <div className="arena-stage" ref={stage}>
+      <div className="arena-switch" role="group" aria-label="Arena view">
+        {webgl && (
+          <>
+            <button className={show3d ? "on" : ""} onClick={() => pick("3d")}>
+              3D
+            </button>
+            <button className={!show3d ? "on" : ""} onClick={() => pick("2d")}>
+              2D map
+            </button>
+          </>
+        )}
+        {canFull && (
+          <button onClick={toggleFull} aria-label={full ? "Exit full screen" : "Full screen"} title={full ? "Exit full screen (Esc)" : "Full screen"}>
+            {full ? "✕ Exit" : "⛶ Full screen"}
           </button>
-          <button className={!show3d ? "on" : ""} onClick={() => pick("2d")}>
-            2D map
-          </button>
-        </div>
-      )}
+        )}
+      </div>
       {show3d ? (
         <Fallback fallback={flat}>
           <Suspense fallback={<div className="arena3d loading">Loading the 3D arena…</div>}>
-            <Arena3D arena={props.arena} trace={props.trace} runKey={props.runKey} robotId={props.robotId} others={props.others} />
+            <Arena3D arena={props.arena} trace={props.trace} runKey={props.runKey} robotId={props.robotId} others={props.others} say={props.say} />
           </Suspense>
         </Fallback>
       ) : (

@@ -12,7 +12,7 @@ type Props = {
   brainHash: string;
   name: string;
   maxInstruction: number;
-  onResult: (r: PracticeResult) => void;
+  onResult: (r: PracticeResult, asked: string) => void;
   showExamples?: boolean;
 };
 
@@ -21,7 +21,6 @@ export function PracticePanel({ brainHash, name, maxInstruction, onResult, showE
   const [instruction, setInstruction] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<PracticeResult | null>(null);
 
   async function send() {
     if (!instruction.trim()) return;
@@ -29,8 +28,7 @@ export function PracticePanel({ brainHash, name, maxInstruction, onResult, showE
     setError(null);
     try {
       const r = await api.practice(brainHash, instruction);
-      setResult(r);
-      onResult(r);
+      onResult(r, instruction.trim());
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -65,13 +63,6 @@ export function PracticePanel({ brainHash, name, maxInstruction, onResult, showE
         {busy ? "Robot is thinking…" : "Send to robot"}
       </button>
       {error && <p className="error-text">{error}</p>}
-      {result && (
-        <div className={`result ${result.breached ? "win" : "lose"}`} aria-live="polite">
-          <strong>{result.breached ? "That would have worked!" : "The robot stayed safe"}</strong>
-          <p className="quote">Robot said: “{result.say || "…"}”</p>
-          <p className="note">Practice only: nothing was paid or saved.</p>
-        </div>
-      )}
     </div>
   );
 }

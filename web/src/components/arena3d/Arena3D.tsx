@@ -5,6 +5,7 @@ import { ToneMappingMode } from "postprocessing";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import type { Arena, Point, Robot, Trace } from "../../api";
+import { describeRound, metres } from "../../outcome";
 
 /**
  * RedZone's facility in 3D. Same data as the 2D map: the arena layout from the referee and the
@@ -1042,7 +1043,7 @@ function AlarmLight({ at }: { at: THREE.Vector3 }) {
 type Run = { p: Point; heading: number; done: boolean; driven: Point[] };
 type Target = { p: Point; heading: number; done: boolean };
 
-function ActiveRobot({ path, trace, runKey, color, onMove }: { path: Point[]; trace: Trace | null; runKey: number; color: string; onMove: (r: Run) => void }) {
+function ActiveRobot({ path, trace, runKey, color, say, onMove }: { path: Point[]; trace: Trace | null; runKey: number; color: string; say?: string; onMove: (r: Run) => void }) {
   const g = useRef<THREE.Group>(null);
   const total = useMemo(() => pathLength(path), [path]);
   const start = useRef(0);
@@ -1090,6 +1091,11 @@ function ActiveRobot({ path, trace, runKey, color, onMove }: { path: Point[]; tr
         <ringGeometry args={[3.4, 3.9, 48]} />
         <meshBasicMaterial color={state === "breached" ? [4, 0.3, 0.3] : state === "defended" ? [0.4, 3, 1.2] : [2.6, 2, 0.3]} transparent opacity={0.8} toneMapped={false} />
       </mesh>
+      {say && state !== "idle" && (
+        <Html position={[0, state === "moving" ? 12 : 17, 0]} center zIndexRange={[100, 50]}>
+          <div className="a3-say">“{say.length > 90 ? `${say.slice(0, 88)}…` : say}”</div>
+        </Html>
+      )}
       {state !== "moving" && state !== "idle" && (
         <Html position={[0, 11, 0]} center zIndexRange={[100, 50]}>
           <div className={`a3-verdict ${state}`}>{state === "breached" ? "BREACHED" : "DEFENDED"}</div>
@@ -1139,7 +1145,8 @@ export const robotColor = (id: number) => COLORS[(id - 1) % COLORS.length]!;
 export type CamMode = "overview" | "follow" | "top";
 
 function overviewPos(aspect: number): THREE.Vector3 {
-  const k = aspect < 1 ? 1 / aspect : 1;
+  // tall screens step back to fit the width; wide screens come a little closer
+  const k = aspect < 1 ? 1 / aspect : aspect > 1.5 ? 0.86 : 1;
   return new THREE.Vector3(0, 84 * k, 96 * k);
 }
 
@@ -1216,12 +1223,14 @@ export default function Arena3D({
   runKey,
   robotId,
   others = [],
+  say,
 }: {
   arena: Arena;
   trace: Trace | null;
   runKey: number;
   robotId?: number;
   others?: Robot[];
+  say?: string;
 }) {
   const path = useMemo(() => trace?.path ?? [arena.start], [trace, arena.start]);
   const [mode, setMode] = useState<CamMode>("overview");
@@ -1241,6 +1250,9 @@ export default function Arena3D({
   }, [runKey, trace]);
 
   const breachAt = trace?.breached && run.done && trace.contact ? to3(trace.contact, 0.5) : null;
+  // On a defended round: how close the robot came to a red zone, drawn as a measured gap.
+  const story = useMemo(() => (trace ? describeRound(arena, trace) : null), [arena, trace]);
+  const gap = trace && run.done && story && !story.breached && !story.stayed && story.zone && story.zone.distance < 45 ? story.zone : null;
   const breachKey = breachAt ? `${runKey}` : "";
   useEffect(() => {
     if (breachKey) shakeAt.current = performance.now();
@@ -1284,7 +1296,21 @@ export default function Arena3D({
 
         {trace && <Line points={path.map((p) => to3(p, 0.15))} color="#5b6375" lineWidth={1.2} dashed dashSize={1} gapSize={1} />}
         {run.driven.length > 1 && <Line points={run.driven.map((p) => to3(p, 0.2))} color={breachAt ? new THREE.Color(4, 0.4, 0.4) : new THREE.Color(3, 2.2, 0.4)} lineWidth={4} toneMapped={false} />}
-        <ActiveRobot path={path} trace={trace} runKey={runKey} color={robotColor(robotId ?? 1)} onMove={onMove} />
+        <ActiveRobot path={path} trace={trace} runKey={runKey} color={robotColor(robotId ?? 1)} say={say} onMove={onMove} />
+        {gap && (
+          <group key={`gap-${runKey}`}>
+            <Line points={[to3(gap.from, 0.35), to3(gap.to, 0.35)]} color={new THREE.Color(3, 0.5, 0.5)} lineWidth={2.5} dashed dashSize={0.8} gapSize={0.6} toneMapped={false} />
+            <mesh position={to3(gap.to, 0.3)} rotation-x={-Math.PI / 2}>
+              <ringGeometry args={[0.7, 1.1, 24]} />
+              <meshBasicMaterial color={[4, 0.5, 0.5]} toneMapped={false} />
+            </mesh>
+            <Html position={to3({ x: (gap.from.x + gap.to.x) / 2, y: (gap.from.y + gap.to.y) / 2 }, 3)} center zIndexRange={[60, 40]}>
+              <div className="a3-tag gap">
+                closest: {metres(gap.distance)} from {gap.name}
+              </div>
+            </Html>
+          </group>
+        )}
         {breachAt && (
           <group key={runKey}>
             <Sparks at={breachAt} />

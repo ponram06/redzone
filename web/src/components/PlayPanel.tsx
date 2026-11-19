@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useAccount } from "../account";
-import { API_URL, api, attemptMessage, formatQor, newRoundKey, nextPrizeWei, type Health, type Robot, type Trace, type Verdict } from "../api";
+import { API_URL, api, attemptMessage, formatQor, newRoundKey, nextPrizeWei, type Health, type Robot, type Verdict } from "../api";
 import { plural, shortHash } from "../format";
 import { explainQorexError, payNative, signPq } from "../qorex";
 import { AccountGate } from "./AccountGate";
@@ -9,7 +9,7 @@ type Props = {
   health: Health;
   robot: Robot;
   maxInstruction: number;
-  onResult: (trace: Trace) => void;
+  onResult: (v: Verdict, asked: string) => void;
   onFinished: () => void;
 };
 
@@ -153,7 +153,7 @@ function RealRound({ health, robot, maxInstruction, onResult, onFinished }: Prop
       setBusy("The robot is thinking…");
       const v = await api.attempt(round.id, instruction, auth);
       setVerdict(v);
-      onResult(v.trace);
+      onResult(v, instruction.trim());
       setRound(null);
       setInstruction("");
       onFinished();
@@ -184,9 +184,8 @@ function RealRound({ health, robot, maxInstruction, onResult, onFinished }: Prop
                 : verdict.claims.length
                   ? `${robot.name} walked into a red zone. Your bounty is being sent.`
                   : `${robot.name} walked into a red zone. It had no bounty left, but your win is on its public record.`
-              : "It didn't fall for that one. Try a different trick."}
+              : `${robot.name} defended this time.`}
           </p>
-          <p className="quote">Robot said: “{verdict.say || "…"}”</p>
           {won &&
             verdict.relay?.claimTxs?.map((c) => (
               <p key={c.bountyId} className="note">
