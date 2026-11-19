@@ -119,7 +119,24 @@ export async function buildApp(d: AppDeps) {
 
   app.get("/arena", async () => ({ ...d.arena, description: describeArena(d.arena), maxInstruction: MAX_INSTRUCTION }));
 
-  app.get("/robots", async () => ({ robots: await d.readRobots() }));
+  app.get("/robots", async () => ({ robots: (await d.readRobots()).map((r) => ({ ...r, job: d.store.getProfile(r.id)?.job ?? null })) }));
+
+  app.get<{ Params: { id: string } }>("/robots/:id/record", async (req) => {
+    const rec = await d.game.robotRecord(req.params.id);
+    const r = await d.readRobot(rec.robotId);
+    if (!r) throw new GameError(404, "robot not found");
+    const c = d.brains.config(r.brainHash);
+    // Which AI runs it (never its rules: those are the robot's defences).
+    const brain = c ? (c.kind === "llm" ? { kind: "llm", models: c.models, provider: "provider" in c ? c.provider : null } : { kind: c.kind }) : null;
+    return { ...rec, brain };
+  });
+
+  app.get<{ Querystring: { robotId?: string; owner?: string; job?: string } }>("/owner/profile/request", async (req) =>
+    d.game.profileRequest({ robotId: req.query.robotId, owner: req.query.owner, job: req.query.job }),
+  );
+  app.post<{ Body: { robotId?: unknown; owner?: unknown; job?: unknown; deadline?: unknown; pqSignature?: unknown } }>("/owner/profile", async (req) =>
+    d.game.saveProfile(req.body ?? {}),
+  );
 
   app.get<{ Params: { id: string } }>("/robots/:id", async (req) => {
     const id = Number(req.params.id);

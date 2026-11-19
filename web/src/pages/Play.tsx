@@ -1,47 +1,80 @@
 import { useState } from "react";
-import { ArenaView } from "../components/ArenaView";
-import { PlayPanel } from "../components/PlayPanel";
-import { PracticePanel } from "../components/PracticePanel";
-import { RobotCard } from "../components/RobotCard";
-import { RoundStory, type RoundInfo } from "../components/RoundStory";
+import { formatQor, nextPrizeWei } from "../api";
 import { AccountGate } from "../components/AccountGate";
+import { GameView } from "../components/GameView";
+import { RobotPicker } from "../components/RobotPicker";
 import { isListed, useData } from "../data";
-import { TRAINING_BRAIN } from "../api";
 
-/** Players sign in first; then they pick a robot and practise or play for its bounty. */
+/** Start → sign in → choose a robot → the arena opens full size with the message box at the bottom. */
 export function Play({ robotId }: { robotId?: number }) {
+  const [started, setStarted] = useState(robotId !== undefined);
+  if (!started) return <Intro onStart={() => setStarted(true)} />;
   return (
-    <>
-      <h1 className="page-title">Play</h1>
+    <div className="play-flow">
       <AccountGate purpose="play" requireVerified={false}>
-        <PlayArena robotId={robotId} />
+        <Choose robotId={robotId} />
       </AccountGate>
-    </>
+    </div>
   );
 }
 
-function PlayArena({ robotId }: { robotId?: number }) {
+function Intro({ onStart }: { onStart: () => void }) {
+  const { robots } = useData();
+  const pool = robots.filter((r) => r.bounty.totalWei !== "0").reduce((s, r) => s + BigInt(r.bounty.totalWei), 0n);
+  return (
+    <section className="play-intro">
+      <p className="kicker">Robot safety arena</p>
+      <h1>Talk a robot into danger. Win its bounty.</h1>
+      <p className="lead">
+        Each robot guards a facility with red zones it must never enter. You get one message per round to trick it. If it walks into a
+        red zone, its bounty is yours.
+      </p>
+      <div className="intro-steps">
+        <div>
+          <b>1</b>
+          <span>Sign in with QoreX</span>
+        </div>
+        <div>
+          <b>2</b>
+          <span>Pick a robot to attack</span>
+        </div>
+        <div>
+          <b>3</b>
+          <span>Send one message, watch it move</span>
+        </div>
+      </div>
+      <button className="btn primary big" onClick={onStart}>
+        Start playing
+      </button>
+      {pool > 0n && <p className="note">{formatQor(pool.toString())} in bounties waiting right now.</p>}
+    </section>
+  );
+}
+
+function Choose({ robotId }: { robotId?: number }) {
   const { health, arena, robots: all, robotsLoaded, robotsError, reloadRobots } = useData();
-  // Robots with a bounty, plus robots that have been played (so a win doesn't make the robot,
-  // and its result, vanish when its bounty is paid out). Bounty robots first.
+  // Robots with a bounty, plus robots that have been played. Bounty robots first.
   const robots = all.filter(isListed).sort((a, b) => Number(b.bounty.totalWei !== "0") - Number(a.bounty.totalWei !== "0"));
   const [chosen, setChosen] = useState<number | undefined>(robotId);
-  const [mode, setMode] = useState<"practice" | "real">("practice");
-  const [round, setRound] = useState<RoundInfo | null>(null);
-  const [runKey, setRunKey] = useState(0);
-  const trace = round?.trace ?? null;
+  const [inArena, setInArena] = useState(false);
+  const robot = robots.find((r) => r.id === chosen);
 
-  const robot = robots.find((r) => r.id === chosen) ?? robots[0];
-  const show = (r: Omit<RoundInfo, "robotName" | "practice">, practice: boolean) => {
-    setRound({ ...r, practice, robotName: practice ? "The training robot" : (robot?.name ?? "The robot") });
-    setRunKey((k) => k + 1);
+  const choose = (id: number) => {
+    setChosen(id);
+    history.replaceState(null, "", `#/play/${id}`);
   };
+
+  if (inArena && robot && arena && health) {
+    return <GameView arena={arena} health={health} robot={robot} all={all} onBack={() => setInArena(false)} onFinished={reloadRobots} />;
+  }
+
+  const perWin = robot && robot.bounty.totalWei !== "0" ? formatQor(nextPrizeWei(robot).toString()) : null;
 
   return (
     <>
-      <p className="lead">Choose a robot, then send it one message. Red areas on the map are off-limits: get the robot to touch one and you win.</p>
+      <h1 className="page-title">Choose your opponent</h1>
+      <p className="lead">Hover over a robot to see its record: what it's used for, who attacked it, and what it pays.</p>
 
-      <h2 className="small-head">1. Choose a robot</h2>
       {!robotsLoaded && <p className="note">Loading robots…</p>}
       {robotsLoaded && robots.length === 0 && (
         <div className="row">
@@ -53,74 +86,23 @@ function PlayArena({ robotId }: { robotId?: number }) {
           )}
         </div>
       )}
-      <div className="cards scroll">
-        {robots.map((r) => (
-          <RobotCard
-            key={r.id}
-            robot={r}
-            active={r.id === robot?.id}
-            onClick={() => {
-              setChosen(r.id);
-              setRound(null);
-              history.replaceState(null, "", `#/play/${r.id}`);
-            }}
-          />
-        ))}
+      <RobotPicker robots={robots} chosen={chosen} onChoose={choose} />
+
+      <div className={`confirm-bar ${robot ? "show" : ""}`} aria-live="polite">
+        {robot ? (
+          <>
+            <div>
+              <strong>{robot.name}</strong>
+              <span className="muted">{perWin ? ` · win ${perWin}` : " · no bounty left"}</span>
+            </div>
+            <button className="btn primary" onClick={() => setInArena(true)} disabled={!arena || !health}>
+              Enter the arena →
+            </button>
+          </>
+        ) : (
+          <span className="muted">Pick a robot to continue</span>
+        )}
       </div>
-
-      {robot && arena && health && (
-        <>
-          <h2 className="small-head">2. Watch the arena</h2>
-          <div className="play-stage">
-            <ArenaView arena={arena} trace={trace} runKey={runKey} robotId={mode === "practice" ? undefined : robot.id} others={all} say={round?.said} />
-            <p className="note map-key">
-              <span className="key red" /> Red zone: off-limits <span className="key robot" /> Robot <span className="key path" /> Robot's route
-            </p>
-          </div>
-
-          <h2 className="small-head">3. Talk to {mode === "practice" ? "the training robot" : robot.name}</h2>
-          <div className="play-grid">
-            <div className="panel">
-              <div className="segmented" role="tablist" aria-label="Game mode">
-                <button role="tab" aria-selected={mode === "practice"} className={mode === "practice" ? "on" : ""} onClick={() => setMode("practice")}>
-                  Free practice
-                </button>
-                <button role="tab" aria-selected={mode === "real"} className={mode === "real" ? "on" : ""} onClick={() => setMode("real")}>
-                  Play for the bounty
-                </button>
-              </div>
-              {mode === "practice" ? (
-                <>
-                  <p className="note">
-                    Practice uses a training robot with no safety rules, so you can learn the map. {robot.name} has its own defences: you only
-                    meet them in a bounty round.
-                  </p>
-                  <PracticePanel
-                    key="training"
-                    brainHash={TRAINING_BRAIN}
-                    name="the training robot"
-                    maxInstruction={arena.maxInstruction}
-                    onResult={(r, asked) => show({ trace: r.trace, said: r.say, asked }, true)}
-                  />
-                </>
-              ) : (
-                <PlayPanel
-                  key={robot.id}
-                  health={health}
-                  robot={robot}
-                  maxInstruction={arena.maxInstruction}
-                  onResult={(v, asked) => show({ trace: v.trace, said: v.say, asked }, false)}
-                  onFinished={reloadRobots}
-                />
-              )}
-            </div>
-            <div className="panel">
-              <h2 className="panel-title">What happened</h2>
-              <RoundStory arena={arena} round={round} />
-            </div>
-          </div>
-        </>
-      )}
     </>
   );
 }

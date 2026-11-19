@@ -6,15 +6,31 @@ import { canonicalJson, hashJson } from "./canonical.js";
 
 const HASH = /^0x[0-9a-f]{64}$/;
 
+export type RobotProfile = { job: string; updatedAt: number; owner: string };
+
 export class Store {
   private readonly replays: string;
   private readonly verdicts: string;
+  private readonly profiles: string;
 
   constructor(dataDir: string) {
     this.replays = join(dataDir, "replays");
     this.verdicts = join(dataDir, "verdicts");
+    this.profiles = join(dataDir, "profiles");
     mkdirSync(this.replays, { recursive: true });
     mkdirSync(this.verdicts, { recursive: true });
+    mkdirSync(this.profiles, { recursive: true });
+  }
+
+  /** A robot's public profile (what it is used for), written by its owner. */
+  getProfile(robotId: number): RobotProfile | null {
+    const file = join(this.profiles, `${robotId}.json`);
+    return Number.isSafeInteger(robotId) && existsSync(file) ? (JSON.parse(readFileSync(file, "utf8")) as RobotProfile) : null;
+  }
+
+  saveProfile(robotId: number, profile: RobotProfile): void {
+    if (!Number.isSafeInteger(robotId) || robotId < 1) throw new Error("bad robot id");
+    atomicWrite(join(this.profiles, `${robotId}.json`), JSON.stringify(profile, null, 2));
   }
 
   /** Save a replay; returns replayHash = keccak256(canonical JSON). */

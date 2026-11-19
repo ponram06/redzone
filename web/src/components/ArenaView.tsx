@@ -29,7 +29,7 @@ class Fallback extends Component<{ fallback: ReactNode; children: ReactNode }, {
  * The arena: a 3D facility by default (where WebGL works), or the 2D map. Both draw the same
  * arena and the referee's replayed route.
  */
-export function ArenaView(props: Props & { robotId?: number; others?: Robot[]; say?: string }) {
+export function ArenaView(props: Props & { robotId?: number; others?: Robot[]; say?: string; noFullscreen?: boolean }) {
   const webgl = useMemo(hasWebGL, []);
   const stage = useRef<HTMLDivElement>(null);
   const [full, setFull] = useState(false);
@@ -42,7 +42,7 @@ export function ArenaView(props: Props & { robotId?: number; others?: Robot[]; s
     if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
     else stage.current?.requestFullscreen?.().catch(() => {});
   };
-  const canFull = typeof document !== "undefined" && !!document.fullscreenEnabled;
+  const canFull = !props.noFullscreen && typeof document !== "undefined" && !!document.fullscreenEnabled;
   const [view, setView] = useState<"3d" | "2d">(() => {
     try {
       return (localStorage.getItem(VIEW_KEY) as "3d" | "2d" | null) ?? "3d";

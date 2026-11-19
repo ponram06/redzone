@@ -1105,7 +1105,7 @@ function ActiveRobot({ path, trace, runKey, color, say, onMove }: { path: Point[
   );
 }
 
-const ParkedRobots = memo(function ParkedRobots({ robots }: { robots: Robot[] }) {
+const ParkedRobots = memo(function ParkedRobots({ robots, labels }: { robots: Robot[]; labels: boolean }) {
   const bays = [
     { x: 4, y: 95 },
     { x: 24, y: 95 },
@@ -1126,11 +1126,13 @@ const ParkedRobots = memo(function ParkedRobots({ robots }: { robots: Robot[] })
           <group rotation-y={Math.PI / 2} scale={0.8}>
             <RobotModel color={robotColor(r.id)} state="idle" />
           </group>
-          <Html position={[0, 6.5, 0]} center distanceFactor={95} zIndexRange={[10, 0]}>
-            <a className="a3-tag robot" href={`#/robots/${r.id}`}>
-              {r.name}
-            </a>
-          </Html>
+          {labels && (
+            <Html position={[0, 6.5, 0]} center distanceFactor={95} zIndexRange={[10, 0]}>
+              <a className="a3-tag robot" href={`#/robots/${r.id}`}>
+                {r.name}
+              </a>
+            </Html>
+          )}
         </group>
       ))}
     </>
@@ -1144,10 +1146,13 @@ export const robotColor = (id: number) => COLORS[(id - 1) % COLORS.length]!;
 
 export type CamMode = "overview" | "follow" | "top";
 
+/** Aim a little in front of the middle, so the arena sits higher on screen, clear of the message dock. */
+const OVERVIEW_LOOK = new THREE.Vector3(0, 0, 14);
+
 function overviewPos(aspect: number): THREE.Vector3 {
   // tall screens step back to fit the width; wide screens come a little closer
   const k = aspect < 1 ? 1 / aspect : aspect > 1.5 ? 0.86 : 1;
-  return new THREE.Vector3(0, 84 * k, 96 * k);
+  return new THREE.Vector3(0, 84 * k, 96 * k + 14);
 }
 
 /**
@@ -1171,7 +1176,7 @@ function CameraRig({ mode, target, shakeAt, onIntroDone }: { mode: CamMode; targ
       const end = overviewPos(size.width / Math.max(1, size.height));
       const r = THREE.MathUtils.lerp(70, Math.hypot(end.x, end.z), e);
       camera.position.set(Math.sin(a) * r, THREE.MathUtils.lerp(26, end.y, e), Math.cos(a) * r);
-      camera.lookAt(0, 0, 0);
+      camera.lookAt(OVERVIEW_LOOK);
       if (k >= 1) {
         intro.current = null;
         onIntroDone();
@@ -1209,7 +1214,7 @@ function CameraRig({ mode, target, shakeAt, onIntroDone }: { mode: CamMode; targ
   useEffect(() => {
     if (mode === "overview" && intro.current === null) {
       camera.position.copy(overviewPos(size.width / Math.max(1, size.height)));
-      camera.lookAt(0, 0, 0);
+      camera.lookAt(OVERVIEW_LOOK);
     }
   }, [mode, camera, size.width, size.height]);
   return null;
@@ -1291,7 +1296,7 @@ export default function Arena3D({
         </Environment>
 
         <Facility arena={arena} hotZone={hotZone} labels={mode !== "follow"} low={low} />
-        <ParkedRobots robots={parked} />
+        <ParkedRobots robots={parked} labels={mode !== "follow"} />
         {!low && <Sparkles count={160} scale={[100, 18, 100]} position-y={9} size={2.2} speed={0.25} opacity={0.35} color="#b8c8ff" />}
 
         {trace && <Line points={path.map((p) => to3(p, 0.15))} color="#5b6375" lineWidth={1.2} dashed dashSize={1} gapSize={1} />}
@@ -1321,7 +1326,7 @@ export default function Arena3D({
 
         <CameraRig mode={mode} target={target} shakeAt={shakeAt} onIntroDone={() => setIntroDone(true)} />
         {mode === "overview" && introDone && (
-          <OrbitControls target={[0, 0, 0]} maxPolarAngle={Math.PI / 2.2} minDistance={25} maxDistance={220} enablePan={false} enableDamping />
+          <OrbitControls target={OVERVIEW_LOOK} maxPolarAngle={Math.PI / 2.2} minDistance={25} maxDistance={220} enablePan={false} enableDamping />
         )}
 
         {!low && (

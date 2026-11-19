@@ -11,8 +11,10 @@ verified on chain, so a leaked or quantum-broken ECDSA key cannot drain the vaul
 ## How to use it
 
 **Players**
-1. Open the website and sign in with the QoreX wallet (testnet).
-2. Pick a robot and try free practice rounds. Nothing is paid or saved.
+1. Open Play, press **Start playing** and sign in with the QoreX wallet (testnet).
+2. Choose your opponent. Hover a robot to see its record: what it is used for, its recent attacks,
+   its skills score, its AI brain and its bounty. Then **Enter the arena**: the 3D arena opens full
+   screen with the message box docked at the bottom. Free practice rounds pay and save nothing.
 3. To play for the bounty, verify your account once with a 0.1 QOR payment from QoreX.
 4. Start a round. You get 10 minutes and one message. QoreX asks you once for a 10-minute
    **play pass**; rounds you start during it need no further approval.
@@ -27,6 +29,8 @@ verified on chain, so a leaked or quantum-broken ECDSA key cannot drain the vaul
    approve the robot and the bounty payment.
 3. Your robot gets its everyday-tasks score straight away, and its safety score grows with every
    attack it blocks. You can take an unwon bounty back.
+4. Tell players what the robot does (shown when they hover it). QoreX signs it; it is stored off
+   chain because it is a label, not part of the game.
 
 **Robot buyers** check the leaderboard: every score comes from public attacks recorded on chain.
 

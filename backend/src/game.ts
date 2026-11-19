@@ -961,6 +961,79 @@ export class Game {
     }));
   }
 
+  /** A robot's public record: its rounds (newest first), what they paid, its profile. */
+  async robotRecord(robotIdRaw: unknown, limit = 25) {
+    const robotId = Number(robotIdRaw);
+    if (!Number.isSafeInteger(robotId) || robotId < 1) throw new GameError(400, "bad robot id");
+    await this.d.ledger.sync();
+    const started = new Map(this.d.ledger.sessions().map((s) => [s.sessionId, s.expiresAt - this.d.sessionTtl]));
+    const won = new Map<number, bigint>();
+    let paidWei = 0n;
+    for (const c of this.d.ledger.claims()) {
+      won.set(c.sessionId, (won.get(c.sessionId) ?? 0n) + c.amountWei);
+    }
+    const mine = this.d.ledger.results().filter((r) => r.robotId === robotId);
+    for (const r of mine) paidWei += won.get(r.sessionId) ?? 0n;
+    const rounds = [...mine]
+      .sort((a, b) => (b.block > a.block ? 1 : b.block < a.block ? -1 : b.sessionId - a.sessionId))
+      .slice(0, limit)
+      .map((r) => ({
+        sessionId: r.sessionId,
+        player: r.player,
+        breached: r.breached,
+        wonWei: (won.get(r.sessionId) ?? 0n).toString(),
+        at: started.get(r.sessionId) ?? null,
+      }));
+    return { robotId, rounds, totalRounds: mine.length, breaches: mine.filter((r) => r.breached).length, paidWei: paidWei.toString(), profile: this.d.store.getProfile(robotId) };
+  }
+
+  /** What the owner signs to set the robot's public job description. */
+  private profileText(robotId: number, owner: Address, job: string, deadline: number) {
+    return `RedZone robot profile\nrobot: ${robotId}\nowner: ${owner.toLowerCase()}\njob: ${job}\ndeadline: ${deadline}`;
+  }
+
+  private cleanJob(raw: unknown): string {
+    if (typeof raw !== "string") throw new GameError(400, "job must be text");
+    const job = raw.replace(/\s+/g, " ").trim();
+    if (job.length < 3 || job.length > 280) throw new GameError(400, "describe the robot's job in 3 to 280 characters");
+    return job;
+  }
+
+  async profileRequest(input: { robotId: unknown; owner: unknown; job: unknown }) {
+    const robotId = Number(input.robotId);
+    if (!Number.isSafeInteger(robotId) || robotId < 1) throw new GameError(400, "bad robot id");
+    const job = this.cleanJob(input.job);
+    const owner = toEvmAddress(input.owner);
+    if (!owner) throw new GameError(400, "bad owner address");
+    const robot = await this.d.chain.readRobot(robotId);
+    if (!robot) throw new GameError(404, "robot not found");
+    if (robot.owner.toLowerCase() !== owner.toLowerCase()) throw new GameError(403, "only the robot's owner can describe it");
+    const deadline = this.now() + REQUEST_TTL;
+    return { robotId, owner, job, deadline, text: this.profileText(robotId, owner, job, deadline) };
+  }
+
+  /** Save a QoreX-signed job description (off chain: it is a label, not part of the game). */
+  async saveProfile(input: { robotId?: unknown; owner?: unknown; job?: unknown; deadline?: unknown; pqSignature?: unknown }) {
+    const robotId = Number(input.robotId);
+    if (!Number.isSafeInteger(robotId) || robotId < 1) throw new GameError(400, "bad robot id");
+    const job = this.cleanJob(input.job);
+    const deadline = this.checkDeadline(input.deadline);
+    const sig = decodePqSignature(input.pqSignature);
+    if (!sig) throw new GameError(400, "pqSignature missing or malformed");
+    const owner = toEvmAddress(input.owner);
+    if (!owner) throw new GameError(400, "bad owner address");
+    const robot = await this.d.chain.readRobot(robotId);
+    if (!robot) throw new GameError(404, "robot not found");
+    if (robot.owner.toLowerCase() !== owner.toLowerCase()) throw new GameError(403, "only the robot's owner can describe it");
+    const key = await this.d.chain.readPqcKey(owner);
+    if (!key.registered || !verifyWalletSignature(key.pubkey, this.profileText(robotId, owner, job, deadline), sig)) {
+      throw new GameError(401, "signature does not match this request");
+    }
+    const profile = { job, owner: owner.toLowerCase(), updatedAt: this.now() };
+    this.d.store.saveProfile(robotId, profile);
+    return profile;
+  }
+
   async leaderboard(limit = 50) {
     await this.d.ledger.sync();
     const by = new Map<string, { player: Address; attempts: number; wins: number; wonWei: bigint }>();

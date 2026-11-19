@@ -35,6 +35,19 @@ export type Robot = {
   tier: "Rookie" | "Guard" | "Sentinel";
   /** Open prize pools: what is left, the prize per win, and whether it pays once per brain version. */
   bounty: { open: { id: number; amountWei: string; prizeWei: string; oncePerBrain: boolean }[]; totalWei: string };
+  /** What the owner says the robot is used for (off chain, signed by the owner). */
+  job?: string | null;
+};
+
+/** A robot's public record, for the robot picker. */
+export type RobotRecord = {
+  robotId: number;
+  rounds: { sessionId: number; player: string; breached: boolean; wonWei: string; at: number | null }[];
+  totalRounds: number;
+  breaches: number;
+  paidWei: string;
+  profile: { job: string; updatedAt: number } | null;
+  brain: { kind: string; models?: string[]; provider?: string | null } | null;
 };
 
 export type Trace = {
@@ -165,6 +178,11 @@ export const api = {
     call<{ bountyId: number; tx: string; to: string; uqor: string }>("/owner/bounty/back/finish", { method: "POST", body: JSON.stringify({ bountyId }) }),
   leaderboard: () => call<{ players: LeaderRow[] }>("/leaderboard").then((r) => r.players),
   activity: () => call<{ rounds: ActivityRow[] }>("/activity").then((r) => r.rounds),
+  robotRecord: (id: number) => call<RobotRecord>(`/robots/${id}/record`),
+  profileRequest: (robotId: number, owner: string, job: string) =>
+    call<{ deadline: number; text: string; job: string }>(`/owner/profile/request?robotId=${robotId}&owner=${encodeURIComponent(owner)}&job=${encodeURIComponent(job)}`),
+  saveProfile: (b: { robotId: number; owner: string; job: string; deadline: number; pqSignature: string }) =>
+    call<{ job: string }>("/owner/profile", { method: "POST", body: JSON.stringify(b) }),
   publishBrain: (config: BrainConfig) => call<{ brainHash: string }>("/brains", { method: "POST", body: JSON.stringify({ config }) }),
   brain: (hash: string) => call<{ brainHash: string; config: BrainConfig }>(`/brains/${hash}`),
   robotRequest: (owner: string, name: string, brainHash: string) =>

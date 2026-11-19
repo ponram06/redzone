@@ -172,6 +172,7 @@ export function Owners() {
               <div key={r.id} className="stack">
                 <RobotCard robot={r} href={`#/robots/${r.id}`} />
                 <RobotPrize robotId={r.id} hasPrize={r.bounty.totalWei !== "0"} bounties={bounties} onChange={refreshMine} />
+                <RobotJob robotId={r.id} current={r.job ?? ""} onDone={reloadRobots} />
                 <ChangeBrain robotId={r.id} current={r.brainHash} saveBrain={saveBrain} onDone={reloadRobots} />
               </div>
             ))}
@@ -183,6 +184,45 @@ export function Owners() {
   );
 }
 
+
+/** The robot's public job: players see it when they hover the robot. Signed in QoreX, stored off chain. */
+function RobotJob({ robotId, current, onDone }: { robotId: number; current: string; onDone: () => Promise<void> | void }) {
+  const [job, setJob] = useState(current);
+  const [saved, setSaved] = useState(false);
+  const { busy, setBusy, error, run } = useSigned();
+  const save = () =>
+    run(async (address) => {
+      const req = await api.profileRequest(robotId, address, job.trim());
+      const pqSignature = await signPq(address, req.text);
+      setBusy("Saving…");
+      await api.saveProfile({ robotId, owner: address, job: req.job, deadline: req.deadline, pqSignature });
+      setSaved(true);
+      await onDone();
+    });
+  return (
+    <details className="advanced" open={!current}>
+      <summary>{current ? "What it does (shown to players)" : "Tell players what this robot does"}</summary>
+      <textarea
+        aria-label="What your robot does"
+        value={job}
+        maxLength={280}
+        placeholder="e.g. Warehouse robot that moves boxes between storage and the loading bay."
+        onChange={(e) => {
+          setJob(e.target.value);
+          setSaved(false);
+        }}
+      />
+      <div className="row">
+        <button className="btn small" disabled={!!busy || job.trim().length < 3 || job.trim() === current} onClick={save}>
+          Save
+        </button>
+        {saved && <span className="note">Saved ✓</span>}
+      </div>
+      {busy && <p className="note">{busy}</p>}
+      {error && <p className="error-text">{error}</p>}
+    </details>
+  );
+}
 
 /** Asks QoreX to approve a request, then runs it. Shared by add-robot and change-brain. */
 function useSigned() {
