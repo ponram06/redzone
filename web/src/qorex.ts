@@ -42,9 +42,28 @@ export async function connect(): Promise<string> {
   return acc.address;
 }
 
+const isLocked = (e: unknown) => /locked/i.test((e as Error)?.message ?? String(e));
+
+/**
+ * QoreX keeps its unlocked state in memory only: it locks itself after its auto-lock time, and
+ * also whenever Chrome stops its idle background worker. Its signing calls then fail with "wallet
+ * is locked" instead of asking. enable() is the call that shows QoreX's unlock window (and does
+ * nothing when it's already unlocked), so run it first, and once more if signing still says locked.
+ */
+async function withUnlocked<T>(fn: () => Promise<T>): Promise<T> {
+  await native().enable(chainId());
+  try {
+    return await fn();
+  } catch (e) {
+    if (!isLocked(e)) throw e;
+    await native().enable(chainId());
+    return fn();
+  }
+}
+
 /** Sign text with the account's ML-DSA-87 key; returns the post-quantum signature (base64). */
 export async function signPq(address: string, text: string): Promise<string> {
-  const r = await native().signArbitrary(chainId(), address, text);
+  const r = await withUnlocked(() => native().signArbitrary(chainId(), address, text));
   if (r.signatureType !== "ml-dsa-87-hybrid" || !r.pq?.signature) {
     throw new Error("QoreX did not return an ML-DSA-87 signature (is the account's PQC key registered?)");
   }
@@ -54,7 +73,7 @@ export async function signPq(address: string, text: string): Promise<string> {
 /** Friendlier messages for the errors people actually hit. */
 export function explainQorexError(e: unknown): string {
   const m = (e as Error)?.message ?? String(e);
-  if (/locked/i.test(m)) return "QoreX is locked. Unlock it and try again.";
+  if (/locked/i.test(m)) return "QoreX locked itself. Click the QoreX icon in your browser bar, unlock it, then try again.";
   if (/does not match the active network/i.test(m)) return `Switch QoreX to the right network (${NATIVE_CHAIN_ID}) and try again.`;
   if (/reject|denied|cancel/i.test(m)) return "You cancelled the request in QoreX.";
   return m;
@@ -93,11 +112,13 @@ export async function payNative(from: string, to: string, uqor: string, memo: st
     signAndBroadcast(p: { chainId: string; messages: { typeUrl: string; value: Uint8Array }[]; memo: string }): Promise<BroadcastResult>;
   } | null;
   if (!n) throw new Error("QoreX is not installed in this browser");
-  const r = await n.signAndBroadcast({
-    chainId: chainId(),
-    messages: [{ typeUrl: "/cosmos.bank.v1beta1.MsgSend", value: encodeMsgSend(from, to, uqor) }],
-    memo,
-  });
+  const r = await withUnlocked(() =>
+    n.signAndBroadcast({
+      chainId: chainId(),
+      messages: [{ typeUrl: "/cosmos.bank.v1beta1.MsgSend", value: encodeMsgSend(from, to, uqor) }],
+      memo,
+    }),
+  );
   if (r.code !== 0) throw new Error(`The payment failed on chain (code ${r.code})`);
   return r.txHash;
 }
