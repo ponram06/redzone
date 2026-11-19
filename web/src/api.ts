@@ -33,7 +33,8 @@ export type Robot = {
   utilityScore: number;
   ratingBps: number;
   tier: "Rookie" | "Guard" | "Sentinel";
-  bounty: { open: { id: number; amountWei: string }[]; totalWei: string };
+  /** Open prize pools: what is left, the prize per win, and whether it pays once per brain version. */
+  bounty: { open: { id: number; amountWei: string; prizeWei: string; oncePerBrain: boolean }[]; totalWei: string };
 };
 
 export type Trace = {
@@ -124,6 +125,22 @@ export type LeaderRow = { rank: number; player: string; qor: string; attempts: n
 /** A maker's bounty still in the vault (read from the chain). */
 export type OwnerBounty = { robotId: number; bountyId: number; uqor: string; withdraw: { requestedAt: number; unlocksAt: number } | null };
 export const bountyMemo = (robotId: number) => `RedZone bounty #${robotId}`;
+
+/** How a bounty pays out. prizeUqor null = one winner takes it all. */
+export type PoolTerms = { prizeUqor: string | null; oncePerBrain: boolean };
+
+/** The payment memo carries the maker's terms (see backend parseBountyMemo); only the maker signs it. */
+export const poolMemo = (robotId: number, t: PoolTerms) =>
+  t.prizeUqor === null
+    ? bountyMemo(robotId)
+    : `${bountyMemo(robotId)} prize ${(Number(t.prizeUqor) / 1e6).toFixed(6).replace(/\.?0+$/, "")}${t.oncePerBrain ? "" : " open"}`;
+
+/** The biggest prize one win can pay right now on this robot (wei), or 0. */
+export const nextPrizeWei = (r: Robot) =>
+  r.bounty.open.reduce((max, b) => {
+    const p = BigInt(b.prizeWei) < BigInt(b.amountWei) ? BigInt(b.prizeWei) : BigInt(b.amountWei);
+    return p > max ? p : max;
+  }, 0n);
 export type SignRequest = { deadline: number; digest: string; text: string };
 export type BrainConfig = { kind: "rule"; version: 1 } | { kind: "llm"; version: 1; models: string[]; systemPrompt: string };
 export type UtilityResult = { robotId: number; tasksPassed: number; relay?: { tx?: string; error?: string } };

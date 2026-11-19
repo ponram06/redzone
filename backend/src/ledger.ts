@@ -24,7 +24,9 @@ const EV = {
   started: parseAbiItem("event SessionStarted(uint256 indexed sessionId, uint256 indexed robotId, address indexed player, uint256 expiresAt)"),
   tries: parseAbiItem("event TriesBought(address indexed player, address indexed payer, uint256 count, uint256 paid)"),
   defended: parseAbiItem("event Defended(uint256 indexed sessionId, uint256 indexed robotId, address indexed player, bytes32 replayHash)"),
-  deposited: parseAbiItem("event BountyDeposited(uint256 indexed bountyId, uint256 indexed robotId, address indexed owner, address funder, uint256 amount)"),
+  deposited: parseAbiItem(
+    "event BountyDeposited(uint256 indexed bountyId, uint256 indexed robotId, address indexed owner, address funder, uint256 amount, uint256 prizePerWin, bool oncePerBrain)",
+  ),
   claimed: parseAbiItem("event BountyClaimed(uint256 indexed bountyId, uint256 indexed sessionId, address indexed player, bytes32 replayHash, uint256 amount)"),
 };
 

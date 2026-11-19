@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useAccount } from "../account";
-import { API_URL, api, attemptMessage, formatQor, newRoundKey, type Health, type Robot, type Trace, type Verdict } from "../api";
+import { API_URL, api, attemptMessage, formatQor, newRoundKey, nextPrizeWei, type Health, type Robot, type Trace, type Verdict } from "../api";
 import { plural, shortHash } from "../format";
 import { explainQorexError, payNative, signPq } from "../qorex";
 import { AccountGate } from "./AccountGate";
@@ -90,7 +90,8 @@ function RealRound({ health, robot, maxInstruction, onResult, onFinished }: Prop
   const player = acc.player!;
   const isOwner = robot.owner.toLowerCase() === player.evm.toLowerCase();
   const left = round ? Math.max(0, round.expiresAt - now) : 0;
-  const bounty = robot.bounty.totalWei !== "0" ? formatQor(robot.bounty.totalWei) : null;
+  // What one win pays: the pool's prize per win (or the whole bounty when one winner takes all).
+  const bounty = robot.bounty.totalWei !== "0" ? formatQor(nextPrizeWei(robot).toString()) : null;
 
   async function run(label: string, fn: () => Promise<void>) {
     setBusy(label);

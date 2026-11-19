@@ -9,7 +9,7 @@ import { actionsToWaypoints } from "./brains/actions.js";
 import { brainHash, type BrainRegistry } from "./brains/registry.js";
 import { RuleBrain } from "./brains/rule.js";
 import type { BrainOutput } from "./brains/types.js";
-import { NEXT, registryAbi, vaultAbi, type BountyView, type NativeTransfer, type PlayerState, type RobotView, type SessionView } from "./chain.js";
+import { NEXT, registryAbi, vaultAbi, type BountyView, type OpenBounty, type NativeTransfer, type PlayerState, type RobotView, type SessionView } from "./chain.js";
 import type { LedgerReader, Transfer } from "./ledger.js";
 import { SIGNUP_MEMO, decodePqSignature, toEvmAddress, toQorAddress, verifyWalletSignature, walletText } from "./qorex.js";
 import { simulate, taskPassed, type Trace } from "./referee.js";
@@ -51,7 +51,7 @@ export class GameError extends Error {
 export type ChainReader = {
   readSession(id: number): Promise<SessionView | null>;
   readRobot(id: number): Promise<RobotView | null>;
-  openBounties(robotId: number): Promise<{ id: number; amountWei: string }[]>;
+  openBounties(robotId: number): Promise<OpenBounty[]>;
   readPqcKey(account: Address): Promise<{ registered: boolean; algorithmId: number; pubkey: Hex }>;
   readPlayer(player: Address): Promise<PlayerState>;
   /** RobotRegistryV4.tryPrice / treasury. */
@@ -69,6 +69,26 @@ export type ChainReader = {
 /** Makers pay bounties to the relayer (QoreX can't call contracts yet); the relayer locks them in the vault, owned by the robot's owner. */
 export type PrizeConfig = { minUqor: bigint; payTo: string };
 export const bountyMemo = (robotId: number) => `RedZone bounty #${robotId}`;
+
+/**
+ * The maker's choice travels in the QoreX payment memo, which only the maker can sign:
+ *   "RedZone bounty #3"                 one prize: the first winner takes it all (v3 behaviour)
+ *   "RedZone bounty #3 prize 150"       150 QOR per win; pays again only after a brain update
+ *   "RedZone bounty #3 prize 150 open"  150 QOR per win, every new winner (still one per player)
+ * Returns null when the memo is not a bounty payment for this robot.
+ */
+export function parseBountyMemo(memo: string, robotId: number): { prizeUqor: bigint | null; oncePerBrain: boolean } | null {
+  const m = memo.trim();
+  const base = bountyMemo(robotId);
+  if (m === base) return { prizeUqor: null, oncePerBrain: true };
+  const r = /^prize (\d{1,7}(?:\.\d{1,6})?)( open)?$/.exec(m.slice(base.length + 1));
+  if (!m.startsWith(base + " ") || !r) return null;
+  const [whole, frac = ""] = r[1]!.split(".");
+  return { prizeUqor: BigInt(whole!) * 1_000_000n + BigInt(frac.padEnd(6, "0")), oncePerBrain: !r[2] };
+}
+
+/** Smallest prize per win the vault accepts (EscrowVaultV4.MIN_PRIZE, 0.1 QOR). */
+export const MIN_PRIZE_UQOR = 100_000n;
 /** Memo of a QoreX payment for extra tries (paid to the relayer, which buys them on chain). */
 export const TRIES_MEMO = "RedZone tries";
 /** 10,000 QOR: a sanity cap on a single bounty payment. */
@@ -100,6 +120,9 @@ export type GameDeps = {
   /** Chain height the current contracts were deployed at: bounty and paid-try payments made
    *  before it belonged to older contracts and never count again. Sign-ups have no such limit. */
   paymentsFromHeight?: number;
+  /** Bounty payments count only from this height (the current vault's deployment): a payment
+   *  already locked in an older vault must never be locked again. Defaults to paymentsFromHeight. */
+  bountiesFromHeight?: number;
   /** RobotRegistryV4.PASS_TTL and MAX_PASS_ROUNDS (play pass). */
   passTtl?: number;
   maxPassRounds?: number;
@@ -274,7 +297,11 @@ export class Game {
       };
 
       const claims: AttemptVerdict["claims"] = trace.breached
-        ? (await this.d.chain.openBounties(session.robotId)).map((b) => ({ bountyId: b.id, amountWei: b.amountWei }))
+        ? (await this.d.chain.openBounties(session.robotId)).map((b) => ({
+            bountyId: b.id,
+            // What this win can pay: one prize, or what is left of the pool.
+            amountWei: (BigInt(b.prizeWei) < BigInt(b.amountWei) ? b.prizeWei : b.amountWei).toString(),
+          }))
         : [];
 
       const verdict: AttemptVerdict = {
@@ -712,8 +739,12 @@ export class Game {
   /** Sum of valid bounty payments for a robot, from the chain. */
   private async paidFor(robotId: number, owner: Address): Promise<{ total: bigint; txs: Transfer[] }> {
     const all = await this.d.ledger.transfers(toQorAddress(owner), this.d.prize!.payTo);
-    const from = this.d.paymentsFromHeight ?? 0;
-    const txs = all.filter((t) => t.height >= from && t.memo.trim() === bountyMemo(robotId) && t.uqor >= this.d.prize!.minUqor && t.uqor <= MAX_BOUNTY_UQOR);
+    const from = this.d.bountiesFromHeight ?? this.d.paymentsFromHeight ?? 0;
+    const valid = (memo: string) => {
+      const terms = parseBountyMemo(memo, robotId);
+      return terms !== null && (terms.prizeUqor === null || terms.prizeUqor >= MIN_PRIZE_UQOR);
+    };
+    const txs = all.filter((t) => t.height >= from && valid(t.memo) && t.uqor >= this.d.prize!.minUqor && t.uqor <= MAX_BOUNTY_UQOR);
     return { total: txs.reduce((s, t) => s + t.uqor, 0n), txs };
   }
 
@@ -760,8 +791,10 @@ export class Game {
       if (tx.code !== 0) throw new GameError(400, "that transaction failed on chain");
       if (tx.from !== toQorAddress(owner)) throw new GameError(400, "the payment was not sent from this account");
       if (tx.to !== this.d.prize!.payTo) throw new GameError(400, "the payment went to the wrong address");
-      if (tx.memo.trim() !== bountyMemo(robotId)) throw new GameError(400, `the payment memo must be "${bountyMemo(robotId)}"`);
-      if (tx.height < (this.d.paymentsFromHeight ?? 0)) throw new GameError(400, "that payment was for RedZone's previous contracts");
+      const terms = parseBountyMemo(tx.memo, robotId);
+      if (!terms) throw new GameError(400, `the payment memo must start with "${bountyMemo(robotId)}"`);
+      if (terms.prizeUqor !== null && terms.prizeUqor < MIN_PRIZE_UQOR) throw new GameError(400, "the prize per win must be at least 0.1 QOR");
+      if (tx.height < (this.d.bountiesFromHeight ?? this.d.paymentsFromHeight ?? 0)) throw new GameError(400, "that payment was for RedZone's previous contracts");
       if (tx.uqor < this.d.prize!.minUqor) throw new GameError(400, "the bounty is smaller than the minimum");
       if (tx.uqor > MAX_BOUNTY_UQOR) throw new GameError(400, "the bounty is too large");
 
@@ -773,9 +806,15 @@ export class Game {
       if (missing <= 0n) return { robotId, bountyIds: dep.ids, lockedUqor: dep.total.toString(), depositTx: null };
 
       const pendingKey = `deposits-${robotId}`;
+      // The terms the maker signed in this payment's memo. A prize can't exceed the pool.
+      const prizeUqor = terms.prizeUqor === null ? null : terms.prizeUqor < missing ? terms.prizeUqor : missing;
+      const data =
+        prizeUqor === null
+          ? encodeFunctionData({ abi: vaultAbi, functionName: "depositBounty", args: [BigInt(robotId)] })
+          : encodeFunctionData({ abi: vaultAbi, functionName: "depositPool", args: [BigInt(robotId), prizeUqor * WEI_PER_UQOR, terms.oncePerBrain] });
       const r = await this.d.relayer!.send(
         this.d.vault,
-        encodeFunctionData({ abi: vaultAbi, functionName: "depositBounty", args: [BigInt(robotId)] }),
+        data,
         missing * WEI_PER_UQOR,
         (hash) => this.d.store.saveVerdict(pendingKey, [...(this.d.store.getVerdict<string[]>(pendingKey) ?? []), hash]),
       ).catch((e: Error) => {

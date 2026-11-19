@@ -10,7 +10,7 @@ import { pqcSign, pqcVerify } from "@qorechain/sdk";
 import { encodeAbiParameters, encodePacked, hexToBytes, keccak256, stringToBytes, toHex, type Address, type Hex } from "viem";
 
 export const REGISTRY_DOMAIN = "RedZone.RobotRegistry.v4";
-export const VAULT_DOMAIN = "RedZone.EscrowVault.v3";
+export const VAULT_DOMAIN = "RedZone.EscrowVault.v4";
 
 const typehash = (s: string) => keccak256(stringToBytes(s));
 export const RESULT_TYPEHASH = typehash(

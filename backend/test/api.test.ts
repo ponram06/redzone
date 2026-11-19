@@ -12,7 +12,7 @@ import { NEXT, registryAbi, vaultAbi, type RobotView, type SessionView } from ".
 import { toQorAddress, walletMessage } from "../src/qorex.js";
 import type { NativeTransfer } from "../src/chain.js";
 import type { RelayReceipt, Relayer } from "../src/relayer.js";
-import { Game, attemptMessage, roundKeyHash } from "../src/game.js";
+import { Game, attemptMessage, parseBountyMemo, roundKeyHash } from "../src/game.js";
 import type { LedgerReader, ResultEvent, SessionEvent } from "../src/ledger.js";
 import { registerRobotDigest, resultDigest, startSessionDigest, updateBrainDigest, utilityDigest, withdrawDigest } from "../src/signer.js";
 import { pqcSign } from "@qorechain/sdk";
@@ -41,6 +41,8 @@ type FakeBounty = {
   depositedAt: number;
   withdrawRequestedAt: number;
   withdrawTo: Address;
+  prizePerWinWei: bigint;
+  oncePerBrain: boolean;
   tx: Hex;
   indexed: boolean;
 };
@@ -92,15 +94,32 @@ class FakeRelayer implements Relayer {
       const s = sessions[Number(sid)]!;
       if (breached) for (const b of vault.bounties.values()) if (b.robotId === s.robotId && b.status === 1) unpaid.set(b.id, [...(unpaid.get(b.id) ?? []), Number(sid)]);
     }
-    if (call.functionName === "depositBounty") {
-      const robotId = Number((call.args as unknown as [bigint])[0]);
+    if (call.functionName === "depositBounty" || call.functionName === "depositPool") {
+      const args = call.args as unknown as [bigint, bigint?, boolean?];
+      const robotId = Number(args[0]);
+      const prize = call.functionName === "depositPool" ? args[1]! : value;
+      const once = call.functionName === "depositPool" ? args[2]! : true;
       const owner = (robotId === 1 ? robot.owner : player.address) as Address;
       const id = vault.next++;
       const tx = ("0x" + id.toString(16).padStart(64, "d")) as Hex;
       onSent?.(tx);
       const lost = this.loseReceipt > 0;
       // A lost receipt also means getLogs hasn't indexed it yet: only its receipt shows it.
-      vault.bounties.set(id, { id, robotId, owner, funder: this.address, amountWei: value, status: 1, depositedAt: clock, withdrawRequestedAt: 0, withdrawTo: ZERO, tx, indexed: !lost });
+      vault.bounties.set(id, {
+        id,
+        robotId,
+        owner,
+        funder: this.address,
+        amountWei: value,
+        status: 1,
+        depositedAt: clock,
+        withdrawRequestedAt: 0,
+        withdrawTo: ZERO,
+        prizePerWinWei: prize,
+        oncePerBrain: once,
+        tx,
+        indexed: !lost,
+      });
       if (lost) {
         this.loseReceipt--;
         throw new Error("receipt timeout");
@@ -108,7 +127,7 @@ class FakeRelayer implements Relayer {
       logs.push({
         address: VAULT,
         topics: encodeEventTopics({ abi: vaultAbi, eventName: "BountyDeposited", args: { bountyId: BigInt(id), robotId: BigInt(robotId), owner } }),
-        data: encodeAbiParameters([{ type: "address" }, { type: "uint256" }], [this.address, value]),
+        data: encodeAbiParameters([{ type: "address" }, { type: "uint256" }, { type: "uint256" }, { type: "bool" }], [this.address, value, prize, once]),
       } as unknown as Log);
     }
     if (call.functionName === "claimBounty" || call.functionName === "skipBreach") {
@@ -182,7 +201,7 @@ const robot: RobotView = {
   brainVersion: 0,
   ratingBps: 0,
   tier: "Rookie",
-  bounty: { open: [{ id: 1, amountWei: "1000000000000000000" }], totalWei: "1000000000000000000" },
+  bounty: { open: [{ id: 1, amountWei: "1000000000000000000", prizeWei: "1000000000000000000", oncePerBrain: true }], totalWei: "1000000000000000000" },
 };
 
 let sessions: Record<number, SessionView>;
@@ -229,7 +248,18 @@ beforeEach(async () => {
     readTryPrice: async () => ({ priceWei: TRY_PRICE, treasury: "0x00000000000000000000000000000000000000fe" as Address }),
     readNativeTransfer: async (h: string) => txs[h.replace(/^0x/, "").toUpperCase()] ?? null,
     readBounty: async (id: number) =>
-      vault.bounties.get(id) ?? { id, robotId: 0, owner: ZERO, amountWei: 0n, status: 0, depositedAt: 0, withdrawRequestedAt: 0, withdrawTo: ZERO },
+      vault.bounties.get(id) ?? {
+        id,
+        robotId: 0,
+        owner: ZERO,
+        amountWei: 0n,
+        status: 0,
+        depositedAt: 0,
+        withdrawRequestedAt: 0,
+        withdrawTo: ZERO,
+        prizePerWinWei: 0n,
+        oncePerBrain: true,
+      },
     readNextBreach: async (id: number) => {
       const b = vault.bounties.get(id);
       const first = unpaid.get(id)?.[0];
@@ -282,6 +312,8 @@ beforeEach(async () => {
           depositedAt: NOW - 1000,
           withdrawRequestedAt: 0,
           withdrawTo: ZERO,
+          prizePerWinWei: 10n ** 18n,
+          oncePerBrain: true,
           tx: ("0x" + "01".repeat(32)) as Hex,
           indexed: true,
         },
@@ -304,6 +336,10 @@ beforeEach(async () => {
     [txHash(22)]: { code: 0, from: toQorAddress(player.address), to: PAY_TO, uqor: 999_999n, memo: "RedZone bounty #2", height: 22 },
     [txHash(23)]: { code: 0, from: toQorAddress(stranger.address), to: PAY_TO, uqor: 2_000_000n, memo: "RedZone bounty #2", height: 23 },
     [txHash(24)]: { code: 0, from: toQorAddress(player.address), to: PAY_TO, uqor: 3_000_000n, memo: "RedZone bounty #2", height: 24 },
+    [txHash(25)]: { code: 0, from: toQorAddress(player.address), to: PAY_TO, uqor: 20_000_000n, memo: "RedZone bounty #2 prize 1.5", height: 25 },
+    [txHash(26)]: { code: 0, from: toQorAddress(player.address), to: PAY_TO, uqor: 5_000_000n, memo: "RedZone bounty #2 prize 2 open", height: 26 },
+    [txHash(27)]: { code: 0, from: toQorAddress(player.address), to: PAY_TO, uqor: 5_000_000n, memo: "RedZone bounty #2 prize 0.05", height: 27 },
+    [txHash(28)]: { code: 0, from: toQorAddress(player.address), to: PAY_TO, uqor: 2_000_000n, memo: "RedZone bounty #2 prize 9", height: 28 },
     [txHash(30)]: { code: 0, from: toQorAddress(player.address), to: PAY_TO, uqor: 300_000n, memo: "RedZone tries", height: 30 },
     [txHash(31)]: { code: 0, from: toQorAddress(player.address), to: PAY_TO, uqor: 250_000n, memo: "RedZone tries", height: 31 },
     [txHash(32)]: { code: 0, from: toQorAddress(player.address), to: PAY_TO, uqor: 300_000n, memo: "RedZone bounty #2", height: 32 },
@@ -788,6 +824,29 @@ describe("QoreX players and the relayer", () => {
       // A second payment locks only the new amount.
       expect((await addBounty(24)).json()).toMatchObject({ lockedUqor: "5000000" });
       expect(relayer.values.at(-1)).toBe(3n * 10n ** 18n);
+    });
+
+    it("a prize pool: the prize per win and the once-per-brain rule come from the maker's signed memo", async () => {
+      const pools = () => relayer.sent.filter((x) => x.fn === "depositPool");
+      expect((await addBounty(25)).statusCode).toBe(200);
+      expect(pools().at(-1)?.args).toEqual([2n, 1_500_000n * 10n ** 12n, true]);
+      expect(relayer.values.at(-1)).toBe(20n * 10n ** 18n);
+      // "open": every new winner is paid, not only after a brain update.
+      expect((await addBounty(26)).statusCode).toBe(200);
+      expect(pools().at(-1)?.args).toEqual([2n, 2n * 10n ** 18n, false]);
+      // A prize under 0.1 QOR is refused; a prize bigger than the pool is cut to the pool.
+      expect((await addBounty(27)).statusCode).toBe(400);
+      expect((await addBounty(28)).statusCode).toBe(200);
+      expect(pools().at(-1)?.args).toEqual([2n, 2n * 10n ** 18n, true]);
+      expect(deposits()).toHaveLength(0);
+    });
+
+    it("reads bounty memos strictly", () => {
+      expect(parseBountyMemo("RedZone bounty #2", 2)).toEqual({ prizeUqor: null, oncePerBrain: true });
+      expect(parseBountyMemo(" RedZone bounty #2 prize 150 ", 2)).toEqual({ prizeUqor: 150_000_000n, oncePerBrain: true });
+      expect(parseBountyMemo("RedZone bounty #2 prize 0.25 open", 2)).toEqual({ prizeUqor: 250_000n, oncePerBrain: false });
+      for (const bad of ["RedZone bounty #21", "RedZone bounty #2 prize", "RedZone bounty #2 prize -1", "RedZone bounty #2 prize 1e3", "RedZone bounty #2 prize 1 closed", "RedZone bounty #2 prize 0.1234567"])
+        expect(parseBountyMemo(bad, 2)).toBeNull();
     });
 
     it("refuses payments that don't match the robot, owner, minimum or sender", async () => {

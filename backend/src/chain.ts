@@ -18,7 +18,7 @@ const deployments = JSON.parse(
   evmChainId: number;
   network: string;
   contracts: {
-    EscrowVaultV3: { address: Address; deployBlock: number };
+    EscrowVaultV4: { address: Address; deployBlock: number };
     RobotRegistryV4: { address: Address; deployBlock: number; nativeChainId: string };
   };
 };
@@ -26,13 +26,14 @@ const deployments = JSON.parse(
 /** Native (Cosmos) chain id QoreX signs for, from the deployment record. */
 export const NATIVE_CHAIN_ID = deployments.contracts.RobotRegistryV4.nativeChainId;
 export const REGISTRY_DEPLOY_BLOCK = BigInt(deployments.contracts.RobotRegistryV4.deployBlock);
-export const VAULT_DEPLOY_BLOCK = BigInt(deployments.contracts.EscrowVaultV3.deployBlock);
+export const VAULT_DEPLOY_BLOCK = BigInt(deployments.contracts.EscrowVaultV4.deployBlock);
 /** Native REST endpoint: QORE_REST_URL, else the SDK's preset for this network. */
 export const REST_URL = process.env.QORE_REST_URL?.trim() || "https://api-testnet.qore.host";
 
 export const CHAIN_ID = deployments.evmChainId;
-/** EscrowVaultV3: bounties belong to the robot's owner and are paid to the earliest eligible breach. */
-export const VAULT = deployments.contracts.EscrowVaultV3.address;
+/** EscrowVaultV4: prize pools. Bounties belong to the robot's owner; each eligible breach is paid
+ *  the pool's prize per win (one per player, and by default one per brain version). */
+export const VAULT = deployments.contracts.EscrowVaultV4.address;
 /** RobotRegistryV4: v3 (every privileged call authorised by an ML-DSA-87 signature) plus play passes
  *  and paid tries. Older versions stay on chain for history only. */
 export const REGISTRY = deployments.contracts.RobotRegistryV4.address;
@@ -94,8 +95,11 @@ export const registryAbi = parseAbi([
 
 export const vaultAbi = parseAbi([
   "function nextBountyId() view returns (uint256)",
-  // Field order of EscrowVaultV3 (the gas-optimised struct: status before the withdrawal fields).
-  "function bounties(uint256 bountyId) view returns (uint256 robotId, uint256 amount, uint256 breachCursor, address owner, uint64 depositedAt, uint8 status, uint64 withdrawRequestedAt, address withdrawTo)",
+  // Field order of EscrowVaultV4.
+  "function bounties(uint256 bountyId) view returns (uint256 robotId, uint256 amount, uint256 breachCursor, address owner, uint64 depositedAt, uint8 status, bool oncePerBrain, uint64 withdrawRequestedAt, address withdrawTo, uint32 minBrainVersion, uint256 prizePerWin)",
+  "function hasWon(uint256 bountyId, address player) view returns (bool)",
+  "function depositPool(uint256 robotId, uint256 prizePerWin, bool oncePerBrain) payable returns (uint256)",
+  "function MIN_PRIZE() view returns (uint256)",
   "function nextBreach(uint256 bountyId) view returns (uint8 state, uint256 sessionId)",
   "function claimBounty(uint256 bountyId)",
   "function skipBreach(uint256 bountyId)",
@@ -105,13 +109,13 @@ export const vaultAbi = parseAbi([
   "function requestWithdraw(uint256 bountyId, address to, uint256 deadline, bytes ownerSig)",
   "function finalizeWithdraw(uint256 bountyId)",
   "function WITHDRAW_DELAY() view returns (uint256)",
-  "event BountyDeposited(uint256 indexed bountyId, uint256 indexed robotId, address indexed owner, address funder, uint256 amount)",
+  "event BountyDeposited(uint256 indexed bountyId, uint256 indexed robotId, address indexed owner, address funder, uint256 amount, uint256 prizePerWin, bool oncePerBrain)",
   "event BountyClaimed(uint256 indexed bountyId, uint256 indexed sessionId, address indexed player, bytes32 replayHash, uint256 amount)",
   "event WithdrawRequested(uint256 indexed bountyId, address indexed to, uint256 unlocksAt)",
   "event BountyWithdrawn(uint256 indexed bountyId, address indexed to, uint256 amount)",
 ]);
 
-/** EscrowVaultV3.Next: what happens to the breach at a bounty's cursor. */
+/** EscrowVaultV4.Next: what happens to the breach at a bounty's cursor. */
 export const NEXT = { None: 0, Claimable: 1, Skippable: 2, Waiting: 3 } as const;
 
 export const TIERS = ["Rookie", "Guard", "Sentinel"] as const;
@@ -130,8 +134,11 @@ export type RobotView = {
   brainVersion: number;
   ratingBps: number;
   tier: (typeof TIERS)[number];
-  bounty: { open: { id: number; amountWei: string }[]; totalWei: string };
+  bounty: { open: OpenBounty[]; totalWei: string };
 };
+
+/** An open prize pool: what is left, the prize per win, and whether it pays once per brain version. */
+export type OpenBounty = { id: number; amountWei: string; prizeWei: string; oncePerBrain: boolean };
 
 export async function readRobot(id: number): Promise<RobotView | null> {
   const r = await client.readContract({ address: REGISTRY, abi: registryAbi, functionName: "getRobot", args: [BigInt(id)] });
@@ -166,12 +173,13 @@ export async function readRobots(): Promise<RobotView[]> {
 }
 
 /** Open bounties for a robot (status 1 = Open). */
-export async function openBounties(robotId: number): Promise<{ id: number; amountWei: string }[]> {
+export async function openBounties(robotId: number): Promise<OpenBounty[]> {
   const next = await client.readContract({ address: VAULT, abi: vaultAbi, functionName: "nextBountyId" });
-  const out: { id: number; amountWei: string }[] = [];
+  const out: OpenBounty[] = [];
   for (let i = 1; i < Number(next); i++) {
     const b = await readBounty(i);
-    if (b.robotId === robotId && b.status === 1) out.push({ id: b.id, amountWei: b.amountWei.toString() });
+    if (b.robotId === robotId && b.status === 1)
+      out.push({ id: b.id, amountWei: b.amountWei.toString(), prizeWei: b.prizePerWinWei.toString(), oncePerBrain: b.oncePerBrain });
   }
   return out;
 }
@@ -186,10 +194,14 @@ export type BountyView = {
   depositedAt: number;
   withdrawRequestedAt: number;
   withdrawTo: Address;
+  /** Paid per eligible breach (the last prize may be smaller). */
+  prizePerWinWei: bigint;
+  /** After a win, only breaches against a newer brain version are paid. */
+  oncePerBrain: boolean;
 };
 
 export async function readBounty(id: number): Promise<BountyView> {
-  const [robotId, amount, , owner, depositedAt, status, withdrawRequestedAt, withdrawTo] = await client.readContract({
+  const [robotId, amount, , owner, depositedAt, status, oncePerBrain, withdrawRequestedAt, withdrawTo, , prizePerWin] = await client.readContract({
     address: VAULT,
     abi: vaultAbi,
     functionName: "bounties",
@@ -204,6 +216,8 @@ export async function readBounty(id: number): Promise<BountyView> {
     depositedAt: Number(depositedAt),
     withdrawRequestedAt: Number(withdrawRequestedAt),
     withdrawTo,
+    prizePerWinWei: prizePerWin,
+    oncePerBrain,
   };
 }
 

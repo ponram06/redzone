@@ -87,7 +87,7 @@ export function Report() {
             <Stat label="Latest security score" value="87" unit="/100" note="QCAI stage 2 · live v4" bar={87} />
             <Stat label="Contract tests" value="253" unit="passing" note="Including attack & invariant tests" />
             <Stat label="Project complete" value="88" unit="%" note="Final polish & hosting remain" />
-            <Stat label="Live arena bounty" value={formatQor(bountyWei).replace(" QOR", "")} unit="QOR" note="Locked in EscrowVaultV3" live />
+            <Stat label="Live arena bounty" value={formatQor(bountyWei).replace(" QOR", "")} unit="QOR" note="Locked in EscrowVaultV4" live />
           </div>
 
           <div className="rp-split">
@@ -291,7 +291,7 @@ export function Report() {
         </div>
         <div className="rp-clist">
           <Contract name="RobotRegistryV4" what="Robots · rounds · results" addr={health?.registry} />
-          <Contract name="EscrowVaultV3" what="Bounties · payouts" addr={health?.vault} />
+          <Contract name="EscrowVaultV4" what="Prize pools · payouts" addr={health?.vault} />
         </div>
       </section>
     </div>

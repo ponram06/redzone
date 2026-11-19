@@ -1,10 +1,10 @@
 /**
- * demo-robot.ts - put demo robot "Sentinel-01" (rule brain) on the v3 contracts, owned by the admin
- * account, with a 1 QOR bounty paid exactly the way a maker pays from QoreX:
+ * demo-robot.ts - put demo robot "Sentinel-01" (rule brain) on the current contracts, owned by the
+ * admin account, with a 1 QOR prize pool (0.5 QOR per win) paid exactly the way a maker pays from QoreX:
  *
  *   1. registerRobotFor, authorised by the admin's ML-DSA-87 signature, sent by the relayer
- *   2. a hybrid-signed native transfer of 1 QOR from the admin to the relayer, memo "RedZone bounty #<id>"
- *   3. the relayer locks exactly the unlocked amount with depositBounty (the vault makes the admin the owner)
+ *   2. a hybrid-signed native transfer of 1 QOR from the admin to the relayer, memo "RedZone bounty #<id> prize 0.5"
+ *   3. the relayer locks exactly the unlocked amount with depositPool (the vault makes the admin the owner)
  *
  *   npx tsx --env-file=.env scripts/demo-robot.ts
  *
@@ -40,7 +40,7 @@ import {
   registryAbi,
   vaultAbi,
 } from "../src/chain.js";
-import { bountyMemo } from "../src/game.js";
+import { bountyMemo, parseBountyMemo } from "../src/game.js";
 import { ChainLedger } from "../src/ledger.js";
 import { ChainRelayer } from "../src/relayer.js";
 import { registerRobotDigest } from "../src/signer.js";
@@ -111,10 +111,11 @@ if (robotId) {
 
 // 2. The payment, from the chain's own records.
 const ledger = new ChainLedger(client, REGISTRY, REGISTRY_DEPLOY_BLOCK, VAULT, VAULT_DEPLOY_BLOCK, REST_URL);
-const memo = bountyMemo(robotId);
+const memo = `${bountyMemo(robotId)} prize 0.5`;
+const terms = parseBountyMemo(memo, robotId)!;
 const paidUqor = async () =>
   (await ledger.transfers(admin.cosmos, relayer.cosmosAddress))
-    .filter((t) => t.height >= Number(REGISTRY_DEPLOY_BLOCK) && t.memo.trim() === memo) // payments for older contracts don't count
+    .filter((t) => t.height >= Number(VAULT_DEPLOY_BLOCK) && t.memo.trim() === memo) // payments locked in older vaults don't count
     .reduce((s, t) => s + t.uqor, 0n);
 let paid = await paidUqor();
 if (paid >= BOUNTY_UQOR) {
@@ -156,7 +157,9 @@ const missing = paid - locked;
 if (missing <= 0n) {
   console.log(`3. already locked ${locked} uqor for robot #${robotId}`);
 } else {
-  const r = await relayer.send(VAULT, encodeFunctionData({ abi: vaultAbi, functionName: "depositBounty", args: [BigInt(robotId)] }), missing * WEI_PER_UQOR);
-  if (r.status !== "success") throw new Error(`depositBounty reverted (${r.hash})`);
+  const prize = terms.prizeUqor! < missing ? terms.prizeUqor! : missing;
+  const data = encodeFunctionData({ abi: vaultAbi, functionName: "depositPool", args: [BigInt(robotId), prize * WEI_PER_UQOR, terms.oncePerBrain] });
+  const r = await relayer.send(VAULT, data, missing * WEI_PER_UQOR);
+  if (r.status !== "success") throw new Error(`depositPool reverted (${r.hash})`);
   console.log(`3. locked ${missing} uqor for robot #${robotId}: ${r.hash}`);
 }

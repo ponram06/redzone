@@ -1,4 +1,4 @@
-import { formatQor, type Robot } from "../api";
+import { formatQor, nextPrizeWei, type Robot } from "../api";
 import { TIER_TEXT, safetyScore } from "../data";
 
 /** A robot at a glance: name, badge, safety score, attacks blocked, bounty. */
@@ -29,6 +29,12 @@ export function RobotCard({ robot, href, active, onClick }: { robot: Robot; href
           <dt>Bounty</dt>
           <dd className={robot.bounty.totalWei !== "0" ? "bounty" : ""}>{robot.bounty.totalWei !== "0" ? formatQor(robot.bounty.totalWei) : "None"}</dd>
         </div>
+        {robot.bounty.totalWei !== "0" && nextPrizeWei(robot).toString() !== robot.bounty.totalWei && (
+          <div>
+            <dt>Per win</dt>
+            <dd className="bounty">{formatQor(nextPrizeWei(robot).toString())}</dd>
+          </div>
+        )}
       </dl>
     </>
   );

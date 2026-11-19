@@ -118,6 +118,7 @@ const game = new Game({
   withdrawDelay: rules.withdrawDelay,
   // Bounty and paid-try payments count only from the current contracts' deployment.
   paymentsFromHeight: Number(REGISTRY_DEPLOY_BLOCK),
+  bountiesFromHeight: Number(VAULT_DEPLOY_BLOCK),
   passTtl: rules.passTtl,
   maxPassRounds: rules.maxPassRounds,
 });

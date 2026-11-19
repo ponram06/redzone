@@ -60,6 +60,12 @@
       "deployTx": "0x34e5986a6c1f15546508d9d362af3595e8d25957551dff566cb610ee0453a78e",
       "deployBlock": 10358789,
       "registry": "0xef521a3a178a344a5cdd6854271e1fca466fa115"
+    },
+    "EscrowVaultV4": {
+      "address": "0xb0a270a8fe9a54ba2600b582830f324c94fdece8",
+      "deployTx": "0xf2d716711a5047e26796647d72f48c57bb621b19dbfa12c9d179c5381b7d5b2c",
+      "deployBlock": 10361652,
+      "registry": "0xef521a3a178a344a5cdd6854271e1fca466fa115"
     }
   },
   "setup": {

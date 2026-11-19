@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useAccount } from "../account";
-import { api, bountyMemo, type OwnerBounty, type Trace } from "../api";
+import { api, poolMemo, type OwnerBounty, type PoolTerms, type Trace } from "../api";
 import { AccountGate } from "../components/AccountGate";
 import { ArenaView } from "../components/ArenaView";
 import { PracticePanel } from "../components/PracticePanel";
@@ -249,9 +249,9 @@ function toUqor(qorText: string, minUqor: bigint): string | null {
  * Pay the bounty from QoreX and have RedZone lock it in the vault. QoreX can't call contracts yet,
  * so the payment goes to RedZone's relayer, which deposits exactly that amount for this robot.
  */
-async function lockPrize(address: string, robotId: number, uqor: string, payTo: string, setBusy: (s: string) => void) {
+async function lockPrize(address: string, robotId: number, uqor: string, terms: PoolTerms, payTo: string, setBusy: (s: string) => void) {
   setBusy("Approve the bounty payment in QoreX…");
-  const tx = await payNative(address, payTo, uqor, bountyMemo(robotId));
+  const tx = await payNative(address, payTo, uqor, poolMemo(robotId, terms));
   setBusy("Locking the bounty in the vault…");
   for (let i = 0; ; i++) {
     try {
@@ -265,16 +265,66 @@ async function lockPrize(address: string, robotId: number, uqor: string, payTo: 
   }
 }
 
-function PrizeInput({ value, onChange, minUqor }: { value: string; onChange: (v: string) => void; minUqor: bigint }) {
-  const ok = toUqor(value, minUqor) !== null;
+/** Smallest prize per win (EscrowVaultV4.MIN_PRIZE). */
+const MIN_PRIZE_UQOR = 100_000n;
+
+/** The bounty form's state: the pool, and how it pays out. */
+function usePool(minUqor: bigint) {
+  const [amount, setAmount] = useState(String(Number(minUqor) / 1e6));
+  const [perWin, setPerWin] = useState(false);
+  const [prize, setPrize] = useState("");
+  const [oncePerBrain, setOncePerBrain] = useState(true);
+  const uqor = toUqor(amount, minUqor);
+  const prizeUqor = perWin ? toUqor(prize, MIN_PRIZE_UQOR) : null;
+  const prizeOk = !perWin || (prizeUqor !== null && uqor !== null && BigInt(prizeUqor) <= BigInt(uqor));
+  const terms: PoolTerms = { prizeUqor: perWin ? prizeUqor : null, oncePerBrain };
+  const wins = perWin && uqor && prizeUqor ? Math.floor(Number(uqor) / Number(prizeUqor)) : 1;
+  return { amount, setAmount, perWin, setPerWin, prize, setPrize, oncePerBrain, setOncePerBrain, uqor: prizeOk ? uqor : null, terms, wins, minUqor, prizeUqor };
+}
+type Pool = ReturnType<typeof usePool>;
+
+function PrizeInput({ pool }: { pool: Pool }) {
+  const amountOk = toUqor(pool.amount, pool.minUqor) !== null;
   return (
     <>
-      <label htmlFor="bounty">Bounty for the player who tricks it (QOR)</label>
-      <input id="bounty" inputMode="decimal" value={value} onChange={(e) => onChange(e.target.value)} />
-      {!ok && value && <p className="error-text">Enter at least {qorAmount(minUqor.toString())}.</p>}
+      <label htmlFor="bounty">Bounty pool (QOR)</label>
+      <input id="bounty" inputMode="decimal" value={pool.amount} onChange={(e) => pool.setAmount(e.target.value)} />
+      {!amountOk && pool.amount && <p className="error-text">Enter at least {qorAmount(pool.minUqor.toString())}.</p>}
+
+      <div className="choice" role="radiogroup" aria-label="How the bounty pays out">
+        <button type="button" role="radio" aria-checked={!pool.perWin} className={`option ${!pool.perWin ? "on" : ""}`} onClick={() => pool.setPerWin(false)}>
+          <b>One winner takes it all</b>
+          <span>The first player who tricks your robot wins the whole bounty.</span>
+        </button>
+        <button type="button" role="radio" aria-checked={pool.perWin} className={`option ${pool.perWin ? "on" : ""}`} onClick={() => pool.setPerWin(true)}>
+          <b>A prize for every new bug</b>
+          <span>Each winner gets a fixed prize and the robot stays in the arena, so you find more of its weak spots.</span>
+        </button>
+      </div>
+
+      {pool.perWin && (
+        <>
+          <label htmlFor="prize">Prize per win (QOR)</label>
+          <input id="prize" inputMode="decimal" placeholder="e.g. 150" value={pool.prize} onChange={(e) => pool.setPrize(e.target.value)} />
+          {pool.prize && pool.prizeUqor === null && <p className="error-text">Enter at least 0.1 QOR.</p>}
+          {pool.prizeUqor && !pool.uqor && amountOk && <p className="error-text">The prize can't be bigger than the pool.</p>}
+          {pool.uqor && pool.prizeUqor && (
+            <p className="note">
+              Pays up to <b>{pool.wins}</b> winners {qorAmount(pool.prizeUqor)} each. Each player can win once.
+            </p>
+          )}
+          <label className="check">
+            <input type="checkbox" checked={pool.oncePerBrain} onChange={(e) => pool.setOncePerBrain(e.target.checked)} />
+            <span>
+              <b>Pay again only after I update my robot</b> (recommended). Once a trick works, copies of it earn nothing until you fix your
+              robot's rules, so each prize is a new bug.
+            </span>
+          </label>
+        </>
+      )}
       <p className="note">
-        You pay it once from QoreX. It stays locked in the vault: a player only gets it by really tricking your robot, and you can take it back
-        any time it hasn't been won.
+        You pay it once from QoreX. It stays locked in the vault: a player only gets paid by really tricking your robot, and you can take back
+        whatever hasn't been won.
       </p>
     </>
   );
@@ -285,13 +335,13 @@ function AddRobot({ saveBrain, onAdded }: { saveBrain: () => Promise<string | nu
   const bounty = health?.prize;
   const minUqor = BigInt(bounty?.minUqor ?? "1000000");
   const [name, setName] = useState("");
-  const [amount, setAmount] = useState(String(Number(minUqor) / 1e6));
+  const pool = usePool(minUqor);
   const [done, setDone] = useState<{ id: number; bounty?: string; skills?: number; prizeError?: string } | null>(null);
   const s = useSigned();
   const clean = name.trim();
   const maxName = health?.rules?.maxNameLength;
   const validName = clean.length > 0 && (!maxName || clean.length <= maxName) && /^[\x20-\x7e]+$/.test(clean);
-  const uqor = toUqor(amount, minUqor);
+  const uqor = pool.uqor;
 
   const add = () =>
     s.run(async (address) => {
@@ -305,7 +355,7 @@ function AddRobot({ saveBrain, onAdded }: { saveBrain: () => Promise<string | nu
       setDone({ id: r.robotId });
       setName("");
       try {
-        await lockPrize(address, r.robotId, uqor, bounty.payTo, s.setBusy);
+        await lockPrize(address, r.robotId, uqor, pool.terms, bounty.payTo, s.setBusy);
         setDone({ id: r.robotId, bounty: uqor });
       } catch (e) {
         setDone({ id: r.robotId, prizeError: explainQorexError(e) });
@@ -348,7 +398,7 @@ function AddRobot({ saveBrain, onAdded }: { saveBrain: () => Promise<string | nu
       <label htmlFor="robot-name">Robot name</label>
       <input id="robot-name" value={name} maxLength={maxName} placeholder="e.g. Warehouse Helper" onChange={(e) => setName(e.target.value)} />
       {name && !validName && <p className="error-text">Use plain letters, numbers and punctuation {maxName ? ` (up to ${maxName})` : ""}.</p>}
-      <PrizeInput value={amount} onChange={setAmount} minUqor={minUqor} />
+      <PrizeInput pool={pool} />
       <button className="btn primary big" disabled={!validName || !uqor || !!s.busy} onClick={add}>
         Add my robot{uqor ? ` with a ${qorAmount(uqor)} bounty` : ""}
       </button>
@@ -363,16 +413,16 @@ function AddRobot({ saveBrain, onAdded }: { saveBrain: () => Promise<string | nu
 function RobotPrize({ robotId, hasPrize, bounties, onChange }: { robotId: number; hasPrize: boolean; bounties: OwnerBounty[]; onChange: () => Promise<void> }) {
   const { health } = useData();
   const minUqor = BigInt(health?.prize?.minUqor ?? "1000000");
-  const [amount, setAmount] = useState(String(Number(minUqor) / 1e6));
+  const pool = usePool(minUqor);
   const [adding, setAdding] = useState(false);
   const s = useSigned();
   const open = bounties.filter((p) => p.robotId === robotId);
-  const uqor = toUqor(amount, minUqor);
+  const uqor = pool.uqor;
 
   const add = () =>
     s.run(async (address) => {
       if (!health?.prize || !uqor) return;
-      await lockPrize(address, robotId, uqor, health.prize.payTo, s.setBusy);
+      await lockPrize(address, robotId, uqor, pool.terms, health.prize.payTo, s.setBusy);
       setAdding(false);
       await onChange();
     });
@@ -407,7 +457,7 @@ function RobotPrize({ robotId, hasPrize, bounties, onChange }: { robotId: number
       )}
       {adding && (
         <>
-          <PrizeInput value={amount} onChange={setAmount} minUqor={minUqor} />
+          <PrizeInput pool={pool} />
           <div className="row">
             <button className="btn primary small" disabled={!uqor || !!s.busy} onClick={add}>
               Pay {uqor ? qorAmount(uqor) : "bounty"}
