@@ -64,7 +64,7 @@ export function Help() {
             stolen or quantum-broken ECDSA key can't start sessions, register robots or move bounties.
           </li>
           <li>
-            The referee signs every verdict with its own ML-DSA-87 key. RobotRegistryV4 checks it before recording a result, and EscrowVaultV2
+            The referee signs every verdict with its own ML-DSA-87 key. RobotRegistryV4 checks it before recording a result, and EscrowVaultV3
             pays each bounty to the earliest recorded win. Nobody, not even the admin, can pick the winner or move the money.
           </li>
           <li>
