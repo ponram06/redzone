@@ -123,9 +123,12 @@ export function GameView({ arena, health, robot, all, onBack, onFinished }: Prop
         )}
 
         <div className={`game-dock ${dockOpen ? "" : "closed"}`}>
-          <button className="dock-toggle" onClick={() => setDockOpen((o) => !o)} aria-expanded={dockOpen}>
-            {dockOpen ? "Hide ▾" : "Message the robot ▴"}
-          </button>
+          <div className="dock-head">
+            <span>{mode === "practice" ? "Message the training robot" : `Message ${robot.name}`}</span>
+            <button className="dock-toggle" onClick={() => setDockOpen((o) => !o)} aria-expanded={dockOpen} aria-label={dockOpen ? "Minimise" : "Open"}>
+              {dockOpen ? "–" : "+"}
+            </button>
+          </div>
           {dockOpen && (
             <div className="dock-body">
               {mode === "practice" ? (
@@ -135,6 +138,7 @@ export function GameView({ arena, health, robot, all, onBack, onFinished }: Prop
                   name="the training robot"
                   maxInstruction={arena.maxInstruction}
                   onResult={(r, asked) => show({ trace: r.trace, said: r.say, asked }, true)}
+                  compact
                 />
               ) : (
                 <PlayPanel
@@ -144,6 +148,7 @@ export function GameView({ arena, health, robot, all, onBack, onFinished }: Prop
                   maxInstruction={arena.maxInstruction}
                   onResult={(v, asked) => show({ trace: v.trace, said: v.say, asked }, false)}
                   onFinished={onFinished}
+                  compact
                 />
               )}
             </div>

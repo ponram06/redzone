@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { api, formatQor, nextPrizeWei, type Robot, type RobotRecord } from "../api";
 import { TIER_TEXT, safetyScore } from "../data";
 
@@ -168,21 +169,24 @@ export function RobotPicker({ robots, chosen, onChoose }: { robots: Robot[]; cho
                 {perWin ? <span className="gold">Win {perWin}</span> : <span className="muted">No bounty</span>}
               </span>
             </button>
-            {open && (
-              <div
-                className="pick-pop"
-                role="tooltip"
-                style={{ left: hover!.left, top: hover!.top }}
-                onMouseEnter={() => window.clearTimeout(timer.current)}
-                onMouseLeave={hide}
-              >
-                <div className="pick-pop-head">
-                  <strong>{r.name}</strong>
-                  <span className="muted">Robot #{r.id}</span>
-                </div>
-                <RobotRecordCard robot={r} />
-              </div>
-            )}
+            {open &&
+              createPortal(
+                // in <body>, so no parent's overflow or transform can clip it
+                <div
+                  className="pick-pop"
+                  role="tooltip"
+                  style={{ left: hover!.left, top: hover!.top }}
+                  onMouseEnter={() => window.clearTimeout(timer.current)}
+                  onMouseLeave={hide}
+                >
+                  <div className="pick-pop-head">
+                    <strong>{r.name}</strong>
+                    <span className="muted">Robot #{r.id}</span>
+                  </div>
+                  <RobotRecordCard robot={r} />
+                </div>,
+                document.body,
+              )}
           </div>
         );
       })}

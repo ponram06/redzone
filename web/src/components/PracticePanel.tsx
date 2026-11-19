@@ -14,10 +14,11 @@ type Props = {
   maxInstruction: number;
   onResult: (r: PracticeResult, asked: string) => void;
   showExamples?: boolean;
+  compact?: boolean;
 };
 
 /** Free practice: talk to a robot brain with nothing signed, paid or saved. */
-export function PracticePanel({ brainHash, name, maxInstruction, onResult, showExamples = true }: Props) {
+export function PracticePanel({ brainHash, name, maxInstruction, onResult, showExamples = true, compact }: Props) {
   const [instruction, setInstruction] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -37,8 +38,10 @@ export function PracticePanel({ brainHash, name, maxInstruction, onResult, showE
   }
 
   return (
-    <div className="stack">
-      <label htmlFor={`practice-${brainHash}`}>Your message to {name}</label>
+    <div className={`stack ${compact ? "compact" : ""}`}>
+      <label htmlFor={`practice-${brainHash}`} className={compact ? "sr-only" : ""}>
+        Your message to {name}
+      </label>
       <textarea
         id={`practice-${brainHash}`}
         value={instruction}
@@ -52,7 +55,7 @@ export function PracticePanel({ brainHash, name, maxInstruction, onResult, showE
       {showExamples && (
         <div className="chips">
           <span className="note">Ideas:</span>
-          {EXAMPLES.map((x) => (
+          {(compact ? EXAMPLES.slice(0, 3) : EXAMPLES).map((x) => (
             <button key={x} className="chip" onClick={() => setInstruction(x)}>
               {x}
             </button>

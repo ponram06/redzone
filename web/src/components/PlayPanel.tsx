@@ -11,6 +11,8 @@ type Props = {
   maxInstruction: number;
   onResult: (v: Verdict, asked: string) => void;
   onFinished: () => void;
+  /** In the game screen: only what's needed to play (the round story card explains results). */
+  compact?: boolean;
 };
 
 /** roundKey: lets the message go without a second QoreX approval (only this tab knows it). */
@@ -67,7 +69,7 @@ export function PlayPanel(props: Props) {
   );
 }
 
-function RealRound({ health, robot, maxInstruction, onResult, onFinished }: Props) {
+function RealRound({ health, robot, maxInstruction, onResult, onFinished, compact }: Props) {
   const acc = useAccount();
   const [round, setRoundState] = useState<Round | null>(loadRound);
   const setRound = (r: Round | null) => {
@@ -172,9 +174,36 @@ function RealRound({ health, robot, maxInstruction, onResult, onFinished }: Prop
   const paidIds = new Set(verdict?.relay?.claimTxs?.map((c) => c.bountyId) ?? []);
   const paidWei = (verdict?.claims ?? []).filter((c) => paidIds.has(c.bountyId)).reduce((s, c) => s + BigInt(c.amountWei), 0n);
 
+  const proof = verdict && (
+    <details className="proof">
+      <summary>Proof</summary>
+      {verdict.relay?.resultTx && (
+        <div>
+          Result saved: <TxLink hash={verdict.relay.resultTx} explorer={health.explorerUrl} />
+        </div>
+      )}
+      {verdict.relay?.claimTxs?.map((c) => (
+        <div key={c.bountyId}>
+          Bounty payment: <TxLink hash={c.tx} explorer={health.explorerUrl} />
+        </div>
+      ))}
+      <div>
+        Replay:{" "}
+        <a href={`${API_URL}/replay/${verdict.replayHash}`} target="_blank" rel="noreferrer">
+          {shortHash(verdict.replayHash)}
+        </a>
+      </div>
+    </details>
+  );
+  const triesText =
+    player.attemptsLeft > 0
+      ? `${plural(player.attemptsLeft, "try", "tries")} left${player.extraTries ? ` (${player.extraTries} bought)` : " today"}`
+      : `No tries left today`;
+
   return (
-    <div className="stack">
-      {verdict && (
+    <div className={`stack ${compact ? "compact" : ""}`}>
+      {verdict && compact && !won && !verdict.relay?.error && <div className="row between">{proof}</div>}
+      {verdict && (!compact || won || verdict.relay?.error) && (
         <div className={`result ${won ? "win" : "lose"}`} aria-live="polite">
           <strong>{won ? (paidWei > 0n ? `You won ${formatQor(paidWei.toString())}!` : "You did it!") : "The robot stayed safe"}</strong>
           <p>
@@ -200,29 +229,23 @@ function RealRound({ health, robot, maxInstruction, onResult, onFinished }: Prop
               </button>
             </p>
           )}
-          <details className="proof">
-            <summary>Proof</summary>
-            {verdict.relay?.resultTx && (
-              <div>
-                Result saved: <TxLink hash={verdict.relay.resultTx} explorer={health.explorerUrl} />
-              </div>
-            )}
-            {verdict.relay?.claimTxs?.map((c) => (
-              <div key={c.bountyId}>
-                Bounty payment: <TxLink hash={c.tx} explorer={health.explorerUrl} />
-              </div>
-            ))}
-            <div>
-              Replay:{" "}
-              <a href={`${API_URL}/replay/${verdict.replayHash}`} target="_blank" rel="noreferrer">
-                {shortHash(verdict.replayHash)}
-              </a>
-            </div>
-          </details>
+          {proof}
         </div>
       )}
 
       {!round ? (
+        compact ? (
+          <>
+            <button className="btn primary big" disabled={!!busy || player.attemptsLeft < 1} onClick={start}>
+              {verdict ? "Play again" : "Start a round"}
+            </button>
+            <p className="note">
+              {triesText}
+              {pass && pass.validUntil > now ? " · play pass on, no QoreX prompt" : " · QoreX asks once for 10 minutes of play"}
+            </p>
+            {player.tries && player.attemptsLeft < 1 && <BuyTries address={address} tries={player.tries} onBought={acc.refresh} />}
+          </>
+        ) : (
         <>
           <p>
             {bounty ? (
@@ -251,20 +274,26 @@ function RealRound({ health, robot, maxInstruction, onResult, onFinished }: Prop
           </p>
           {player.tries && <BuyTries address={address} tries={player.tries} onBought={acc.refresh} />}
         </>
+        )
       ) : (
         <>
           <div className="timer">
             Round running · <strong>{Math.floor(left / 60)}:{String(left % 60).padStart(2, "0")}</strong> left
           </div>
-          <label htmlFor="real-msg">Your message to {robot.name}</label>
+          <label htmlFor="real-msg" className={compact ? "sr-only" : ""}>
+            Your message to {robot.name}
+          </label>
           <textarea
             id="real-msg"
             value={instruction}
             maxLength={maxInstruction}
-            placeholder="Think carefully. You only get one message this round."
+            placeholder={`One message to ${robot.name}. Make it count.`}
             onChange={(e) => setInstruction(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && instruction.trim() && left > 0 && !busy) send();
+            }}
           />
-          <button className="btn primary big" disabled={!!busy || !instruction.trim() || left === 0} onClick={send}>
+          <button className="btn primary big" disabled={!!busy || !instruction.trim() || left === 0} onClick={send} title="Ctrl+Enter">
             Send to robot
           </button>
           {left === 0 && <p className="note">Time's up for this round. Start a new one.</p>}
