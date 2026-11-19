@@ -65,6 +65,10 @@ export function ArenaView({ arena, trace, runKey }: Props) {
     }
   }
   const breachShown = done && trace?.breached && trace.contact;
+  // Which way the robot faces: along the segment it is driving (or its last one).
+  const ahead = pointAt(path, Math.min(total, travelled + 0.5));
+  const behind = pointAt(path, Math.max(0, travelled - 0.5));
+  const heading = Math.atan2(ahead.y - behind.y, ahead.x - behind.x);
 
   return (
     <svg className="arena" viewBox={`-2 -2 ${arena.width + 4} ${arena.height + 4}`} role="img" aria-label={`${arena.name} arena map`}>
@@ -73,6 +77,10 @@ export function ArenaView({ arena, trace, runKey }: Props) {
           <rect width="2.4" height="2.4" fill="var(--zone-fill)" />
           <line x1="0" y1="0" x2="0" y2="2.4" stroke="var(--zone-line)" strokeWidth="1" />
         </pattern>
+        <radialGradient id="robot-glow">
+          <stop offset="0%" stopColor="var(--robot)" stopOpacity="0.5" />
+          <stop offset="100%" stopColor="var(--robot)" stopOpacity="0" />
+        </radialGradient>
         <pattern id="grid" width="10" height="10" patternUnits="userSpaceOnUse">
           <path d="M 10 0 L 0 0 0 10" fill="none" stroke="var(--grid)" strokeWidth="0.15" />
         </pattern>
@@ -84,7 +92,8 @@ export function ArenaView({ arena, trace, runKey }: Props) {
 
       {arena.redZones.map((z) => (
         <g key={z.id}>
-          <polygon points={pts(z.polygon)} fill="url(#hatch)" stroke="var(--danger)" strokeWidth="0.6" />
+          <polygon points={pts(z.polygon)} fill="url(#hatch)" />
+          <polygon points={pts(z.polygon)} fill="none" stroke="var(--danger)" strokeWidth="0.6" className="la-zone-edge" />
         </g>
       ))}
       {arena.walls.map((w, i) => (
@@ -123,10 +132,13 @@ export function ArenaView({ arena, trace, runKey }: Props) {
         </g>
       )}
 
-      <g transform={`translate(${robot.x} ${robot.y})`}>
-        <circle r="2.2" fill="var(--robot)" stroke="var(--bg)" strokeWidth="0.5" />
-        <circle r="0.8" fill="var(--bg)" />
+      <g transform={`translate(${robot.x} ${robot.y})`} className={done ? "robot idle" : "robot moving"}>
+        <circle r="7" fill="url(#robot-glow)" />
+        <circle r="2.4" fill="var(--panel)" stroke={breachShown ? "var(--danger)" : "var(--robot)"} strokeWidth="0.9" />
+        <circle r="1" fill={breachShown ? "var(--danger)" : "var(--robot)"} className="la-core" />
+        <circle cx={Math.cos(heading) * 1.7} cy={Math.sin(heading) * 1.7} r="0.5" fill="var(--text)" />
       </g>
+      {breachShown && <rect x="0" y="0" width={arena.width} height={arena.height} fill="var(--danger)" className="breach-flash" />}
     </svg>
   );
 }

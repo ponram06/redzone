@@ -939,6 +939,28 @@ export class Game {
    * Players ranked by robots tricked, then bounty won, then fewest rounds. Built only from the
    * contracts' events: Breached / Defended (RobotRegistryV3) and BountyClaimed (EscrowVaultV2).
    */
+  /** The latest judged rounds, newest first, all from chain events: for the live feed. */
+  async activity(limit = 12) {
+    await this.d.ledger.sync();
+    const started = new Map(this.d.ledger.sessions().map((s) => [s.sessionId, s.expiresAt - this.d.sessionTtl]));
+    const won = new Map<number, bigint>();
+    for (const c of this.d.ledger.claims()) won.set(c.sessionId, (won.get(c.sessionId) ?? 0n) + c.amountWei);
+    const latest = [...this.d.ledger.results()].sort((a, b) => (b.block > a.block ? 1 : b.block < a.block ? -1 : b.sessionId - a.sessionId)).slice(0, limit);
+    const names = new Map<number, string>();
+    await Promise.all(
+      [...new Set(latest.map((r) => r.robotId))].map(async (id) => names.set(id, (await this.d.chain.readRobot(id))?.name ?? `Robot #${id}`)),
+    );
+    return latest.map((r) => ({
+      sessionId: r.sessionId,
+      robotId: r.robotId,
+      robot: names.get(r.robotId)!,
+      player: r.player,
+      breached: r.breached,
+      wonWei: (won.get(r.sessionId) ?? 0n).toString(),
+      at: started.get(r.sessionId) ?? null,
+    }));
+  }
+
   async leaderboard(limit = 50) {
     await this.d.ledger.sync();
     const by = new Map<string, { player: Address; attempts: number; wins: number; wonWei: bigint }>();

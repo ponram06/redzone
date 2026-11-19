@@ -115,6 +115,8 @@ export async function buildApp(d: AppDeps) {
   /** Top players, from the referee's own finished verdicts. */
   app.get("/leaderboard", async () => ({ players: await d.game.leaderboard() }));
 
+  app.get("/activity", async () => ({ rounds: await d.game.activity() }));
+
   app.get("/arena", async () => ({ ...d.arena, description: describeArena(d.arena), maxInstruction: MAX_INSTRUCTION }));
 
   app.get("/robots", async () => ({ robots: await d.readRobots() }));

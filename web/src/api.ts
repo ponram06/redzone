@@ -121,6 +121,9 @@ export type PlayerStatus = {
   tries: { priceUqor: string; payTo: string; memo: string } | null;
 };
 
+/** A judged round from the chain, for the live feed. `at` = when the round started (unix seconds). */
+export type ActivityRow = { sessionId: number; robotId: number; robot: string; player: string; breached: boolean; wonWei: string; at: number | null };
+
 export type LeaderRow = { rank: number; player: string; qor: string; attempts: number; wins: number; wonWei: string };
 /** A maker's bounty still in the vault (read from the chain). */
 export type OwnerBounty = { robotId: number; bountyId: number; uqor: string; withdraw: { requestedAt: number; unlocksAt: number } | null };
@@ -161,6 +164,7 @@ export const api = {
   finishBountyBack: (bountyId: number) =>
     call<{ bountyId: number; tx: string; to: string; uqor: string }>("/owner/bounty/back/finish", { method: "POST", body: JSON.stringify({ bountyId }) }),
   leaderboard: () => call<{ players: LeaderRow[] }>("/leaderboard").then((r) => r.players),
+  activity: () => call<{ rounds: ActivityRow[] }>("/activity").then((r) => r.rounds),
   publishBrain: (config: BrainConfig) => call<{ brainHash: string }>("/brains", { method: "POST", body: JSON.stringify({ config }) }),
   brain: (hash: string) => call<{ brainHash: string; config: BrainConfig }>(`/brains/${hash}`),
   robotRequest: (owner: string, name: string, brainHash: string) =>

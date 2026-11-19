@@ -39,7 +39,7 @@ function readEnv(file: string): Record<string, string> {
   return out;
 }
 
-function adminAccount(): UnifiedAccount {
+async function adminAccount(): Promise<UnifiedAccount> {
   const env = readEnv(new URL("../../contracts/.env", import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1"));
   if (env.QORE_MNEMONIC?.trim()) return deriveUnifiedAccount(env.QORE_MNEMONIC.trim(), 0);
   const key = env.PRIVATE_KEY?.trim() ?? "";
@@ -48,7 +48,7 @@ function adminAccount(): UnifiedAccount {
   return unifiedAccountFromSeed(Uint8Array.from(Buffer.from(key.slice(2), "hex")), { recoveryCode: code });
 }
 
-const admin = adminAccount();
+const admin = await adminAccount();
 if (admin.evm.toLowerCase() !== d.deployer.evm.toLowerCase()) throw new Error("contracts/.env is not the admin account");
 const owner = admin.evm as Address;
 // Cover the server's targets too, so its relayer keeps working with the same window.

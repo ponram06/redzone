@@ -1750,3 +1750,530 @@ input:focus {
 .option b {
   display: block;
 }
+
+/* ---------- live: hero, arena, feed, motion ---------- */
+
+.hero-split {
+  max-width: none;
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+  gap: 40px;
+  align-items: center;
+  padding-top: 40px;
+}
+
+.hero-split h1 {
+  font-size: clamp(34px, 5.4vw, 58px);
+}
+
+.hero-trust {
+  margin-top: 20px;
+  font-size: 13px;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dot-ok,
+.live-pill i,
+.feed-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ok);
+  box-shadow: 0 0 0 0 color-mix(in srgb, var(--ok) 60%, transparent);
+  animation: ping-dot 2s ease-out infinite;
+  flex: none;
+}
+
+@keyframes ping-dot {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--ok) 55%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 0 8px transparent;
+  }
+}
+
+/* glitchy "red zone" in the headline */
+.glitch {
+  position: relative;
+  display: inline-block;
+  text-shadow: 0 0 24px color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
+.glitch::before,
+.glitch::after {
+  content: attr(data-text);
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+}
+
+.glitch::before {
+  color: #ff2a6d;
+  animation: glitch-a 6s infinite steps(1);
+}
+
+.glitch::after {
+  color: #00e5ff;
+  animation: glitch-b 6s infinite steps(1);
+}
+
+@keyframes glitch-a {
+  0%, 91%, 100% { opacity: 0; transform: none; }
+  92% { opacity: 0.8; transform: translate(-2px, 1px); clip-path: inset(10% 0 55% 0); }
+  94% { opacity: 0.8; transform: translate(2px, -1px); clip-path: inset(60% 0 8% 0); }
+  96% { opacity: 0; }
+}
+
+@keyframes glitch-b {
+  0%, 92%, 100% { opacity: 0; transform: none; }
+  93% { opacity: 0.7; transform: translate(2px, 0); clip-path: inset(40% 0 30% 0); }
+  95% { opacity: 0.7; transform: translate(-2px, 1px); clip-path: inset(5% 0 75% 0); }
+  97% { opacity: 0; }
+}
+
+/* the live arena */
+.live-arena {
+  position: relative;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--floor);
+  overflow: hidden;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 10%, transparent), 0 24px 60px -30px color-mix(in srgb, var(--accent) 45%, transparent);
+  transition: box-shadow 0.3s;
+}
+
+.live-arena.skeleton {
+  aspect-ratio: 1 / 1.08;
+  background: linear-gradient(100deg, var(--panel) 30%, var(--panel-2) 50%, var(--panel) 70%) 0 0 / 300% 100%;
+  animation: shimmer 1.6s linear infinite;
+}
+
+@keyframes shimmer {
+  to {
+    background-position: -150% 0;
+  }
+}
+
+.live-arena.alarm {
+  box-shadow: 0 0 0 1px var(--danger), 0 0 40px -6px color-mix(in srgb, var(--danger) 70%, transparent);
+}
+
+.live-arena::after {
+  /* scan line sweeping down the floor */
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 30%;
+  background: linear-gradient(180deg, transparent, color-mix(in srgb, var(--accent) 7%, transparent) 85%, color-mix(in srgb, var(--accent) 22%, transparent));
+  animation: sweep 5s linear infinite;
+  pointer-events: none;
+}
+
+@keyframes sweep {
+  from {
+    transform: translateY(-100%);
+  }
+  to {
+    transform: translateY(380%);
+  }
+}
+
+.live-arena svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.live-arena-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.live-status {
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.alarm .live-status {
+  color: var(--danger);
+  animation: blink 0.6s steps(2) infinite;
+}
+
+@keyframes blink {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.live-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ok);
+  border: 1px solid color-mix(in srgb, var(--ok) 40%, transparent);
+  border-radius: 999px;
+  padding: 3px 10px;
+}
+
+.la-zone-edge {
+  animation: zone-pulse 2.4s ease-in-out infinite;
+}
+
+.la-zone.hot .la-zone-edge {
+  animation-duration: 0.5s;
+  stroke-width: 1.2;
+}
+
+@keyframes zone-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.la-scan {
+  animation: scan-wobble 1.8s ease-in-out infinite alternate;
+  transform-origin: 0 0;
+}
+
+@keyframes scan-wobble {
+  from {
+    transform: rotate(-22deg);
+  }
+  to {
+    transform: rotate(22deg);
+  }
+}
+
+.la-core {
+  animation: blink 1.2s ease-in-out infinite;
+}
+
+.la-ping {
+  animation: ping-ring 0.8s ease-out infinite;
+  transform-origin: 0 0;
+}
+
+@keyframes ping-ring {
+  from {
+    transform: scale(0.6);
+    opacity: 1;
+  }
+  to {
+    transform: scale(2);
+    opacity: 0;
+  }
+}
+
+/* stats strip */
+.stat-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--panel) 92%, transparent);
+  margin: 40px 0 8px;
+  overflow: hidden;
+  position: relative;
+}
+
+.stat-strip::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto auto 0;
+  height: 2px;
+  width: 30%;
+  background: linear-gradient(90deg, transparent, var(--accent), transparent);
+  animation: runner 4s linear infinite;
+}
+
+@keyframes runner {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(400%);
+  }
+}
+
+.stat-strip > div {
+  padding: 20px 22px;
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.stat-strip > div:first-child {
+  border-left: none;
+}
+
+.stat-num {
+  font-family: var(--display);
+  font-size: 34px;
+  font-weight: 600;
+  line-height: 1.1;
+}
+
+.stat-num small {
+  font-size: 0.45em;
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.stat-label {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* robots + live feed */
+.home-live {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
+  gap: 32px;
+  align-items: start;
+}
+
+.home-live .cards {
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+}
+
+.feed {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--panel) 94%, transparent);
+  overflow: hidden;
+}
+
+.feed-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.feed-head .note {
+  font-size: 12px;
+}
+
+.feed ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.feed li {
+  display: grid;
+  grid-template-columns: 10px 1fr auto;
+  grid-template-areas: "dot who tag" "dot time tag";
+  column-gap: 10px;
+  align-items: center;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13.5px;
+}
+
+.feed li:last-child {
+  border-bottom: none;
+}
+
+.feed li.fresh {
+  animation: slide-in 0.6s ease-out, flash 1.6s ease-out;
+}
+
+@keyframes slide-in {
+  from {
+    transform: translateX(-12px);
+    opacity: 0;
+  }
+}
+
+@keyframes flash {
+  from {
+    background: color-mix(in srgb, var(--accent) 16%, transparent);
+  }
+}
+
+.feed-dot {
+  grid-area: dot;
+}
+
+.feed li.breach .feed-dot {
+  background: var(--danger);
+}
+
+.feed-who {
+  grid-area: who;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.feed-time {
+  grid-area: time;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.feed-tag {
+  grid-area: tag;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 3px 8px;
+  border-radius: var(--radius);
+  border: 1px solid;
+}
+
+.feed-tag.held {
+  color: var(--ok);
+  border-color: color-mix(in srgb, var(--ok) 40%, transparent);
+}
+
+.feed-tag.breach {
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 45%, transparent);
+  background: var(--danger-soft);
+}
+
+.feed-empty {
+  padding: 18px 14px;
+  margin: 0;
+}
+
+/* reveal on scroll */
+.reveal {
+  opacity: 0;
+  transform: translateY(18px);
+  transition: opacity 0.7s ease, transform 0.7s ease;
+}
+
+.reveal.in {
+  opacity: 1;
+  transform: none;
+}
+
+/* cards: lift and glow */
+.card {
+  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 12px 30px -16px color-mix(in srgb, var(--accent) 60%, transparent);
+}
+
+.steps3 > div,
+.audience > div {
+  transition: border-color 0.2s ease, transform 0.2s ease;
+}
+
+.steps3 > div:hover,
+.audience > div:hover {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  transform: translateY(-2px);
+}
+
+/* primary buttons: a light sweep on hover */
+.btn.primary {
+  position: relative;
+  overflow: hidden;
+}
+
+.btn.primary::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(110deg, transparent 30%, rgba(255, 255, 255, 0.35) 50%, transparent 70%);
+  transform: translateX(-120%);
+  transition: transform 0.6s ease;
+}
+
+.btn.primary:hover::after {
+  transform: translateX(120%);
+}
+
+/* the floor grid drifts slowly */
+body {
+  animation: floor-drift 60s linear infinite;
+}
+
+@keyframes floor-drift {
+  to {
+    background-position: 47px 47px;
+  }
+}
+
+@media (max-width: 900px) {
+  .hero-split,
+  .home-live {
+    grid-template-columns: 1fr;
+  }
+  .stat-strip {
+    grid-template-columns: 1fr 1fr;
+  }
+  .stat-strip > div:nth-child(3) {
+    border-left: none;
+  }
+  .stat-strip > div:nth-child(n + 3) {
+    border-top: 1px solid var(--border);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+  .reveal {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.arena .robot.idle .la-core {
+  animation: blink 2s ease-in-out infinite;
+}
+
+.breach-flash {
+  opacity: 0;
+  pointer-events: none;
+  animation: breach-flash 1.2s ease-out 3;
+}
+
+@keyframes breach-flash {
+  0% {
+    opacity: 0.28;
+  }
+  100% {
+    opacity: 0;
+  }
+}
