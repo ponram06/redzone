@@ -2277,3 +2277,155 @@ body {
     opacity: 0;
   }
 }
+
+/* ---------- 3D arena ---------- */
+
+.arena-stage {
+  position: relative;
+}
+
+.arena-switch {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 3;
+  display: flex;
+  gap: 2px;
+  background: color-mix(in srgb, var(--bg) 80%, transparent);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 2px;
+}
+
+.arena-switch button,
+.a3-cams button {
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 5px 10px;
+  border-radius: 2px;
+}
+
+.arena-switch button.on,
+.a3-cams button.on {
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+.arena3d {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: #07080c;
+  border: 1px solid var(--border);
+  transition: box-shadow 0.3s;
+}
+
+.arena3d.loading {
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 13px;
+}
+
+.arena3d.alarm {
+  box-shadow: 0 0 0 1px var(--danger), 0 0 40px -6px color-mix(in srgb, var(--danger) 70%, transparent);
+  animation: alarm-pulse 0.9s ease-in-out 4;
+}
+
+@keyframes alarm-pulse {
+  50% {
+    box-shadow: 0 0 0 2px var(--danger), 0 0 70px 0 color-mix(in srgb, var(--danger) 80%, transparent);
+  }
+}
+
+.a3-cams {
+  position: absolute;
+  left: 10px;
+  bottom: 10px;
+  display: flex;
+  gap: 2px;
+  flex-wrap: wrap;
+  background: color-mix(in srgb, var(--bg) 80%, transparent);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 2px;
+}
+
+.a3-hint {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  margin: 0;
+  font-size: 11px;
+  color: var(--muted);
+  font-family: var(--mono);
+  pointer-events: none;
+}
+
+.a3-tag {
+  font-family: var(--mono);
+  font-size: 11px;
+  white-space: nowrap;
+  color: #c8cfdc;
+  background: rgba(10, 11, 15, 0.75);
+  border: 1px solid #2a3040;
+  border-radius: 3px;
+  padding: 2px 6px;
+  pointer-events: none;
+  user-select: none;
+}
+
+.a3-tag.danger {
+  color: #ff6b6b;
+  border-color: rgba(255, 59, 59, 0.5);
+}
+
+.a3-tag.danger.hot {
+  background: #ff3b3b;
+  color: #0a0b0f;
+  animation: blink 0.4s steps(2) infinite;
+}
+
+.a3-tag.robot {
+  pointer-events: auto;
+  color: #ffc94a;
+  text-decoration: none;
+}
+
+.a3-verdict {
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 18px;
+  letter-spacing: 0.12em;
+  padding: 4px 12px;
+  border-radius: 3px;
+  white-space: nowrap;
+  animation: pop 0.4s ease-out;
+}
+
+.a3-verdict.breached {
+  background: #ff3b3b;
+  color: #0a0b0f;
+  box-shadow: 0 0 24px rgba(255, 59, 59, 0.8);
+}
+
+.a3-verdict.defended {
+  background: #3ee08f;
+  color: #0a0b0f;
+  box-shadow: 0 0 24px rgba(62, 224, 143, 0.6);
+}
+
+@keyframes pop {
+  from {
+    transform: scale(0.4);
+    opacity: 0;
+  }
+}

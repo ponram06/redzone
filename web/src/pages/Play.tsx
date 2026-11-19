@@ -72,7 +72,7 @@ function PlayArena({ robotId }: { robotId?: number }) {
           <h2 className="small-head">2. Talk to {robot.name}</h2>
           <div className="play-grid">
             <div className="panel">
-              <ArenaView arena={arena} trace={trace} runKey={runKey} />
+              <ArenaView arena={arena} trace={trace} runKey={runKey} robotId={robot.id} others={all} />
               <p className="note map-key">
                 <span className="key red" /> Red zone: off-limits <span className="key robot" /> Robot <span className="key path" /> Robot's route
               </p>

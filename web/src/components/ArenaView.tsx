@@ -1,5 +1,77 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import type { Arena, Point, Trace } from "../api";
+import { Component, Suspense, lazy, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import type { Arena, Point, Robot, Trace } from "../api";
+
+const Arena3D = lazy(() => import("./arena3d/Arena3D"));
+
+function hasWebGL(): boolean {
+  try {
+    const c = document.createElement("canvas");
+    return !!(c.getContext("webgl2") ?? c.getContext("webgl"));
+  } catch {
+    return false;
+  }
+}
+
+const VIEW_KEY = "redzone.arenaView";
+
+/** If the 3D scene fails for any reason, show the 2D map instead. */
+class Fallback extends Component<{ fallback: ReactNode; children: ReactNode }, { failed: boolean }> {
+  state = { failed: false };
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+  render() {
+    return this.state.failed ? this.props.fallback : this.props.children;
+  }
+}
+
+/**
+ * The arena: a 3D facility by default (where WebGL works), or the 2D map. Both draw the same
+ * arena and the referee's replayed route.
+ */
+export function ArenaView(props: Props & { robotId?: number; others?: Robot[] }) {
+  const webgl = useMemo(hasWebGL, []);
+  const [view, setView] = useState<"3d" | "2d">(() => {
+    try {
+      return (localStorage.getItem(VIEW_KEY) as "3d" | "2d" | null) ?? "3d";
+    } catch {
+      return "3d";
+    }
+  });
+  const pick = (v: "3d" | "2d") => {
+    setView(v);
+    try {
+      localStorage.setItem(VIEW_KEY, v);
+    } catch {
+      // per-viewer convenience only
+    }
+  };
+  const flat = <ArenaView2D arena={props.arena} trace={props.trace} runKey={props.runKey} />;
+  const show3d = webgl && view === "3d";
+  return (
+    <div className="arena-stage">
+      {webgl && (
+        <div className="arena-switch" role="group" aria-label="Arena view">
+          <button className={show3d ? "on" : ""} onClick={() => pick("3d")}>
+            3D
+          </button>
+          <button className={!show3d ? "on" : ""} onClick={() => pick("2d")}>
+            2D map
+          </button>
+        </div>
+      )}
+      {show3d ? (
+        <Fallback fallback={flat}>
+          <Suspense fallback={<div className="arena3d loading">Loading the 3D arena…</div>}>
+            <Arena3D arena={props.arena} trace={props.trace} runKey={props.runKey} robotId={props.robotId} others={props.others} />
+          </Suspense>
+        </Fallback>
+      ) : (
+        flat
+      )}
+    </div>
+  );
+}
 
 const SPEED = 40; // arena units per second
 
@@ -29,7 +101,8 @@ function pointAt(path: Point[], d: number): Point {
 
 type Props = { arena: Arena; trace: Trace | null; runKey: number };
 
-export function ArenaView({ arena, trace, runKey }: Props) {
+/** The flat 2D map. */
+function ArenaView2D({ arena, trace, runKey }: Props) {
   const path = trace?.path ?? [arena.start];
   const total = useMemo(() => pathLength(path), [path]);
   const [travelled, setTravelled] = useState(total);
