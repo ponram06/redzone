@@ -58,7 +58,8 @@ Overall: about **88%** (each phase's weight is in brackets; last updated 2026-11
 ## Phase 6. Integration on testnet (5%): 0%
 - [ ] End-to-end round from the website with the main QoreX account: verify, start, attack, verdict (planned after 19 Nov, after the drill)
 - [x] Utility score recorded on chain for robot #1: 10/10
-- [ ] Second demo robot with the LLM brain and a small bounty
+- [x] AI robots (19 Nov, owner funded 20 QOR admin + 10 QOR relayer): #2 Atlas (OpenRouter free models, Groq backup), #3 Titan-120B (Groq gpt-oss-120b), #4 Spark-20B (Groq gpt-oss-20b); each a 5 QOR pool at 1 QOR per win (`scripts/demo-robot.ts --name --brain --pool --prize`)
+- [ ] Skills test for robots #2-#4 (`curl -X POST http://127.0.0.1:8787/utility/<id>`): started 19 Nov, interrupted; check each robot's utilityNonce in GET /robots first and only run the ones still at 0
 
 ## Phase 7. Audits (8%): 85% (v3 and v4 audited; the prize-pool vault still to run)
 - [x] Found it: QCAI Smart Contract Auditor at dashboard.qorechain.io/audit, a main requirement of the Post-Quantum dApp bounty; 150 QOR per audit
@@ -80,6 +81,11 @@ Overall: about **88%** (each phase's weight is in brackets; last updated 2026-11
 - [ ] README: screenshots
 - [ ] Cover image and demo video (owner, planned for 1 Dec)
 - [ ] Final check against the official rules and submit before 2 Dec
+
+## Checkpoint 19 Nov (resume here)
+- Done today: EscrowVaultV4 docs + QCAI bundle audits/RedZone.v5.flat.sol (de8bb18); realistic 3D arena (ce13624); Sentinel-01 pool 1 QOR / 0.5 per win; AI robots #2-#4 funded
+- Next: finish the skills tests above; check the 3D arena on the Play page with the 4 robots; owner runs QCAI stage 1 + 2 on RedZone.v5.flat.sol
+- Servers (local): backend `cd backend && npx tsx --env-file-if-exists=.env src/server.ts` on :8787, web `cd web && npx vite --port 5173`
 
 ## Needs the owner
 - Free AI key: done (OpenRouter key in backend/.env, git-ignored)
