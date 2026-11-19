@@ -1,4 +1,4 @@
-import { Component, Suspense, lazy, useEffect, useMemo, useState, type ReactNode } from "react";
+import { Component, Suspense, lazy, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { Arena, Point, Robot, Trace } from "../api";
 import { LiveArena } from "./LiveArena";
 
@@ -56,6 +56,22 @@ export function HeroArena({ arena, robots }: { arena: Arena; robots: Robot[] }) 
     return { path: PLANT_PATROL, breached: false, stopped: "done", length };
   }, [arena.id]);
   const [runKey, setRunKey] = useState(0);
+  // Only draw while the hero is on screen and the tab is visible: scrolling the page stays smooth.
+  const box = useRef<HTMLDivElement>(null);
+  const [onScreen, setOnScreen] = useState(true);
+  const [tabVisible, setTabVisible] = useState(() => !document.hidden);
+  useEffect(() => {
+    const el = box.current;
+    if (!el || !("IntersectionObserver" in window)) return;
+    const io = new IntersectionObserver(([e]) => setOnScreen(!!e?.isIntersecting), { threshold: 0.02 });
+    io.observe(el);
+    const vis = () => setTabVisible(!document.hidden);
+    document.addEventListener("visibilitychange", vis);
+    return () => {
+      io.disconnect();
+      document.removeEventListener("visibilitychange", vis);
+    };
+  }, []);
 
   // Loop the patrol: start again a moment after the robot gets home.
   useEffect(() => {
@@ -67,10 +83,20 @@ export function HeroArena({ arena, robots }: { arena: Arena; robots: Robot[] }) 
   const flat = <LiveArena arena={arena} />;
   if (!webgl) return flat;
   return (
-    <Fallback fallback={flat}>
-      <Suspense fallback={<div className="arena3d loading">Loading the arena…</div>}>
-        <Arena3D arena={arena} trace={trace} runKey={runKey} robotId={1} others={robots.filter((r) => r.id !== 1)} showcase />
-      </Suspense>
-    </Fallback>
+    <div ref={box} className="hero-arena">
+      <Fallback fallback={flat}>
+        <Suspense fallback={<div className="arena3d loading">Loading the arena…</div>}>
+          <Arena3D
+            arena={arena}
+            trace={trace}
+            runKey={runKey}
+            robotId={1}
+            others={robots.filter((r) => r.id !== 1)}
+            showcase
+            paused={!onScreen || !tabVisible}
+          />
+        </Suspense>
+      </Fallback>
+    </div>
   );
 }

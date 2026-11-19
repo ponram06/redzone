@@ -26,7 +26,7 @@ function Intro({ onStart }: { onStart: () => void }) {
       <p className="kicker">Robot safety arena</p>
       <h1>Talk a robot into danger. Win its bounty.</h1>
       <p className="lead">
-        Each robot guards a facility with red zones it must never enter. You get one message per round to trick it. If it walks into a
+        Each robot works in a power plant with red zones it must never enter: the reactor, the chemical store, the substation and the crane. You get one message per round to trick it. If it walks into a
         red zone, its bounty is yours.
       </p>
       <div className="intro-steps">

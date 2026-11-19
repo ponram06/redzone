@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { AccountProvider, shortAddress, useAccount } from "./account";
+import { Backdrop, LiveTicker, useCursorGlow } from "./components/Backdrop";
 import { DataProvider, useData } from "./data";
 import { plural } from "./format";
 import { Help } from "./pages/Help";
@@ -36,7 +37,6 @@ export function App() {
 
 const NAV = [
   ["", "Home"],
-  ["play", "Play"],
   ["robots", "Leaderboard"],
   ["owners", "Build a robot"],
   ["report", "Report"],
@@ -47,6 +47,7 @@ function Shell() {
   const [page, arg] = useRoute();
   const { error } = useData();
   const id = arg ? Number(arg) : undefined;
+  useCursorGlow();
 
   let content;
   if (page === "play") content = <Play key={id ?? 0} robotId={id} />;
@@ -60,6 +61,7 @@ function Shell() {
 
   return (
     <>
+      <Backdrop />
       <header className="header">
         <div className="header-inner">
           <a className="brand" href="#/">
@@ -77,16 +79,15 @@ function Shell() {
             ))}
           </nav>
           <div className="header-end">
-            {page !== "play" && (
-              <a className="btn primary small nav-cta" href="#/play">
-                Play now
-              </a>
-            )}
+            <a className={`btn primary small nav-cta ${page === "play" ? "on" : ""}`} href="#/play" aria-current={page === "play" ? "page" : undefined}>
+              Play now
+            </a>
             <AccountChip />
           </div>
         </div>
       </header>
-      <main className="shell">
+      <LiveTicker />
+      <main className="shell page-enter" key={`${page ?? ""}/${arg ?? ""}`}>
         {error ? (
           <div className="panel">
             <h2>Something's wrong on our side</h2>

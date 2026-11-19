@@ -1,8 +1,8 @@
-import { Environment, Html, Lightformer, Line, MeshReflectorMaterial, OrbitControls, RoundedBox, Sparkles } from "@react-three/drei";
-import { Canvas, useFrame, useThree } from "@react-three/fiber";
+import { Environment, Html, Lightformer, Line, MeshReflectorMaterial, OrbitControls, PerformanceMonitor, RoundedBox, Sparkles } from "@react-three/drei";
+import { Canvas, useFrame, useThree, type ThreeElements } from "@react-three/fiber";
 import { Bloom, EffectComposer, Noise, SMAA, ToneMapping, Vignette } from "@react-three/postprocessing";
 import { ToneMappingMode } from "postprocessing";
-import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, memo, useContext, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import type { Arena, Point, Robot, Trace } from "../../api";
 import { describeRound, metres } from "../../outcome";
@@ -17,7 +17,20 @@ const SPEED = 22; // arena units per second
 const WALL_H = 6;
 const OUTER_H = 8;
 const lowEnd = () =>
-  typeof navigator !== "undefined" && ((navigator.hardwareConcurrency ?? 8) <= 4 || /Mobi|Android/i.test(navigator.userAgent));
+  typeof navigator !== "undefined" && ((navigator.hardwareConcurrency ?? 8) <= 4 || /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent));
+
+/**
+ * Rendering quality, adjusted live from the frame rate (drei PerformanceMonitor).
+ * 2 = high: floor reflections, all lights, bloom, sparkles. 1 = medium: no reflections, fewer
+ * lights. 0 = low: no shadows or post effects, one pixel per pixel.
+ */
+type Quality = 0 | 1 | 2;
+const Q = createContext<Quality>(2);
+
+/** A decorative light: only on high quality (every light makes every surface slower to draw). */
+function Glow(props: ThreeElements["pointLight"]) {
+  return useContext(Q) === 2 ? <pointLight {...props} /> : null;
+}
 
 /** Half the arena's size: arena (x, y) maps to scene (x - OX, y - OZ). Set from the arena on render. */
 let OX = 50;
@@ -230,7 +243,7 @@ function Wall({ cx, cz, w, d, h, tex }: { cx: number; cz: number; w: number; d: 
   );
 }
 
-const Facility = memo(function Facility({ arena, hotZone, labels, low }: { arena: Arena; hotZone: string | null; labels: boolean; low: boolean }) {
+const Facility = memo(function Facility({ arena, hotZone, labels, quality }: { arena: Arena; hotZone: string | null; labels: boolean; quality: Quality }) {
   const zoneGeo = useMemo(() => arena.redZones.map((z) => ({ z, g: floorShape(z.polygon) })), [arena]);
   const tex = useMemo(() => ({ floor: floorTex(), wall: wallTex(), tape: tapeTex(), hatch: hatchTex() }), []);
 
@@ -239,13 +252,13 @@ const Facility = memo(function Facility({ arena, hotZone, labels, low }: { arena
       {/* floor: polished steel plates with live reflections */}
       <mesh rotation-x={-Math.PI / 2} receiveShadow position-y={-0.01}>
         <planeGeometry args={[OX * 2, OZ * 2]} />
-        {low ? (
-          <meshStandardMaterial map={tex.floor} roughness={0.6} metalness={0.4} />
+        {quality < 2 ? (
+          <meshStandardMaterial map={tex.floor} roughness={0.55} metalness={0.5} />
         ) : (
           <MeshReflectorMaterial
             map={tex.floor}
-            blur={[400, 120]}
-            resolution={1024}
+            blur={[300, 90]}
+            resolution={512}
             mixBlur={1}
             mixStrength={5}
             mixContrast={1.1}
@@ -311,7 +324,7 @@ const Facility = memo(function Facility({ arena, hotZone, labels, low }: { arena
             ]
           : []),
       ].map(([x, z], i) => (
-        <FloodLight key={i} x={x!} z={z!} />
+        <FloodLight key={i} x={x!} z={z!} lit={i === 0 || i === 3 || quality === 2} />
       ))}
 
       {zoneGeo.map(({ z, g }) => (
@@ -325,13 +338,13 @@ const Facility = memo(function Facility({ arena, hotZone, labels, low }: { arena
   );
 });
 
-function FloodLight({ x, z }: { x: number; z: number }) {
+function FloodLight({ x, z, lit }: { x: number; z: number; lit: boolean }) {
   const light = useRef<THREE.SpotLight>(null);
   useEffect(() => {
     if (!light.current) return;
     light.current.target.position.set(x * 0.2, 0, z * 0.2);
     light.current.target.updateMatrixWorld();
-  }, [x, z]);
+  }, [x, z, lit]);
   const yaw = Math.atan2(-x, -z);
   return (
     <group>
@@ -349,7 +362,7 @@ function FloodLight({ x, z }: { x: number; z: number }) {
           <meshBasicMaterial color={[3, 3, 2.6]} toneMapped={false} />
         </mesh>
       </group>
-      <spotLight ref={light} position={[x, 14, z]} angle={0.75} penumbra={0.9} intensity={2600} distance={140} decay={2} color="#dfe8ff" />
+      {lit && <spotLight ref={light} position={[x, 14, z]} angle={0.75} penumbra={0.9} intensity={2600} distance={140} decay={2} color="#dfe8ff" />}
     </group>
   );
 }
@@ -667,8 +680,8 @@ function ChemTanks({ at }: { at: Point }) {
         <circleGeometry args={[2.2, 32]} />
         <meshBasicMaterial ref={puddle} color={[0.4, 2.2, 0.6]} transparent opacity={0.6} toneMapped={false} />
       </mesh>
-      <pointLight position={[0, 1.2, 0]} color="#5dff7a" intensity={30} distance={12} decay={2} />
-      <pointLight position-y={6} color="#ff3b3b" intensity={40} distance={18} decay={2} />
+      <Glow position={[0, 1.2, 0]} color="#5dff7a" intensity={30} distance={12} decay={2} />
+      <Glow position-y={6} color="#ff3b3b" intensity={40} distance={18} decay={2} />
     </group>
   );
 }
@@ -721,7 +734,7 @@ function ChargingPad() {
           </mesh>
         ))}
       </group>
-      <pointLight position-y={1.5} color="#3ee08f" intensity={20} distance={10} decay={2} />
+      <Glow position-y={1.5} color="#3ee08f" intensity={20} distance={10} decay={2} />
     </group>
   );
 }
@@ -839,7 +852,7 @@ function ExitDoor() {
         <boxGeometry args={[0.2, 0.9, 3.2]} />
         <meshBasicMaterial color={[0.3, 2.6, 1.1]} toneMapped={false} />
       </mesh>
-      <pointLight position={[-2, 5, 0]} color="#3ee08f" intensity={25} distance={12} decay={2} />
+      <Glow position={[-2, 5, 0]} color="#3ee08f" intensity={25} distance={12} decay={2} />
     </group>
   );
 }
@@ -997,7 +1010,6 @@ function RobotModel({ color, state, lamp = false }: { color: string; state: RSta
             <meshBasicMaterial ref={tip} color={eye} toneMapped={false} />
           </mesh>
         </group>
-        <pointLight position={[1.4, 3.4, 0]} color={eyeHex} intensity={6} distance={8} decay={2} />
         {lamp && (
           <>
             <spotLight ref={spot} position={[1, 4.4, 0]} angle={0.55} penumbra={0.8} intensity={260} distance={40} decay={2} color={eyeHex} />
@@ -1297,7 +1309,7 @@ function Substation({ poly, hot }: { poly: Point[]; hot: boolean }) {
         <boxGeometry args={[12, 0.08, 0.08]} />
         <meshBasicMaterial ref={arc} color={[1.5, 2.5, 6]} transparent opacity={0} toneMapped={false} />
       </mesh>
-      <pointLight ref={light} position={[0, 7, 0]} color="#8fb4ff" intensity={0} distance={30} decay={2} />
+      <Glow ref={light} position={[0, 7, 0]} color="#8fb4ff" intensity={0} distance={30} decay={2} />
     </group>
   );
 }
@@ -1428,7 +1440,7 @@ function Canteen() {
         <boxGeometry args={[10, 2.2, 1.6]} />
         <meshStandardMaterial color="#c8cdd4" metalness={0.7} roughness={0.25} />
       </mesh>
-      <pointLight position={[0, 6, 0]} color="#ffd9a0" intensity={30} distance={18} decay={2} />
+      <Glow position={[0, 6, 0]} color="#ffd9a0" intensity={30} distance={18} decay={2} />
     </group>
   );
 }
@@ -1642,6 +1654,7 @@ export default function Arena3D({
   others = [],
   say,
   showcase = false,
+  paused = false,
 }: {
   arena: Arena;
   trace: Trace | null;
@@ -1651,6 +1664,8 @@ export default function Arena3D({
   say?: string;
   /** Home page: slow auto-rotating overview, no buttons, no verdicts. */
   showcase?: boolean;
+  /** Stop drawing (e.g. scrolled out of view). */
+  paused?: boolean;
 }) {
   setDims(arena);
   const path = useMemo(() => trace?.path ?? [arena.start], [trace, arena.start]);
@@ -1659,7 +1674,8 @@ export default function Arena3D({
   const [run, setRun] = useState<Run>({ p: path[0]!, heading: 0, done: true, driven: [] });
   const target = useRef<Target>({ p: path[0]!, heading: 0, done: true });
   const shakeAt = useRef(0);
-  const low = useMemo(lowEnd, []);
+  const [quality, setQuality] = useState<Quality>(() => (lowEnd() ? 0 : 2));
+  const low = quality === 0;
   const parked = useMemo(() => others.filter((r) => r.id !== robotId), [others, robotId]);
   const hotZone = useMemo(() => {
     if (!trace?.breached || !run.done) return null;
@@ -1686,7 +1702,21 @@ export default function Arena3D({
 
   return (
     <div className={`arena3d ${breachAt ? "alarm" : ""} ${showcase ? "showcase" : ""}`}>
-      <Canvas shadows={!low} dpr={low ? 1 : [1, 1.75]} camera={{ position: [0, 26, 70], fov: 45, near: 0.5, far: 700 }} gl={{ antialias: false, powerPreference: "high-performance" }}>
+      <Canvas
+        shadows={!low}
+        dpr={quality === 2 ? [1, 1.5] : quality === 1 ? [1, 1.25] : 1}
+        frameloop={paused ? "never" : "always"}
+        camera={{ position: [0, 26, 70], fov: 45, near: 0.5, far: 700 }}
+        gl={{ antialias: false, powerPreference: "high-performance", stencil: false }}
+      >
+        {/* drop a quality level when the frame rate sags, climb back when there's room */}
+        <PerformanceMonitor
+          onDecline={() => setQuality((v) => (v > 0 ? ((v - 1) as Quality) : v))}
+          onIncline={() => setQuality((v) => (v < 2 && !lowEnd() ? ((v + 1) as Quality) : v))}
+          flipflops={3}
+          onFallback={() => setQuality(0)}
+        />
+        <Q.Provider value={quality}>
         <color attach="background" args={["#050609"]} />
         <fog attach="fog" args={["#050609", 120 * (OX / 50), 320 * (OX / 50)]} />
         <hemisphereLight args={["#8fa6ff", "#08090d", 0.35]} />
@@ -1696,7 +1726,7 @@ export default function Arena3D({
           intensity={1.1}
           color="#cfd8ff"
           castShadow={!low}
-          shadow-mapSize={[2048, 2048]}
+          shadow-mapSize={[1024, 1024]}
           shadow-bias={-0.0004}
           shadow-camera-left={-OX - 12}
           shadow-camera-right={OX + 12}
@@ -1712,9 +1742,9 @@ export default function Arena3D({
           <Lightformer intensity={1.5} position={[0, 10, 40]} scale={[60, 8, 1]} color="#ffffff" />
         </Environment>
 
-        <Facility arena={arena} hotZone={hotZone} labels={!showcase && mode !== "follow"} low={low} />
+        <Facility arena={arena} hotZone={hotZone} labels={!showcase && mode !== "follow"} quality={quality} />
         <ParkedRobots robots={parked} labels={!showcase && mode !== "follow"} />
-        {!low && <Sparkles count={Math.round(160 * (OX / 50))} scale={[OX * 2, 18, OZ * 2]} position-y={9} size={2.2} speed={0.25} opacity={0.35} color="#b8c8ff" />}
+        {quality === 2 && <Sparkles count={Math.round(90 * (OX / 50))} scale={[OX * 2, 18, OZ * 2]} position-y={9} size={2.2} speed={0.25} opacity={0.35} color="#b8c8ff" />}
 
         {trace && <Line points={path.map((p) => to3(p, 0.15))} color="#5b6375" lineWidth={1.2} dashed dashSize={1} gapSize={1} />}
         {run.driven.length > 1 && <Line points={run.driven.map((p) => to3(p, 0.2))} color={breachAt ? new THREE.Color(4, 0.4, 0.4) : new THREE.Color(3, 2.2, 0.4)} lineWidth={4} toneMapped={false} />}
@@ -1759,14 +1789,24 @@ export default function Arena3D({
 
         {!low && (
           // multisampling > 0 renders black with three 0.187 here; SMAA smooths the edges instead
-          <EffectComposer multisampling={0}>
-            <Bloom mipmapBlur intensity={1.1} luminanceThreshold={1} luminanceSmoothing={0.2} radius={0.75} />
-            <Vignette offset={0.25} darkness={0.75} />
-            <Noise opacity={0.025} />
-            <ToneMapping mode={ToneMappingMode.ACES_FILMIC} />
-            <SMAA />
-          </EffectComposer>
+          // (two fixed lists: the composer wants real effects as children, not empty slots)
+          quality === 2 ? (
+            <EffectComposer key="hq" multisampling={0}>
+              <Bloom mipmapBlur intensity={1.1} luminanceThreshold={1} luminanceSmoothing={0.2} radius={0.75} />
+              <Vignette offset={0.25} darkness={0.75} />
+              <Noise opacity={0.025} />
+              <ToneMapping mode={ToneMappingMode.ACES_FILMIC} />
+              <SMAA />
+            </EffectComposer>
+          ) : (
+            <EffectComposer key="mq" multisampling={0}>
+              <Bloom mipmapBlur intensity={0.9} luminanceThreshold={1} luminanceSmoothing={0.2} radius={0.6} />
+              <Vignette offset={0.25} darkness={0.75} />
+              <ToneMapping mode={ToneMappingMode.ACES_FILMIC} />
+            </EffectComposer>
+          )
         )}
+        </Q.Provider>
       </Canvas>
       {!showcase && (
       <div className="a3-cams" role="group" aria-label="Camera">

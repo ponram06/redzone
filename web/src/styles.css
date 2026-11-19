@@ -3204,10 +3204,8 @@ body {
   white-space: nowrap;
 }
 
-@media (max-width: 760px) {
-  .nav-cta {
-    display: none;
-  }
+.nav-cta.on {
+  box-shadow: 0 0 0 2px rgba(255, 59, 59, 0.35);
 }
 
 /* full-bleed hero: the arena fills it, the copy floats on the left */
@@ -3437,4 +3435,530 @@ body {
   color: var(--accent-text);
   font-family: var(--mono);
   font-weight: 700;
+}
+
+.hero-arena {
+  position: absolute;
+  inset: 0;
+}
+
+/* ---------- living backdrop (composited: transform + opacity only) ---------- */
+
+body {
+  background: var(--bg);
+  background-image: none;
+  animation: none;
+}
+
+.bd {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+  background: radial-gradient(120% 80% at 50% 0%, #0d1018 0%, var(--bg) 60%);
+}
+
+.bd-grid {
+  position: absolute;
+  inset: -48px;
+  background-image: linear-gradient(var(--grid) 1px, transparent 1px), linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+  background-size: 48px 48px;
+  opacity: 0.55;
+  -webkit-mask-image: radial-gradient(ellipse 80% 70% at 50% 40%, #000 30%, transparent 85%);
+  mask-image: radial-gradient(ellipse 80% 70% at 50% 40%, #000 30%, transparent 85%);
+  will-change: transform;
+  animation: bd-drift 18s linear infinite;
+}
+
+@keyframes bd-drift {
+  to {
+    transform: translate3d(48px, 48px, 0);
+  }
+}
+
+.bd-glow {
+  position: absolute;
+  width: 46vmax;
+  height: 46vmax;
+  border-radius: 50%;
+  filter: blur(90px);
+  opacity: 0.22;
+  will-change: transform;
+}
+
+.bd-glow.a {
+  background: #ff2a2a;
+  left: -12vmax;
+  top: -14vmax;
+  animation: bd-float-a 26s ease-in-out infinite alternate;
+}
+
+.bd-glow.b {
+  background: #2a6dff;
+  right: -16vmax;
+  bottom: -18vmax;
+  opacity: 0.16;
+  animation: bd-float-b 32s ease-in-out infinite alternate;
+}
+
+@keyframes bd-float-a {
+  to {
+    transform: translate3d(22vw, 18vh, 0) scale(1.15);
+  }
+}
+
+@keyframes bd-float-b {
+  to {
+    transform: translate3d(-24vw, -16vh, 0) scale(0.9);
+  }
+}
+
+/* a radar sweep turning slowly around the top right */
+.bd-sweep {
+  position: absolute;
+  width: 110vmax;
+  height: 110vmax;
+  right: -55vmax;
+  top: -55vmax;
+  border-radius: 50%;
+  background: conic-gradient(from 0deg, rgba(255, 59, 59, 0.13), rgba(255, 59, 59, 0) 22%, rgba(255, 59, 59, 0) 100%);
+  -webkit-mask-image: radial-gradient(circle, #000 0%, #000 55%, transparent 70%);
+  mask-image: radial-gradient(circle, #000 0%, #000 55%, transparent 70%);
+  will-change: transform;
+  animation: bd-spin 14s linear infinite;
+}
+
+@keyframes bd-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.bd-scan {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 140px;
+  background: linear-gradient(180deg, transparent, rgba(120, 160, 255, 0.05), transparent);
+  will-change: transform;
+  animation: bd-scan 9s linear infinite;
+}
+
+@keyframes bd-scan {
+  from {
+    transform: translate3d(0, -140px, 0);
+  }
+  to {
+    transform: translate3d(0, 100vh, 0);
+  }
+}
+
+.bd-ping {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  margin: -5px 0 0 -5px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(255, 59, 59, 0.9);
+  opacity: 0;
+  will-change: transform, opacity;
+  animation: bd-ping 11s ease-out infinite;
+}
+
+@keyframes bd-ping {
+  0% {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+  3% {
+    opacity: 0.9;
+  }
+  14% {
+    opacity: 0;
+    transform: scale(7);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(7);
+  }
+}
+
+/* ---------- live ticker under the header ---------- */
+
+.ticker {
+  position: relative;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  height: 34px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(8, 9, 13, 0.6);
+  backdrop-filter: blur(8px);
+  font-family: var(--mono);
+  font-size: 12px;
+  color: #a7afc0;
+  overflow: hidden;
+}
+
+.tk-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 100%;
+  padding: 0 14px;
+  color: #eef0f5;
+  letter-spacing: 0.12em;
+  background: linear-gradient(90deg, rgba(8, 9, 13, 1) 70%, rgba(8, 9, 13, 0));
+  position: relative;
+  z-index: 1;
+  flex: none;
+}
+
+.tk-track {
+  flex: 1;
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 4%, #000 96%, transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 4%, #000 96%, transparent);
+}
+
+.tk-move {
+  display: flex;
+  width: max-content;
+  will-change: transform;
+  animation: tk-slide 40s linear infinite;
+}
+
+.ticker:hover .tk-move {
+  animation-play-state: paused;
+}
+
+.tk-set {
+  display: flex;
+  flex: none;
+}
+
+@keyframes tk-slide {
+  to {
+    transform: translate3d(-50%, 0, 0);
+  }
+}
+
+.tk-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 28px 0 0;
+  white-space: nowrap;
+}
+
+.tk-item b {
+  color: #dfe4ee;
+  font-weight: 600;
+}
+
+.tk-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+
+.tk-dot.good {
+  background: var(--ok);
+}
+
+.tk-dot.bad {
+  background: var(--danger);
+  box-shadow: 0 0 8px var(--danger);
+}
+
+.tk-good {
+  color: var(--ok);
+  font-size: 10.5px;
+  letter-spacing: 0.1em;
+}
+
+.tk-bad {
+  color: var(--danger);
+  font-size: 10.5px;
+  letter-spacing: 0.1em;
+}
+
+/* ---------- cursor-following glow on cards ---------- */
+
+.pick-card,
+.panel,
+.card,
+.flow li,
+.audience > div,
+.stat-strip > div,
+.intro-steps > div {
+  position: relative;
+  isolation: isolate;
+}
+
+.pick-card::after,
+.panel::after,
+.card::after,
+.flow li::after,
+.audience > div::after,
+.stat-strip > div::after,
+.intro-steps > div::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.25s;
+  background: radial-gradient(260px circle at var(--mx, 50%) var(--my, 50%), rgba(255, 59, 59, 0.12), transparent 65%);
+  z-index: -1;
+}
+
+.pick-card:hover::after,
+.panel:hover::after,
+.card:hover::after,
+.flow li:hover::after,
+.audience > div:hover::after,
+.stat-strip > div:hover::after,
+.intro-steps > div:hover::after {
+  opacity: 1;
+}
+
+/* the border lights up near the cursor too */
+.pick-card:hover,
+.card:hover,
+.flow li:hover,
+.audience > div:hover {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+}
+
+/* ---------- page transitions, buttons ---------- */
+
+.page-enter {
+  animation: page-in 0.45s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+@keyframes page-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 14px, 0);
+  }
+}
+
+.btn.primary {
+  position: relative;
+  overflow: hidden;
+}
+
+.btn.primary::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -60%;
+  width: 40%;
+  background: linear-gradient(100deg, transparent, rgba(255, 255, 255, 0.35), transparent);
+  transform: skewX(-20deg);
+  animation: btn-sheen 4.5s ease-in-out infinite;
+  pointer-events: none;
+}
+
+@keyframes btn-sheen {
+  0%,
+  70% {
+    left: -60%;
+  }
+  100% {
+    left: 130%;
+  }
+}
+
+.hx h1 .red {
+  position: relative;
+  display: inline-block;
+}
+
+.hx h1 .red::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0.04em;
+  height: 0.08em;
+  background: linear-gradient(90deg, transparent, #ff3b3b, transparent);
+  background-size: 200% 100%;
+  animation: red-scan 2.6s linear infinite;
+}
+
+@keyframes red-scan {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+/* ---------- every device: phones, tablets, small laptops ---------- */
+
+@media (max-width: 1024px) {
+  .header-inner {
+    gap: 10px;
+  }
+  .nav a {
+    padding: 6px 9px;
+    font-size: 14px;
+  }
+}
+
+@media (max-width: 860px) {
+  .header-inner {
+    flex-wrap: wrap;
+    row-gap: 6px;
+    padding: 8px 12px;
+  }
+  .brand {
+    order: 1;
+  }
+  .header-end {
+    order: 2;
+  }
+  .nav {
+    order: 3;
+    flex-basis: 100%;
+    -webkit-mask-image: linear-gradient(90deg, #000 85%, transparent);
+    mask-image: linear-gradient(90deg, #000 85%, transparent);
+    padding-right: 24px;
+  }
+  .stat-strip {
+    grid-template-columns: 1fr 1fr;
+  }
+  .home-live {
+    grid-template-columns: 1fr;
+  }
+  .audience {
+    grid-template-columns: 1fr;
+  }
+  .play-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .shell {
+    padding: 18px 14px 40px;
+  }
+  .page-title {
+    font-size: 30px;
+  }
+  .lead {
+    font-size: 16px;
+  }
+  .picker {
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+  .pick-card {
+    padding: 14px;
+  }
+  .pick-avatar {
+    width: 42px;
+    height: 42px;
+    font-size: 24px;
+  }
+  .pick-name {
+    font-size: 17px;
+  }
+  .pick-job {
+    font-size: 13px;
+  }
+  .pick-foot {
+    flex-direction: column;
+    gap: 2px;
+  }
+  .confirm-bar {
+    bottom: 10px;
+    padding: 10px 10px 10px 14px;
+  }
+  .confirm-bar .btn {
+    padding: 10px 14px;
+  }
+  .tk-label {
+    padding: 0 10px;
+  }
+  .bd-sweep {
+    display: none;
+  }
+  table {
+    font-size: 13px;
+  }
+  .table-wrap,
+  .panel:has(table) {
+    overflow-x: auto;
+  }
+  .game-hud {
+    padding: 6px 8px;
+  }
+  .hud-robot span {
+    display: none;
+  }
+  .hud-stats {
+    font-size: 12px;
+    gap: 8px;
+  }
+  .hud-btn {
+    padding: 5px 8px;
+  }
+}
+
+@media (max-width: 380px) {
+  .picker {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* phones held sideways: keep the arena, shrink the chrome */
+@media (max-height: 500px) and (orientation: landscape) {
+  .game-dock {
+    max-height: calc(100% - 20px);
+    width: min(340px, 45%);
+  }
+  .game-story {
+    max-height: calc(100% - 20px);
+    top: 10px;
+  }
+  .hx {
+    height: auto;
+    min-height: 100vh;
+  }
+}
+
+/* touch screens: no hover popups to wait for, bigger tap targets */
+@media (hover: none) {
+  .pick-card:hover {
+    transform: none;
+  }
+  .btn,
+  .hud-btn,
+  .segmented button,
+  .chip {
+    min-height: 40px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bd *,
+  .tk-move,
+  .btn.primary::before,
+  .hx h1 .red::after,
+  .page-enter,
+  .live-dot {
+    animation: none !important;
+  }
+}
+
+.hx-stage .arena3d.loading {
+  color: transparent;
 }
