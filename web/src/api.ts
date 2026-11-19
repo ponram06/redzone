@@ -39,6 +39,42 @@ export type Robot = {
   job?: string | null;
 };
 
+/** Everything on a player's profile page (all of it public chain data). */
+export type PlayerProfile = {
+  evm: string;
+  qor: string;
+  balanceUqor: string | null;
+  stats: {
+    rounds: number;
+    wins: number;
+    defended: number;
+    earnedWei: string;
+    rank: number | null;
+    players: number;
+    triesBought: number;
+    robotsFaced: number;
+    firstRoundAt: number | null;
+    beaten: { robot: string; n: number }[];
+  };
+  rounds: { sessionId: number; robotId: number; robot: string; breached: boolean; wonWei: string; at: number | null; tx: string; replayHash: string }[];
+  prizes: { bountyId: number; sessionId: number; robotId: number | null; robot: string | null; amountWei: string; tx: string; resultTx: string | null; replayHash: string; at: number | null }[];
+  tries: { count: number; paidWei: string; tx: string }[];
+  wallet: {
+    txHash: string;
+    time: string | null;
+    height: number;
+    direction: "in" | "out";
+    uqor: string;
+    memo: string;
+    kind: "signup" | "tries" | "bounty" | "sent" | "received";
+    label: string;
+    counterparty: string;
+    redzone: boolean;
+    ok: boolean;
+  }[];
+  walletAvailable: boolean;
+};
+
 /** A robot's public record, for the robot picker. */
 export type RobotRecord = {
   robotId: number;
@@ -179,6 +215,12 @@ export const api = {
   leaderboard: () => call<{ players: LeaderRow[] }>("/leaderboard").then((r) => r.players),
   activity: () => call<{ rounds: ActivityRow[] }>("/activity").then((r) => r.rounds),
   robotRecord: (id: number) => call<RobotRecord>(`/robots/${id}/record`),
+  playerProfile: (address: string) => call<PlayerProfile>(`/player/${encodeURIComponent(address)}/profile`),
+  playerNames: () => call<{ names: Record<string, string> }>("/players/names").then((r) => r.names),
+  nameRequest: (player: string, name: string) =>
+    call<{ name: string; deadline: number; text: string }>(`/player/name/request?player=${encodeURIComponent(player)}&name=${encodeURIComponent(name)}`),
+  saveName: (b: { player: string; name: string; deadline: number; pqSignature: string }) =>
+    call<{ name: string }>("/player/name", { method: "POST", body: JSON.stringify(b) }),
   profileRequest: (robotId: number, owner: string, job: string) =>
     call<{ deadline: number; text: string; job: string }>(`/owner/profile/request?robotId=${robotId}&owner=${encodeURIComponent(owner)}&job=${encodeURIComponent(job)}`),
   saveProfile: (b: { robotId: number; owner: string; job: string; deadline: number; pqSignature: string }) =>

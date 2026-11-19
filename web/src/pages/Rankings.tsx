@@ -1,7 +1,7 @@
 import { useAccount } from "../account";
 import { useEffect, useState } from "react";
 import { api, formatQor, type LeaderRow, type Robot } from "../api";
-import { shortAddress } from "../account";
+import { PlayerTag } from "../players";
 import { TIER_TEXT, isListed, safetyScore, useData } from "../data";
 
 /** Highest safety score first; untested robots last; ties by attacks blocked. */
@@ -64,8 +64,8 @@ function Players() {
               {rows.map((r) => (
                 <tr key={r.player} className={r.player.toLowerCase() === me ? "me" : ""}>
                   <td>{r.rank <= 3 ? ["🥇", "🥈", "🥉"][r.rank - 1] : r.rank}</td>
-                  <td title={r.qor}>
-                    {shortAddress(r.qor)}
+                  <td>
+                    <PlayerTag address={r.player} />
                     {r.player.toLowerCase() === me && <span className="badge"> you</span>}
                   </td>
                   <td>{r.wins}</td>

@@ -12,6 +12,7 @@ export class Store {
   private readonly replays: string;
   private readonly verdicts: string;
   private readonly profiles: string;
+  private readonly players: string;
 
   constructor(dataDir: string) {
     this.replays = join(dataDir, "replays");
@@ -20,6 +21,25 @@ export class Store {
     mkdirSync(this.replays, { recursive: true });
     mkdirSync(this.verdicts, { recursive: true });
     mkdirSync(this.profiles, { recursive: true });
+    this.players = join(dataDir, "players");
+    mkdirSync(this.players, { recursive: true });
+  }
+
+  /** Every nickname players chose, by lower-case 0x address. */
+  playerNames(): Record<string, string> {
+    const out: Record<string, string> = {};
+    for (const n of readdirSync(this.players)) {
+      if (!/^0x[0-9a-f]{40}\.json$/.test(n)) continue;
+      const v = JSON.parse(readFileSync(join(this.players, n), "utf8")) as { name?: string };
+      if (v.name) out[n.slice(0, 42)] = v.name;
+    }
+    return out;
+  }
+
+  savePlayerName(evm: string, name: string): void {
+    const a = evm.toLowerCase();
+    if (!/^0x[0-9a-f]{40}$/.test(a)) throw new Error("bad address");
+    atomicWrite(join(this.players, `${a}.json`), JSON.stringify({ name, updatedAt: Math.floor(Date.now() / 1000) }, null, 2));
   }
 
   /** A robot's public profile (what it is used for), written by its owner. */

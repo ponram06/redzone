@@ -1034,6 +1034,189 @@ export class Game {
     return profile;
   }
 
+  /** A player's chosen nickname: 3-20 letters, digits, spaces, dots, dashes or underscores. */
+  private cleanName20(raw: unknown): string {
+    if (typeof raw !== "string") throw new GameError(400, "name must be text");
+    const name = raw.replace(/\s+/g, " ").trim();
+    if (!/^[\p{L}\p{N} ._-]{3,20}$/u.test(name)) throw new GameError(400, "use 3 to 20 letters, numbers, spaces, dots, dashes or underscores");
+    return name;
+  }
+
+  private nameText(evm: Address, name: string, deadline: number) {
+    return `RedZone player name\nplayer: ${evm.toLowerCase()}\nname: ${name}\ndeadline: ${deadline}`;
+  }
+
+  private nameTaken(evm: Address, name: string): boolean {
+    const want = name.toLowerCase();
+    return Object.entries(this.d.store.playerNames()).some(([a, n]) => a !== evm.toLowerCase() && n.toLowerCase() === want);
+  }
+
+  /** What the player signs in QoreX to set their nickname. */
+  nameRequest(input: { player: unknown; name: unknown }) {
+    const evm = toEvmAddress(input.player);
+    if (!evm) throw new GameError(400, "bad address");
+    const name = this.cleanName20(input.name);
+    if (this.nameTaken(evm, name)) throw new GameError(409, "that name is taken, try another");
+    const deadline = this.now() + REQUEST_TTL;
+    return { name, deadline, text: this.nameText(evm, name, deadline) };
+  }
+
+  async saveName(input: { player?: unknown; name?: unknown; deadline?: unknown; pqSignature?: unknown }) {
+    const evm = toEvmAddress(input.player);
+    if (!evm) throw new GameError(400, "bad address");
+    const name = this.cleanName20(input.name);
+    const deadline = this.checkDeadline(input.deadline);
+    const sig = decodePqSignature(input.pqSignature);
+    if (!sig) throw new GameError(400, "pqSignature missing or malformed");
+    const key = await this.d.chain.readPqcKey(evm);
+    if (!key.registered || !verifyWalletSignature(key.pubkey, this.nameText(evm, name, deadline), sig)) {
+      throw new GameError(401, "signature does not match this request");
+    }
+    return this.once(`name-${name.toLowerCase()}`, async () => {
+      if (this.nameTaken(evm, name)) throw new GameError(409, "that name is taken, try another");
+      this.d.store.savePlayerName(evm, name);
+      this.profiles.delete(evm.toLowerCase());
+      return { name };
+    });
+  }
+
+  private profiles = new Map<string, { at: number; value: Promise<unknown> }>();
+
+  /**
+   * Everything a player's profile page shows: wallet balance and payments (read from the chain),
+   * rounds played, prizes won with their proofs, tries bought and leaderboard rank. Cached 15 s.
+   */
+  async playerProfile(addressRaw: unknown) {
+    const evm = toEvmAddress(addressRaw);
+    if (!evm) throw new GameError(400, "address must be a qor1… or 0x… address");
+    const key = evm.toLowerCase();
+    const hit = this.profiles.get(key);
+    if (hit && Date.now() - hit.at < 15_000) return hit.value;
+    const value = this.buildProfile(evm);
+    this.profiles.set(key, { at: Date.now(), value });
+    value.catch(() => this.profiles.delete(key));
+    return value;
+  }
+
+  private async buildProfile(evm: Address) {
+    const me = evm.toLowerCase();
+    const qor = toQorAddress(evm);
+    await this.d.ledger.sync();
+    const started = new Map(this.d.ledger.sessions().map((s) => [s.sessionId, s.expiresAt - this.d.sessionTtl]));
+    const mine = this.d.ledger
+      .results()
+      .filter((r) => r.player.toLowerCase() === me)
+      .sort((a, b) => (b.block > a.block ? 1 : b.block < a.block ? -1 : b.sessionId - a.sessionId));
+    const bySession = new Map(mine.map((r) => [r.sessionId, r]));
+    const claims = this.d.ledger.claims().filter((c) => c.player.toLowerCase() === me);
+    const wonBySession = new Map<number, bigint>();
+    for (const c of claims) wonBySession.set(c.sessionId, (wonBySession.get(c.sessionId) ?? 0n) + c.amountWei);
+
+    const robotIds = [...new Set(mine.map((r) => r.robotId))];
+    const names = new Map<number, string>();
+    await Promise.all(robotIds.map(async (id) => names.set(id, (await this.d.chain.readRobot(id))?.name ?? `Robot #${id}`)));
+
+    const rounds = mine.slice(0, 50).map((r) => ({
+      sessionId: r.sessionId,
+      robotId: r.robotId,
+      robot: names.get(r.robotId)!,
+      breached: r.breached,
+      wonWei: (wonBySession.get(r.sessionId) ?? 0n).toString(),
+      at: started.get(r.sessionId) ?? null,
+      tx: r.tx,
+      replayHash: r.replayHash,
+    }));
+    const prizes = claims.map((c) => {
+      const r = bySession.get(c.sessionId);
+      return {
+        bountyId: c.bountyId,
+        sessionId: c.sessionId,
+        robotId: r?.robotId ?? null,
+        robot: r ? names.get(r.robotId)! : null,
+        amountWei: c.amountWei.toString(),
+        tx: c.tx,
+        resultTx: r?.tx ?? null,
+        replayHash: c.replayHash,
+        at: started.get(c.sessionId) ?? null,
+      };
+    });
+    const tries = this.d.ledger
+      .tries()
+      .filter((t) => t.player.toLowerCase() === me)
+      .map((t) => ({ count: t.count, paidWei: t.paidWei.toString(), tx: t.tx }));
+
+    const board = await this.leaderboard(1000);
+    const row = board.find((b) => b.player.toLowerCase() === me);
+
+    // Wallet: native QOR balance and recent transfers, labelled when they're RedZone payments.
+    const ours = new Set([this.d.signup?.payTo, this.d.prize?.payTo].filter(Boolean) as string[]);
+    const [balance, txs] = await Promise.all([
+      this.d.ledger.balance ? this.d.ledger.balance(qor).catch(() => null) : Promise.resolve(null),
+      this.d.ledger.wallet ? this.d.ledger.wallet(qor).catch(() => null) : Promise.resolve(null),
+    ]);
+    const wallet = (txs ?? []).filter((t) => t.uqor > 0n).map((t) => {
+      const out = t.from === qor;
+      const other = out ? t.to : t.from;
+      const memo = t.memo.trim();
+      const bounty = /^RedZone bounty #(\d+)/.exec(memo);
+      const [kind, label] =
+        memo === SIGNUP_MEMO
+          ? ["signup", "Account verification"]
+          : memo.startsWith(TRIES_MEMO)
+            ? ["tries", "Bought extra tries"]
+            : bounty
+              ? ["bounty", `Bounty for robot #${bounty[1]}`]
+              : out
+                ? ours.has(other)
+                  ? ["sent", "Paid to RedZone"]
+                  : ["sent", "Sent QOR"]
+                : ours.has(other)
+                  ? ["received", "From RedZone"]
+                  : ["received", "Received QOR"];
+      return {
+        txHash: t.txHash,
+        time: t.time,
+        height: t.height,
+        direction: out ? "out" : "in",
+        uqor: t.uqor.toString(),
+        memo,
+        kind,
+        label,
+        counterparty: other,
+        redzone: ours.has(other),
+        ok: t.code === 0,
+      };
+    });
+
+    const earnedWei = claims.reduce((s, c) => s + c.amountWei, 0n);
+    const wins = mine.filter((r) => r.breached).length;
+    const beaten = new Map<string, number>();
+    for (const r of mine) if (r.breached) beaten.set(names.get(r.robotId)!, (beaten.get(names.get(r.robotId)!) ?? 0) + 1);
+
+    return {
+      evm,
+      qor,
+      balanceUqor: balance === null ? null : balance.toString(),
+      stats: {
+        rounds: mine.length,
+        wins,
+        defended: mine.length - wins,
+        earnedWei: earnedWei.toString(),
+        rank: row?.rank ?? null,
+        players: board.length,
+        triesBought: tries.reduce((s, t) => s + t.count, 0),
+        robotsFaced: robotIds.length,
+        firstRoundAt: mine.length ? (started.get(mine[mine.length - 1]!.sessionId) ?? null) : null,
+        beaten: [...beaten.entries()].map(([robot, n]) => ({ robot, n })),
+      },
+      rounds,
+      prizes,
+      tries,
+      wallet,
+      walletAvailable: txs !== null,
+    };
+  }
+
   async leaderboard(limit = 50) {
     await this.d.ledger.sync();
     const by = new Map<string, { player: Address; attempts: number; wins: number; wonWei: bigint }>();

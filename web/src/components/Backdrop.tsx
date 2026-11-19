@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { PlayerTag } from "../players";
 import { api, formatQor, type ActivityRow } from "../api";
 
 /** Spots where "attack pings" pop on the backdrop (percent of the screen). */
@@ -31,7 +32,6 @@ export function Backdrop() {
   );
 }
 
-const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
 
 /** A slim, endlessly scrolling strip of the latest rounds, read from the chain. */
 export function LiveTicker() {
@@ -54,7 +54,7 @@ export function LiveTicker() {
   const items = rows.map((r) => (
     <span key={r.sessionId} className="tk-item">
       <span className={`tk-dot ${r.breached ? "bad" : "good"}`} />
-      <b>{short(r.player)}</b> attacked <b>{r.robot}</b>
+      <PlayerTag address={r.player} link={false} size={16} /> attacked <b>{r.robot}</b>
       <span className={r.breached ? "tk-bad" : "tk-good"}>{r.breached ? "BREACHED" : "DEFENDED"}</span>
       {r.wonWei !== "0" && <span className="gold">+{formatQor(r.wonWei)}</span>}
     </span>

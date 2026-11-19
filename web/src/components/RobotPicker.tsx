@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { api, formatQor, nextPrizeWei, type Robot, type RobotRecord } from "../api";
+import { PlayerTag } from "../players";
 import { TIER_TEXT, safetyScore } from "../data";
 
 const records = new Map<number, Promise<RobotRecord>>();
@@ -23,7 +24,6 @@ function ago(at: number | null): string {
   return `${Math.round(s / 86400)} d ago`;
 }
 
-const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
 
 function brainText(b: RobotRecord["brain"]): string {
   if (!b) return "Unknown";
@@ -101,7 +101,7 @@ export function RobotRecordCard({ robot }: { robot: Robot }) {
               <li key={r.sessionId}>
                 <span className={`dot ${r.breached ? "bad" : "good"}`} />
                 <span>{r.breached ? "Breached" : "Defended"}</span>
-                <span className="muted">{short(r.player)}</span>
+                <PlayerTag address={r.player} size={16} />
                 <span className="muted">{ago(r.at)}</span>
                 {r.wonWei !== "0" && <span className="gold">+{formatQor(r.wonWei)}</span>}
               </li>

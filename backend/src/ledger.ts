@@ -18,6 +18,8 @@ export type DepositEvent = { bountyId: number; robotId: number; owner: Address; 
 export type ClaimEvent = { bountyId: number; sessionId: number; player: Address; amountWei: bigint; replayHash: Hex; tx: Hex };
 export type TriesEvent = { player: Address; payer: Address; count: number; paidWei: bigint; tx: Hex };
 export type Transfer = NativeTransfer & { txHash: string };
+/** A native transfer in someone's wallet history, with its block time. */
+export type WalletTx = Transfer & { time: string | null };
 
 const EV = {
   breached: parseAbiItem("event Breached(uint256 indexed sessionId, uint256 indexed robotId, address indexed player, bytes32 replayHash)"),
@@ -41,6 +43,10 @@ export interface LedgerReader {
   tries(): TriesEvent[];
   /** Successful native transfers from `from` to `to`, newest first. */
   transfers(from: string, to: string): Promise<Transfer[]>;
+  /** The account's native QOR balance in uqor (optional: tests may leave it out). */
+  balance?(qor: string): Promise<bigint>;
+  /** The account's latest native transfers, sent and received, newest first. */
+  wallet?(qor: string, limit?: number): Promise<WalletTx[]>;
 }
 
 export class ChainLedger implements LedgerReader {
@@ -149,6 +155,37 @@ export class ChainLedger implements LedgerReader {
       }
       this.vaultFrom = to + 1n;
     }
+  }
+
+  async balance(qor: string): Promise<bigint> {
+    const res = await fetch(`${this.rest}/cosmos/bank/v1beta1/balances/${qor}/by_denom?denom=uqor`, { signal: AbortSignal.timeout(15_000) });
+    if (!res.ok) throw new Error(`balance lookup failed: HTTP ${res.status}`);
+    const body = (await res.json()) as { balance?: { amount?: string } };
+    return BigInt(body.balance?.amount ?? "0");
+  }
+
+  async wallet(qor: string, limit = 40): Promise<WalletTx[]> {
+    const search = async (query: string) => {
+      const q = encodeURIComponent(query);
+      const res = await fetch(`${this.rest}/cosmos/tx/v1beta1/txs?query=${q}&order_by=ORDER_BY_DESC&page=1&limit=${limit}`, {
+        signal: AbortSignal.timeout(20_000),
+      });
+      if (!res.ok) throw new Error(`tx search failed: HTTP ${res.status}`);
+      const body = (await res.json()) as { txs?: RawTx[]; tx_responses?: (RawResp & { timestamp?: string })[] };
+      const out: WalletTx[] = [];
+      (body.txs ?? []).forEach((tx, i) => {
+        const r = body.tx_responses?.[i];
+        const t = parseTransfer(tx, r);
+        if (t && r?.txhash) out.push({ ...t, txHash: r.txhash.toUpperCase(), time: r.timestamp ?? null });
+      });
+      return out;
+    };
+    const [sent, received] = await Promise.all([search(`transfer.sender='${qor}'`), search(`transfer.recipient='${qor}'`)]);
+    const seen = new Set<string>();
+    return [...sent, ...received]
+      .filter((t) => (seen.has(t.txHash) ? false : (seen.add(t.txHash), true)))
+      .sort((a, b) => b.height - a.height)
+      .slice(0, limit);
   }
 
   async transfers(from: string, to: string): Promise<Transfer[]> {

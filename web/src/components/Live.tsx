@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { PlayerTag } from "../players";
 import { api, formatQor, type ActivityRow } from "../api";
 
 /** Small live-page helpers: a polling round feed, count-up numbers and scroll reveals. */
@@ -11,7 +12,6 @@ const ago = (t: number | null) => {
   if (s < 86400) return `${Math.floor(s / 3600)} h ago`;
   return `${Math.floor(s / 86400)} d ago`;
 };
-const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
 
 /** The latest judged rounds, from the chain, refreshed every 15 s. New rounds slide in. */
 export function LiveFeed({ limit = 6 }: { limit?: number }) {
@@ -59,7 +59,7 @@ export function LiveFeed({ limit = 6 }: { limit?: number }) {
             <li key={r.sessionId} className={`${r.breached ? "breach" : "held"} ${fresh.has(r.sessionId) ? "fresh" : ""}`}>
               <i className="feed-dot" />
               <span className="feed-who">
-                <code>{short(r.player)}</code> attacked <a href={`#/robots/${r.robotId}`}>{r.robot}</a>
+                <PlayerTag address={r.player} /> attacked <a href={`#/robots/${r.robotId}`}>{r.robot}</a>
               </span>
               <span className={`feed-tag ${r.breached ? "breach" : "held"}`}>
                 {r.breached ? (r.wonWei !== "0" ? `Breached · +${formatQor(r.wonWei)}` : "Breached") : "Defended"}

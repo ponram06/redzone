@@ -1,8 +1,11 @@
 import { useEffect, useState } from "react";
-import { AccountProvider, shortAddress, useAccount } from "./account";
+import { AccountProvider, useAccount } from "./account";
 import { Backdrop, LiveTicker, useCursorGlow } from "./components/Backdrop";
 import { DataProvider, useData } from "./data";
-import { plural } from "./format";
+import { plural, qorAmount } from "./format";
+import { api } from "./api";
+import { Avatar, PlayerNamesProvider, usePlayerNames } from "./players";
+import { MyProfile, Profile } from "./pages/Profile";
 import { Help } from "./pages/Help";
 import { Home } from "./pages/Home";
 import { Owners } from "./pages/Owners";
@@ -29,7 +32,9 @@ export function App() {
   return (
     <DataProvider>
       <AccountProvider>
-        <Shell />
+        <PlayerNamesProvider>
+          <Shell />
+        </PlayerNamesProvider>
       </AccountProvider>
     </DataProvider>
   );
@@ -57,6 +62,8 @@ function Shell() {
   else if (page === "owners") content = <Owners />;
   else if (page === "help") content = <Help />;
   else if (page === "report") content = <Report />;
+  else if (page === "me") content = <MyProfile />;
+  else if (page === "player" && arg) content = <Profile address={arg} />;
   else content = <Home />;
 
   return (
@@ -106,6 +113,32 @@ function Shell() {
 
 function AccountChip() {
   const acc = useAccount();
+  const { nameOf } = usePlayerNames();
+  const [open, setOpen] = useState(false);
+  const [balance, setBalance] = useState<string | null>(null);
+  const evm = acc.player?.evm;
+
+  // Close the menu on any outside click or Escape.
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: Event) => {
+      if (e instanceof KeyboardEvent && e.key !== "Escape") return;
+      if (e instanceof MouseEvent && (e.target as Element).closest?.(".pmenu, .pchip")) return;
+      setOpen(false);
+    };
+    document.addEventListener("mousedown", close);
+    document.addEventListener("keydown", close);
+    window.addEventListener("hashchange", close);
+    return () => {
+      document.removeEventListener("mousedown", close);
+      document.removeEventListener("keydown", close);
+      window.removeEventListener("hashchange", close);
+    };
+  }, [open]);
+  useEffect(() => {
+    if (open && evm) api.playerProfile(evm).then((p) => setBalance(p.balanceUqor)).catch(() => {});
+  }, [open, evm]);
+
   if (!acc.address) {
     return (
       <button className="btn small" disabled={!!acc.busy} onClick={acc.signIn}>
@@ -113,15 +146,38 @@ function AccountChip() {
       </button>
     );
   }
+  const id = evm ?? acc.address;
   return (
-    <div className="account">
-      <span className="who" title={acc.address}>
-        {shortAddress(acc.address)}
-        {acc.player?.signedUp && <span className="note"> · {plural(acc.player.attemptsLeft, "try", "tries")} left</span>}
-      </span>
-      <button className="link" onClick={acc.signOut}>
-        Sign out
+    <div className="pchip-wrap">
+      <button className="pchip" onClick={() => setOpen((o) => !o)} aria-expanded={open} aria-haspopup="menu" title={acc.address}>
+        <Avatar address={id} size={28} />
+        <span className="pchip-name">{nameOf(id)}</span>
+        {acc.player?.signedUp && <span className="pchip-tries">{acc.player.attemptsLeft}</span>}
       </button>
+      {open && (
+        <div className="pmenu" role="menu">
+          <div className="pmenu-head">
+            <Avatar address={id} size={40} />
+            <div>
+              <b>{nameOf(id)}</b>
+              <span className="muted">{balance ? qorAmount(balance) : "…"} in QoreX</span>
+            </div>
+          </div>
+          {acc.player?.signedUp && <p className="pmenu-tries">{plural(acc.player.attemptsLeft, "try", "tries")} left today</p>}
+          <a role="menuitem" href="#/me">
+            My profile
+          </a>
+          <a role="menuitem" href="#/me">
+            Wallet &amp; activity
+          </a>
+          <a role="menuitem" href="#/players">
+            Leaderboard
+          </a>
+          <button role="menuitem" className="danger" onClick={acc.signOut}>
+            Sign out
+          </button>
+        </div>
+      )}
     </div>
   );
 }
