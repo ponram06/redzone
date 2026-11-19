@@ -1042,8 +1042,21 @@ export class Game {
     return name;
   }
 
-  private nameText(evm: Address, name: string, deadline: number) {
-    return `RedZone player name\nplayer: ${evm.toLowerCase()}\nname: ${name}\ndeadline: ${deadline}`;
+  /** The picture is one of the site's preset icons (by id), or empty for the generated pixel one. */
+  private cleanAvatar(raw: unknown): string {
+    if (raw === undefined || raw === null || raw === "") return "";
+    if (typeof raw !== "string" || !/^[a-z0-9-]{1,24}$/.test(raw)) throw new GameError(400, "unknown picture");
+    return raw;
+  }
+
+  /** Name optional (empty keeps the generated one), picture optional. */
+  private cleanNameOpt(raw: unknown): string {
+    if (raw === undefined || raw === null || (typeof raw === "string" && !raw.trim())) return "";
+    return this.cleanName20(raw);
+  }
+
+  private nameText(evm: Address, name: string, avatar: string, deadline: number) {
+    return `RedZone player profile\nplayer: ${evm.toLowerCase()}\nname: ${name}\npicture: ${avatar || "generated"}\ndeadline: ${deadline}`;
   }
 
   private nameTaken(evm: Address, name: string): boolean {
@@ -1052,31 +1065,33 @@ export class Game {
   }
 
   /** What the player signs in QoreX to set their nickname. */
-  nameRequest(input: { player: unknown; name: unknown }) {
+  nameRequest(input: { player: unknown; name: unknown; avatar?: unknown }) {
     const evm = toEvmAddress(input.player);
     if (!evm) throw new GameError(400, "bad address");
-    const name = this.cleanName20(input.name);
-    if (this.nameTaken(evm, name)) throw new GameError(409, "that name is taken, try another");
+    const name = this.cleanNameOpt(input.name);
+    const avatar = this.cleanAvatar(input.avatar);
+    if (name && this.nameTaken(evm, name)) throw new GameError(409, "that name is taken, try another");
     const deadline = this.now() + REQUEST_TTL;
-    return { name, deadline, text: this.nameText(evm, name, deadline) };
+    return { name, avatar, deadline, text: this.nameText(evm, name, avatar, deadline) };
   }
 
-  async saveName(input: { player?: unknown; name?: unknown; deadline?: unknown; pqSignature?: unknown }) {
+  async saveName(input: { player?: unknown; name?: unknown; avatar?: unknown; deadline?: unknown; pqSignature?: unknown }) {
     const evm = toEvmAddress(input.player);
     if (!evm) throw new GameError(400, "bad address");
-    const name = this.cleanName20(input.name);
+    const name = this.cleanNameOpt(input.name);
+    const avatar = this.cleanAvatar(input.avatar);
     const deadline = this.checkDeadline(input.deadline);
     const sig = decodePqSignature(input.pqSignature);
     if (!sig) throw new GameError(400, "pqSignature missing or malformed");
     const key = await this.d.chain.readPqcKey(evm);
-    if (!key.registered || !verifyWalletSignature(key.pubkey, this.nameText(evm, name, deadline), sig)) {
+    if (!key.registered || !verifyWalletSignature(key.pubkey, this.nameText(evm, name, avatar, deadline), sig)) {
       throw new GameError(401, "signature does not match this request");
     }
-    return this.once(`name-${name.toLowerCase()}`, async () => {
-      if (this.nameTaken(evm, name)) throw new GameError(409, "that name is taken, try another");
-      this.d.store.savePlayerName(evm, name);
+    return this.once(`name-${(name || evm).toLowerCase()}`, async () => {
+      if (name && this.nameTaken(evm, name)) throw new GameError(409, "that name is taken, try another");
+      this.d.store.savePlayer(evm, { name, avatar });
       this.profiles.delete(evm.toLowerCase());
-      return { name };
+      return { name, avatar };
     });
   }
 

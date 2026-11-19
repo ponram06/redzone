@@ -4,7 +4,7 @@ import { API_URL, api, formatQor, type PlayerProfile } from "../api";
 import { AccountGate } from "../components/AccountGate";
 import { useData } from "../data";
 import { qorAmount, shortHash } from "../format";
-import { Avatar, generatedName, shortAddr, usePlayerNames } from "../players";
+import { Avatar, PICTURES, generatedName, shortAddr, toEvm, usePlayerNames } from "../players";
 import { explainQorexError, signPq } from "../qorex";
 
 /** #/me: your own profile (sign in first). */
@@ -75,7 +75,9 @@ type Entry = {
 
 const KIND_ICON: Record<string, string> = { signup: "✓", tries: "⚡", bounty: "🛡", sent: "↗", received: "↙" };
 
-export function Profile({ address, own = false }: { address: string; own?: boolean }) {
+export function Profile({ address: raw, own = false }: { address: string; own?: boolean }) {
+  // one key for a wallet, whether the link used its qor1… or 0x… address
+  const address = toEvm(raw);
   const acc = useAccount();
   const { health, robots } = useData();
   const { nameOf, custom } = usePlayerNames();
@@ -410,27 +412,33 @@ export function Profile({ address, own = false }: { address: string; own?: boole
   );
 }
 
-/** Choose a nickname: QoreX signs it, so nobody else can rename you. */
+/** Edit your name and picture: QoreX signs the change, so nobody else can edit your profile. */
 function NameEditor({ address, current }: { address: string; current: string | null }) {
-  const { refresh } = usePlayerNames();
+  const { refresh, pictureOf } = usePlayerNames();
   const acc = useAccount();
+  const currentPic = pictureOf(address) ?? "";
   const [name, setName] = useState(current ?? "");
+  const [pic, setPic] = useState(currentPic);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   useEffect(() => setName(current ?? ""), [current]);
+  useEffect(() => setPic(currentPic), [currentPic]);
+
+  const nameOk = !name.trim() || name.trim().length >= 3;
+  const changed = name.trim() !== (current ?? "") || pic !== currentPic;
 
   const save = async () => {
     setError(null);
     setSaved(false);
     try {
-      setBusy("Checking the name…");
-      const req = await api.nameRequest(address, name);
+      setBusy("Checking…");
+      const req = await api.nameRequest(address, name.trim(), pic);
       setBusy("Approve in QoreX…");
       // QoreX signs as the account it has unlocked: its qor1… address, not the 0x one.
       const pqSignature = await signPq(acc.address ?? address, req.text);
       setBusy("Saving…");
-      await api.saveName({ player: address, name: req.name, deadline: req.deadline, pqSignature });
+      await api.saveName({ player: address, name: req.name, avatar: req.avatar, deadline: req.deadline, pqSignature });
       await refresh();
       setSaved(true);
     } catch (e) {
@@ -441,18 +449,61 @@ function NameEditor({ address, current }: { address: string; current: string | n
   };
 
   return (
-    <details className="pf-name" open={!current}>
-      <summary>{current ? "Change your name" : "Choose your player name"}</summary>
-      <div className="row">
-        <input value={name} maxLength={20} placeholder={generatedName(address)} onChange={(e) => setName(e.target.value)} aria-label="Player name" />
-        <button className="btn primary small" disabled={!!busy || name.trim().length < 3 || name.trim() === current} onClick={save}>
-          Save name
-        </button>
+    <details className="pf-name" open={!current && !currentPic}>
+      <summary>Edit profile: name and picture</summary>
+      <div className="pf-edit">
+        <div className="pf-preview">
+          <Avatar address={address} size={64} picture={pic || null} />
+          <b>{name.trim() || generatedName(address)}</b>
+          <span className="note">Preview</span>
+        </div>
+        <div className="pf-edit-fields">
+          <label htmlFor="pf-name-input">Player name</label>
+          <input
+            id="pf-name-input"
+            value={name}
+            maxLength={20}
+            placeholder={generatedName(address)}
+            onChange={(e) => {
+              setName(e.target.value);
+              setSaved(false);
+            }}
+          />
+          <label>Picture</label>
+          <div className="pic-grid" role="radiogroup" aria-label="Picture">
+            <button type="button" role="radio" aria-checked={pic === ""} className={`pic ${pic === "" ? "on" : ""}`} onClick={() => setPic("")} title="Generated from your wallet">
+              <Avatar address={address} size={40} picture={null} />
+            </button>
+            {PICTURES.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                role="radio"
+                aria-checked={pic === p.id}
+                className={`pic ${pic === p.id ? "on" : ""}`}
+                onClick={() => {
+                  setPic(p.id);
+                  setSaved(false);
+                }}
+                title={p.label}
+              >
+                <Avatar address={address} size={40} picture={p.id} />
+              </button>
+            ))}
+          </div>
+          <div className="row">
+            <button className="btn primary small" disabled={!!busy || !nameOk || !changed} onClick={save}>
+              Save profile
+            </button>
+            {saved && <span className="note">Saved ✓ It now shows everywhere on RedZone.</span>}
+          </div>
+          <p className="note">
+            Name: 3 to 20 letters or numbers (leave empty to keep the generated one). Saved with your wallet on RedZone, so it's the same every time you sign in. QoreX asks you to approve once.
+          </p>
+          {busy && <p className="note">{busy}</p>}
+          {error && <p className="error-text">{error}</p>}
+        </div>
       </div>
-      <p className="note">3 to 20 letters or numbers. Shown on the leaderboard, the live feed and the arena. QoreX asks you to approve it once.</p>
-      {busy && <p className="note">{busy}</p>}
-      {saved && <p className="note">Saved ✓</p>}
-      {error && <p className="error-text">{error}</p>}
     </details>
   );
 }

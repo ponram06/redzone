@@ -187,9 +187,13 @@ export async function buildApp(d: AppDeps) {
   app.get<{ Params: { address: string } }>("/player/:address", async (req) => d.game.playerStatus(req.params.address));
   app.get<{ Params: { address: string } }>("/player/:address/profile", async (req) => d.game.playerProfile(req.params.address));
   /** Nicknames players chose (everyone else gets a generated name in the web app). */
-  app.get("/players/names", async () => ({ names: d.store.playerNames() }));
-  app.get<{ Querystring: { player?: string; name?: string } }>("/player/name/request", async (req) => d.game.nameRequest({ player: req.query.player, name: req.query.name }));
-  app.post<{ Body: { player?: unknown; name?: unknown; deadline?: unknown; pqSignature?: unknown } }>("/player/name", async (req) => d.game.saveName(req.body ?? {}));
+  app.get("/players/names", async () => ({ names: d.store.playerNames(), players: d.store.playerProfiles() }));
+  app.get<{ Querystring: { player?: string; name?: string; avatar?: string } }>("/player/name/request", async (req) =>
+    d.game.nameRequest({ player: req.query.player, name: req.query.name, avatar: req.query.avatar }),
+  );
+  app.post<{ Body: { player?: unknown; name?: unknown; avatar?: unknown; deadline?: unknown; pqSignature?: unknown } }>("/player/name", async (req) =>
+    d.game.saveName(req.body ?? {}),
+  );
 
   /** One-time sign-up: the player sends the fee from QoreX, then posts the transaction hash here. */
   app.post<{ Body: { address?: unknown; txHash?: unknown } }>("/player/register", async (req, reply) => {

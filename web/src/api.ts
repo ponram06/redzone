@@ -216,11 +216,15 @@ export const api = {
   activity: () => call<{ rounds: ActivityRow[] }>("/activity").then((r) => r.rounds),
   robotRecord: (id: number) => call<RobotRecord>(`/robots/${id}/record`),
   playerProfile: (address: string) => call<PlayerProfile>(`/player/${encodeURIComponent(address)}/profile`),
-  playerNames: () => call<{ names: Record<string, string> }>("/players/names").then((r) => r.names),
-  nameRequest: (player: string, name: string) =>
-    call<{ name: string; deadline: number; text: string }>(`/player/name/request?player=${encodeURIComponent(player)}&name=${encodeURIComponent(name)}`),
-  saveName: (b: { player: string; name: string; deadline: number; pqSignature: string }) =>
-    call<{ name: string }>("/player/name", { method: "POST", body: JSON.stringify(b) }),
+  /** Every player's chosen name and picture, by lower-case 0x address. */
+  playerNames: () =>
+    call<{ players?: Record<string, { name?: string; avatar?: string }> }>("/players/names").then((r) => r.players ?? {}),
+  nameRequest: (player: string, name: string, avatar: string) =>
+    call<{ name: string; avatar: string; deadline: number; text: string }>(
+      `/player/name/request?player=${encodeURIComponent(player)}&name=${encodeURIComponent(name)}&avatar=${encodeURIComponent(avatar)}`,
+    ),
+  saveName: (b: { player: string; name: string; avatar: string; deadline: number; pqSignature: string }) =>
+    call<{ name: string; avatar: string }>("/player/name", { method: "POST", body: JSON.stringify(b) }),
   profileRequest: (robotId: number, owner: string, job: string) =>
     call<{ deadline: number; text: string; job: string }>(`/owner/profile/request?robotId=${robotId}&owner=${encodeURIComponent(owner)}&job=${encodeURIComponent(job)}`),
   saveProfile: (b: { robotId: number; owner: string; job: string; deadline: number; pqSignature: string }) =>

@@ -25,21 +25,32 @@ export class Store {
     mkdirSync(this.players, { recursive: true });
   }
 
-  /** Every nickname players chose, by lower-case 0x address. */
-  playerNames(): Record<string, string> {
-    const out: Record<string, string> = {};
+  /** Every player's chosen name and picture, by lower-case 0x address. */
+  playerProfiles(): Record<string, { name?: string; avatar?: string }> {
+    const out: Record<string, { name?: string; avatar?: string }> = {};
     for (const n of readdirSync(this.players)) {
       if (!/^0x[0-9a-f]{40}\.json$/.test(n)) continue;
-      const v = JSON.parse(readFileSync(join(this.players, n), "utf8")) as { name?: string };
-      if (v.name) out[n.slice(0, 42)] = v.name;
+      const v = JSON.parse(readFileSync(join(this.players, n), "utf8")) as { name?: string; avatar?: string };
+      out[n.slice(0, 42)] = { ...(v.name ? { name: v.name } : {}), ...(v.avatar ? { avatar: v.avatar } : {}) };
     }
     return out;
   }
 
-  savePlayerName(evm: string, name: string): void {
+  /** Every nickname players chose, by lower-case 0x address. */
+  playerNames(): Record<string, string> {
+    const out: Record<string, string> = {};
+    for (const [a, p] of Object.entries(this.playerProfiles())) if (p.name) out[a] = p.name;
+    return out;
+  }
+
+  /** Save a player's name and picture (an empty value means "use the generated one"). */
+  savePlayer(evm: string, p: { name: string; avatar: string }): void {
     const a = evm.toLowerCase();
     if (!/^0x[0-9a-f]{40}$/.test(a)) throw new Error("bad address");
-    atomicWrite(join(this.players, `${a}.json`), JSON.stringify({ name, updatedAt: Math.floor(Date.now() / 1000) }, null, 2));
+    atomicWrite(
+      join(this.players, `${a}.json`),
+      JSON.stringify({ ...(p.name ? { name: p.name } : {}), ...(p.avatar ? { avatar: p.avatar } : {}), updatedAt: Math.floor(Date.now() / 1000) }, null, 2),
+    );
   }
 
   /** A robot's public profile (what it is used for), written by its owner. */
