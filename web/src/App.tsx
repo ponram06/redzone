@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { AccountProvider, useAccount } from "./account";
 import { Backdrop, LiveTicker, useCursorGlow } from "./components/Backdrop";
+import { TopBar } from "./components/TopBar";
 import { DataProvider, useData } from "./data";
 import { plural, qorAmount } from "./format";
 import { api } from "./api";
@@ -40,13 +41,6 @@ export function App() {
   );
 }
 
-const NAV = [
-  ["", "Home"],
-  ["robots", "Leaderboard"],
-  ["owners", "Build a robot"],
-  ["report", "Report"],
-  ["help", "Help"],
-] as const;
 
 function Shell() {
   const [page, arg] = useRoute();
@@ -69,30 +63,7 @@ function Shell() {
   return (
     <>
       <Backdrop />
-      <header className="header">
-        <div className="header-inner">
-          <a className="brand" href="#/">
-            <svg viewBox="0 0 32 32" width="26" height="26" aria-hidden="true">
-              <rect x="5" y="5" width="22" height="22" rx="3" fill="none" stroke="var(--danger)" strokeWidth="3" />
-              <circle cx="16" cy="16" r="4" fill="var(--danger)" />
-            </svg>
-            RedZone
-          </a>
-          <nav className="nav" aria-label="Main">
-            {NAV.map(([path, label]) => (
-              <a key={path} href={`#/${path}`} className={(page === "players" ? "robots" : (page ?? "")) === path ? "on" : ""}>
-                {label}
-              </a>
-            ))}
-          </nav>
-          <div className="header-end">
-            <a className={`btn primary small nav-cta ${page === "play" ? "on" : ""}`} href="#/play" aria-current={page === "play" ? "page" : undefined}>
-              Play now
-            </a>
-            <AccountChip />
-          </div>
-        </div>
-      </header>
+      <TopBar page={page ?? ""} account={<AccountChip />} />
       <LiveTicker />
       <main className="shell page-enter" key={`${page ?? ""}/${arg ?? ""}`}>
         {error ? (
