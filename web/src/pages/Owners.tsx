@@ -1,9 +1,7 @@
 import { useEffect, useState } from "react";
 import { useAccount } from "../account";
-import { api, poolMemo, type OwnerBounty, type PoolTerms, type Trace } from "../api";
+import { api, poolMemo, type OwnerBounty, type PoolTerms } from "../api";
 import { AccountGate } from "../components/AccountGate";
-import { ArenaView } from "../components/ArenaView";
-import { PracticePanel } from "../components/PracticePanel";
 import { RobotCard } from "../components/RobotCard";
 import { useData } from "../data";
 import { qorAmount } from "../format";
@@ -27,9 +25,9 @@ const DEFAULT_MODEL: Record<string, string> = {
   together: "meta-llama/Llama-3.3-70B-Instruct-Turbo",
 };
 
-/** Robot makers: write the rules, test them, add the robot. */
+/** Robot makers: write the rules, add the robot. */
 export function Owners() {
-  const { health, arena, robots, reloadRobots } = useData();
+  const { health, robots, reloadRobots } = useData();
   const acc = useAccount();
   const [freeModels, setFreeModels] = useState<string[] | null>(null);
   const [rules, setRules] = useState(DEFAULT_RULES);
@@ -41,8 +39,6 @@ export function Owners() {
   const [brainHash, setBrainHash] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [brainError, setBrainError] = useState<string | null>(null);
-  const [trace, setTrace] = useState<Trace | null>(null);
-  const [runKey, setRunKey] = useState(0);
 
   // The free AI models come from the built-in AI brain.
   const sentinelHash = health?.builtInBrains["llm-sentinel"];
@@ -99,7 +95,7 @@ export function Owners() {
   return (
     <>
       <h1 className="page-title">Add your robot</h1>
-      <p className="lead">Three quick steps. Then players try to trick it to win your bounty, and every time it stays safe its safety score goes up.</p>
+      <p className="lead">Two quick steps. Then players try to trick it to win your bounty, and every time it stays safe its safety score goes up.</p>
 
       <section className="panel step">
         <h2>
@@ -156,41 +152,12 @@ export function Owners() {
             </div>
           </details>
         )}
-      </section>
-
-      <section className="panel step">
-        <h2>
-          <span className="num">2</span> Try to trick it yourself
-        </h2>
-        {!brainHash ? (
-          <>
-            <p className="note">Free. See how your robot answers before real players do.</p>
-            <button className="btn primary" disabled={saving} onClick={saveBrain}>
-              {saving ? (useOwn ? "Checking your key…" : "Getting your robot ready…") : "Test my robot"}
-            </button>
-          </>
-        ) : (
-          arena && (
-            <div className="play-grid">
-              <ArenaView arena={arena} trace={trace} runKey={runKey} />
-              <PracticePanel
-                brainHash={brainHash}
-                name="your robot"
-                maxInstruction={arena.maxInstruction}
-                onResult={(r) => {
-                  setTrace(r.trace);
-                  setRunKey((k) => k + 1);
-                }}
-              />
-            </div>
-          )
-        )}
         {brainError && <p className="error-text">{brainError}</p>}
       </section>
 
       <section className="panel step">
         <h2>
-          <span className="num">3</span> Name it, set its bounty and add it
+          <span className="num">2</span> Name it, set its bounty and add it
         </h2>
         <AccountGate purpose="add your robot">
           <AddRobot saveBrain={saveBrain} onAdded={refreshMine} />

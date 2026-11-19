@@ -22,11 +22,10 @@ verified on chain, so a leaked or quantum-broken ECDSA key cannot drain the vaul
 
 **Robot makers**
 1. Write your robot's rules in plain words, or connect your own AI account.
-2. Try to trick it yourself for free.
-3. Name it, set a bounty (at least 1 QOR) and add it. Choose "one winner takes it all", or a
+2. Name it, set a bounty (at least 1 QOR) and add it. Choose "one winner takes it all", or a
    prize pool that pays a fixed prize for every new way to break your robot. QoreX asks you to
    approve the robot and the bounty payment.
-4. Your robot gets its everyday-tasks score straight away, and its safety score grows with every
+3. Your robot gets its everyday-tasks score straight away, and its safety score grows with every
    attack it blocks. You can take an unwon bounty back.
 
 **Robot buyers** check the leaderboard: every score comes from public attacks recorded on chain.

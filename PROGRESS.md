@@ -45,7 +45,7 @@ Overall: about **88%** (each phase's weight is in brackets; last updated 2026-11
 - [x] Relayer account: funded with 3 QOR from the main account, PQC key registered (tx 92C274AE…98FC)
 - [x] One-time player sign-up (0.1 QOR native payment from QoreX, verified by the referee)
 - [x] Simple redesign for non-crypto users: Home, Play, Rankings, robot pages, For robot makers, Help (plain language; technical details tucked away in Help)
-- [x] Owner flow: choose a brain (AI guard with own rules, or simple guard), test it free, register the robot (QoreX-signed, relayed registerRobotFor), change brain (relayed updateBrain), automatic skills test recorded on chain (recordUtility)
+- [x] Owner flow: choose a brain (AI guard with own rules, or simple guard), register the robot (QoreX-signed, relayed registerRobotFor), change brain (relayed updateBrain), automatic skills test recorded on chain (recordUtility)
 - [x] Robot makers page simplified to 3 steps (write rules, test, name and add); own AI account is an optional fold-out; starting rules blocked 6/6 sample tricks
 - [x] Leaderboard: safest robots and top players (wins, rounds, prizes won)
 - [x] Owners can bring their own AI: provider allowlist (OpenAI, Gemini, Groq, OpenRouter, Mistral, DeepSeek, Together), key checked with a real call, stored AES-256-GCM encrypted, never returned, bound to the first owner who uses it
@@ -59,7 +59,8 @@ Overall: about **88%** (each phase's weight is in brackets; last updated 2026-11
 - [ ] End-to-end round from the website with the main QoreX account: verify, start, attack, verdict (planned after 19 Nov, after the drill)
 - [x] Utility score recorded on chain for robot #1: 10/10
 - [x] AI robots (19 Nov, owner funded 20 QOR admin + 10 QOR relayer): #2 Atlas (OpenRouter free models, Groq backup), #3 Titan-120B (Groq gpt-oss-120b), #4 Spark-20B (Groq gpt-oss-20b); each a 5 QOR pool at 1 QOR per win (`scripts/demo-robot.ts --name --brain --pool --prize`)
-- [ ] Skills test for robots #2-#4 (`curl -X POST http://127.0.0.1:8787/utility/<id>`): started 19 Nov, interrupted; check each robot's utilityNonce in GET /robots first and only run the ones still at 0
+- [x] Skills test for robots #2-#4: all 10/10, recorded on chain 19 Nov (tx 0x0b6323…, 0x188dc7… for #3, #4)
+- [x] Owner page: removed the "Try to trick it yourself" step (owners test their own brains; the site is for players to find the weak spots)
 
 ## Phase 7. Audits (8%): 85% (v3 and v4 audited; the prize-pool vault still to run)
 - [x] Found it: QCAI Smart Contract Auditor at dashboard.qorechain.io/audit, a main requirement of the Post-Quantum dApp bounty; 150 QOR per audit
@@ -84,7 +85,7 @@ Overall: about **88%** (each phase's weight is in brackets; last updated 2026-11
 
 ## Checkpoint 19 Nov (resume here)
 - Done today: EscrowVaultV4 docs + QCAI bundle audits/RedZone.v5.flat.sol (de8bb18); realistic 3D arena (ce13624); Sentinel-01 pool 1 QOR / 0.5 per win; AI robots #2-#4 funded
-- Next: finish the skills tests above; check the 3D arena on the Play page with the 4 robots; owner runs QCAI stage 1 + 2 on RedZone.v5.flat.sol
+- Next: check the 3D arena on the Play page with the 4 robots; owner runs QCAI stage 1 + 2 on RedZone.v5.flat.sol
 - Servers (local): backend `cd backend && npx tsx --env-file-if-exists=.env src/server.ts` on :8787, web `cd web && npx vite --port 5173`
 
 ## Needs the owner
