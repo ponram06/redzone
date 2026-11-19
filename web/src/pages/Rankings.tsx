@@ -132,7 +132,7 @@ function Rankings() {
 
       <section className="explain">
         <h2>What the badges mean</h2>
-        <p className="note">Badges are given by the RobotRegistryV3 contract itself, using these fixed rules.</p>
+        <p className="note">Badges are given by the RobotRegistryV4 contract itself, using these fixed rules.</p>
         <ul>
           <li>
             <span className="badge tier-rookie">New</span> fewer than 10 attacks so far, or a score under 70.
