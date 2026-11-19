@@ -7,11 +7,15 @@
  *   3. the relayer locks exactly the unlocked amount with depositPool (the vault makes the admin the owner)
  *
  *   npx tsx --env-file=.env scripts/demo-robot.ts
+ *   npx tsx --env-file=.env scripts/demo-robot.ts --name Atlas --brain openrouter --pool 5 --prize 1
+ *
+ * Brains: rule (default), openrouter (the server's free OpenRouter models), groq-120b and groq-20b
+ * (the operator's Groq key, stored encrypted in the server's key vault like an owner's own key).
  *
  * Every step checks the chain first, so running it again never registers or pays twice.
  * Keys come from backend/.env (relayer) and ../contracts/.env (admin) and are never printed.
  */
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { StargateClient } from "@cosmjs/stargate";
 import {
   EthNativeSigner,
@@ -25,7 +29,12 @@ import {
   type UnifiedAccount,
 } from "@qorechain/sdk";
 import { decodeEventLog, encodeFunctionData, hexToBytes, toHex, type Address } from "viem";
-import { RULE_BRAIN, brainHash } from "../src/brains/registry.js";
+import { resolve } from "node:path";
+import { parseArgs } from "node:util";
+import { KeyVault } from "../src/brains/keys.js";
+import { BrainRegistry, RULE_BRAIN, brainHash } from "../src/brains/registry.js";
+import type { BrainConfig } from "../src/brains/types.js";
+import { DEFAULT_LLM_PROMPT } from "../src/prompt.js";
 import {
   CHAIN_ID,
   REGISTRY,
@@ -45,8 +54,50 @@ import { ChainLedger } from "../src/ledger.js";
 import { ChainRelayer } from "../src/relayer.js";
 import { registerRobotDigest } from "../src/signer.js";
 
-const NAME = "Sentinel-01";
-const BOUNTY_UQOR = 1_000_000n;
+const { values: opt } = parseArgs({
+  options: { name: { type: "string", default: "Sentinel-01" }, brain: { type: "string", default: "rule" }, pool: { type: "string", default: "1" }, prize: { type: "string", default: "0.5" }, check: { type: "boolean", default: false } },
+});
+const NAME = opt.name!;
+const uqor = (q: string) => {
+  if (!/^\d+(\.\d{1,6})?$/.test(q)) throw new Error(`bad amount: ${q}`);
+  const [i, f = ""] = q.split(".");
+  return BigInt(i!) * 1_000_000n + BigInt(f.padEnd(6, "0"));
+};
+const BOUNTY_UQOR = uqor(opt.pool!);
+if (BOUNTY_UQOR < 1_000_000n) throw new Error("a pool is at least 1 QOR");
+
+/** The brain config, saved where the running server reads brains from. */
+function brainConfig(kind: string): BrainConfig {
+  if (kind === "rule") return RULE_BRAIN;
+  const dataDir = resolve(process.env.DATA_DIR ?? "./data");
+  const reg = new BrainRegistry(dataDir, null);
+  let c: BrainConfig;
+  if (kind === "openrouter") {
+    const models = (process.env.BRAIN_MODEL ?? "").split(",").map((m) => m.trim()).filter(Boolean);
+    if (!models.length) throw new Error("BRAIN_MODEL is not set");
+    c = { kind: "llm", version: 1, models, systemPrompt: DEFAULT_LLM_PROMPT };
+  } else if (kind === "groq-120b" || kind === "groq-20b") {
+    const key = process.env.FALLBACK_1_API_KEY;
+    const secret = process.env.BRAIN_KEY_SECRET;
+    if (!key || !secret) throw new Error("FALLBACK_1_API_KEY (Groq) and BRAIN_KEY_SECRET are needed");
+    const vault = new KeyVault(dataDir, secret);
+    const idFile = resolve(dataDir, "keys", "operator-groq.id");
+    let keyId = "";
+    try {
+      keyId = readFileSync(idFile, "utf8").trim();
+    } catch {
+      // first time
+    }
+    if (!vault.get(keyId)) {
+      keyId = vault.save(key);
+      vault.bind(keyId, owner); // only the admin's robots may use the operator key
+      writeFileSync(idFile, keyId);
+    }
+    c = { kind: "llm", version: 1, models: [kind === "groq-120b" ? "openai/gpt-oss-120b" : "openai/gpt-oss-20b"], systemPrompt: DEFAULT_LLM_PROMPT, provider: "groq", keyId };
+  } else throw new Error(`unknown brain: ${kind}`);
+  reg.save(c);
+  return c;
+}
 const WEI_PER_UQOR = 10n ** 12n;
 const FEE = { amount: [{ denom: "uqor", amount: "100000" }], gas: "800000" };
 
@@ -76,9 +127,11 @@ if (admin.evm.toLowerCase() !== deployments.deployer.evm.toLowerCase()) throw ne
 const relayer = ChainRelayer.fromEnv(process.env, [REGISTRY, VAULT]);
 if (!relayer) throw new Error("relayer keys missing in backend/.env");
 const owner = admin.evm as Address;
-const brain = brainHash(RULE_BRAIN);
+const config = brainConfig(opt.brain!);
+const brain = brainHash(config);
 console.log(`admin ${owner} (${admin.cosmos}); relayer ${relayer.address} (${relayer.cosmosAddress})`);
-console.log(`brain ${brain} (rule)`);
+console.log(`brain ${brain} (${opt.brain})`);
+if (opt.check) process.exit(0); // --check: save the brain and print its hash, nothing on chain
 
 // 1. The robot.
 let robotId = (await readRobots()).find((r) => r.owner.toLowerCase() === owner.toLowerCase() && r.name === NAME)?.id;
@@ -111,7 +164,7 @@ if (robotId) {
 
 // 2. The payment, from the chain's own records.
 const ledger = new ChainLedger(client, REGISTRY, REGISTRY_DEPLOY_BLOCK, VAULT, VAULT_DEPLOY_BLOCK, REST_URL);
-const memo = `${bountyMemo(robotId)} prize 0.5`;
+const memo = `${bountyMemo(robotId)} prize ${opt.prize}`;
 const terms = parseBountyMemo(memo, robotId)!;
 const paidUqor = async () =>
   (await ledger.transfers(admin.cosmos, relayer.cosmosAddress))

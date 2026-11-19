@@ -23,8 +23,9 @@ verified on chain, so a leaked or quantum-broken ECDSA key cannot drain the vaul
 **Robot makers**
 1. Write your robot's rules in plain words, or connect your own AI account.
 2. Try to trick it yourself for free.
-3. Name it, set a bounty (at least 1 QOR) and add it. QoreX asks you to approve the robot and the
-   bounty payment.
+3. Name it, set a bounty (at least 1 QOR) and add it. Choose "one winner takes it all", or a
+   prize pool that pays a fixed prize for every new way to break your robot. QoreX asks you to
+   approve the robot and the bounty payment.
 4. Your robot gets its everyday-tasks score straight away, and its safety score grows with every
    attack it blocks. You can take an unwon bounty back.
 
@@ -46,7 +47,7 @@ flowchart LR
     end
     subgraph QoreChain["QoreChain testnet"]
         REG[RobotRegistryV4]
-        V[EscrowVaultV3]
+        V[EscrowVaultV4]
         P[pqcVerify / pqcKeyStatus<br/>precompiles]
     end
     W -- "sign request / message" --> Q
@@ -56,7 +57,7 @@ flowchart LR
     B -- "planned route" --> R
     R -- "signed verdict" --> L
     L -- "startSessionFor / recordResult" --> REG
-    L -- "depositBounty / claimBounty / requestWithdraw" --> V
+    L -- "depositPool / claimBounty / requestWithdraw" --> V
     V -- "who breached first?" --> REG
     REG -- "verify signatures" --> P
     V -- "verify signatures" --> P
@@ -74,8 +75,8 @@ flowchart LR
 3. **The robot answers and the referee judges.** The robot's brain turns the player's message into
    a route. The referee replays that route in a fixed simulation, decides "breached" or "defended",
    saves the replay, and signs the verdict with its own ML-DSA-87 key.
-4. **The registry checks that signature** before recording the result. The vault then pays each
-   bounty to the robot's earliest recorded breach, always to that session's player. Nobody (not
+4. **The registry checks that signature** before recording the result. The vault then pays the robot's
+   next eligible breach from its prize pool, always to that session's player. Nobody (not
    the relayer, not the admin) can choose who is paid.
 5. **Everything shown on the website comes from the chain**: robots, scores, bounties, the
    leaderboard, sign-ups (see "Where the data comes from").
@@ -84,10 +85,10 @@ flowchart LR
 
 | Part | State |
 |---|---|
-| `contracts/` v4: RobotRegistryV4, EscrowVaultV3 (on PQAccess, MLDSA87, QoreXMessage) | 253 Foundry tests passing: the whole v3 suite re-run on v4, new play-pass and paid-try tests, vault invariant tests, and the older v1/v2/v3 suites |
-| `backend/` robot brains + ML-DSA-87 referee API | Working on v4: 82 tests, plus a live parity test against the deployed v4 contracts ([backend/README.md](backend/README.md)) |
+| `contracts/` v4: RobotRegistryV4, EscrowVaultV4 prize pools (on PQAccess, MLDSA87, QoreXMessage) | 348 Foundry tests passing: the v4 suite re-run on the prize-pool vault, new prize-pool tests and invariants, and the older v1/v2/v3/v4 suites |
+| `backend/` robot brains + ML-DSA-87 referee API | Working on v4: 84 unit tests, plus 6 live tests against the deployed contracts ([backend/README.md](backend/README.md)) |
 | `web/` website for players, robot makers and buyers | Working: play (training-robot practice, play pass, bounty rounds, buy extra tries), safety rankings, robot pages, add a robot, take a bounty back, help. Sign-in with QoreX; a relayer pays gas |
-| `audits/` | v3: self-review, QCAI stage 1 and stage 2 (with written answers), an adversarial audit (all findings fixed), Blockhertz reports on the vault. v4: QCAI stage 1 (85/100) and stage 2 (87/100, QUANTUM-SAFE), with written answers; no contract change needed ([audits/QCAI-v4-stage2-response.md](audits/QCAI-v4-stage2-response.md)) |
+| `audits/` | v3: self-review, QCAI stage 1 and stage 2 (with written answers), an adversarial audit (all findings fixed), Blockhertz reports on the vault. v4: QCAI stage 1 (85/100) and stage 2 (87/100, QUANTUM-SAFE), with written answers; No contract change needed ([audits/QCAI-v4-stage2-response.md](audits/QCAI-v4-stage2-response.md)). EscrowVaultV4 (prize pools, 19 Nov) is new and has not been through QCAI yet; its one-file bundle is [audits/RedZone.v5.flat.sol](audits/RedZone.v5.flat.sol) |
 | Q-Day Drill (18 Nov) | Hybrid-signed proof accepted; no successful attack, nothing taken from the drill account (drill ran on v3: [docs/QDAY_DRILL.md](docs/QDAY_DRILL.md)) |
 
 ## Deployed on testnet
@@ -95,7 +96,8 @@ flowchart LR
 | Contract | Address |
 |---|---|
 | RobotRegistryV4 | `0xef521a3a178a344a5cdd6854271e1fca466fa115` (current: v3 + play pass + paid tries) |
-| EscrowVaultV3 | `0xf436fde024c90bf70e2c179391931f8a2c352bc2` (current: the gas-optimised vault, for v4) |
+| EscrowVaultV4 | `0xb0a270a8fe9a54ba2600b582830f324c94fdece8` (current: prize pools) |
+| EscrowVaultV3 | `0xf436fde024c90bf70e2c179391931f8a2c352bc2` (the gas-optimised vault; superseded 19 Nov, its demo bounty was taken back) |
 | RobotRegistryV3, EscrowVaultV2 | `0x69564de848d807ea895e1987b53749e1648cadbf`, `0x16cc5efcda75a788f597dd0c785862db1bdbeb7f` (Q-Day Drill contracts, QCAI-audited; superseded 19 Nov) |
 | RobotRegistryV2, EscrowVault v1, RobotRegistry v1 | `0x354f71Da76314Cd74A18524899Aeb43611d86448`, `0xcD9AAd1ad2D7981699f256e73F2780dac86f0266`, `0x7733d4f2D707c2F8160831e2e0ca2b6B90Ef4940` (superseded, kept for history) |
 | Admin / deployer | `qor1g4xu64wuhy25y9h7lvtncz6mf5nt4q9ze87qvv` (`0x454DCD55DCB9154216fEfb173C0B5B4D26bA80A2`) |
@@ -122,6 +124,21 @@ a day were the only tries. v4 keeps all of v3 and adds two things:
 At ~216 gas per byte of code, v4 had to fit in about 20 KB, so it keeps the admin-only digest
 helpers and a few getters internal (tests compute them the same way). It deployed at 4.98M gas.
 
+**Prize pools (EscrowVaultV4).** With one prize per robot, the first winner empties the bounty and
+nobody has a reason to keep testing the robot. A maker can now lock a pool with a fixed prize per
+win (for example 20 QOR at 1.5 QOR per win), and the robot stays in the arena until the pool is empty:
+
+- each eligible breach is paid `min(prizePerWin, what is left)`;
+- one prize per player per pool (`hasWon`);
+- by default, one prize per brain version: after a win, only a breach against an updated brain
+  (`updateBrain`) is paid, so copying a known trick earns nothing and every payout is a new bug.
+  The maker can turn this off to pay every new winner;
+- `depositBounty` keeps the old behaviour (the whole bounty is one prize).
+
+The maker's terms travel in the memo of their QoreX payment, which only they can sign:
+`RedZone bounty #N` (one prize), `RedZone bounty #N prize X` (X per win, once per brain version)
+or `RedZone bounty #N prize X open` (X per win, every new winner). The prize is at least 0.1 QOR.
+
 ## Network
 
 QoreChain testnet `qorechain-diana`, EVM chain id 9800, RPC `https://evm-testnet.qore.host`.
@@ -145,8 +162,8 @@ account's ML-DSA-87 key opens with a hybrid-signed native message (`npm run wind
 | `buyTries` | anyone pays the exact price; the money goes straight to the treasury | - |
 | `setTryPrice` | admin's ML-DSA signature (price capped at 10 QOR) | `pqcKeyStatus` + `pqcVerify` |
 | `recordResult`, `recordUtility` | the referee's ML-DSA verdict, bound to session, robot, player and replay hash | `pqcVerify` (key checked against the stored hash) |
-| `depositBounty` | anyone; the robot's owner always owns the bounty | - |
-| `claimBounty` | anyone; pays the robot's earliest eligible breach to that session's player | registry's breach list |
+| `depositBounty`, `depositPool` | anyone; the robot's owner always owns the bounty | - |
+| `claimBounty` | anyone; pays the robot's next eligible breach (one prize per player, and per brain version if set) to that session's player | registry's breach list |
 | `requestWithdraw` | the bounty owner's ML-DSA signature; pays out only after 3 hours, and never while a win is unpaid | `pqcKeyStatus` + `pqcVerify` |
 | `setPaused`, `transferAdmin`, `proposeReferee` | admin's ML-DSA signature (a new referee also waits 2 days) | `pqcKeyStatus` + `pqcVerify` |
 
@@ -170,7 +187,7 @@ Proven on testnet, not only in tests:
 - Both deployed contracts call the precompiles: their runtime code holds `PUSH2 0x0a01` and
   `PUSH2 0x0a02` (check with `cast code 0xef521a3a178a344a5cdd6854271e1fca466fa115 --rpc-url https://evm-testnet.qore.host | grep -o 610a0[12]`).
 - The constructors verify ML-DSA-87 deploy proofs with the live `pqcVerify`, so the deployments
-  themselves (RobotRegistryV4 `0x065e60a4…c1e006`, EscrowVaultV3 `0x34e5986a…53a78e`; earlier v3
+  themselves (RobotRegistryV4 `0x065e60a4…c1e006`, EscrowVaultV4 `0xf2d71671…7b5b2c`, EscrowVaultV3 `0x34e5986a…53a78e`; earlier v3
   `0xb0677bac…f694f`, `0xcd95d102…7ca39d`) could only
   succeed with working post-quantum checks.
 - Live calls on 19 Nov on v4: robot #1 registered with the owner's ML-DSA signature
@@ -190,7 +207,7 @@ hashes are on chain).
 | What you see | Source |
 |---|---|
 | Robots, owners, names, attacks, wins, safety score, badge, skills score | `RobotRegistryV4` reads (`getRobot`, `getRating`, `getTier`) |
-| Bounties on each robot, and take-backs in progress | `EscrowVaultV3.bounties` |
+| Bounties and prize pools on each robot, and take-backs in progress | `EscrowVaultV4.bounties`, `hasWon` |
 | Tries left (free today + bought), play pass | `RobotRegistryV4.attemptsLeftToday`, `extraTries`, `passes` |
 | Game rules (tries per day, round length, number of tasks, name length) | Contract constants, read when the server starts |
 | Top players leaderboard | `Breached` / `Defended` events and `BountyClaimed` events, scanned from the deploy blocks |
@@ -212,16 +229,16 @@ their real fingerprints, so the placeholder fingerprint of the old v1/v2 robot #
 ## Known limitation: QoreX can't send transactions to contracts yet
 
 Robot makers add a bounty at the same time as they add their robot. Ideally they would call
-`EscrowVaultV3.depositBounty` straight from their wallet. **The QoreX wallet (0.4.2) can't do that
+`EscrowVaultV4.depositPool` straight from their wallet. **The QoreX wallet (0.4.2) can't do that
 yet.** Its EVM lane can connect and read but can't sign EVM transactions, and its native lane can
 only send ordinary transfers. Until that changes, RedZone uses this workaround:
 
 1. The maker pays the bounty from QoreX as a normal transfer to the RedZone relayer, with the memo
-   `RedZone bounty #<robotId>`. QoreX signs it with the maker's ML-DSA-87 key (hybrid signature).
+   `RedZone bounty #<robotId>` (plus `prize X` for a prize pool). QoreX signs it with the maker's ML-DSA-87 key (hybrid signature).
 2. The referee checks that transfer on chain: it succeeded, came from the robot's owner, went to
    the relayer, carries the right memo and is at least the minimum (1 QOR). Each payment can be
    used once.
-3. The relayer calls `depositBounty` with exactly that amount for that robot. Its EVM window is
+3. The relayer calls `depositBounty` (or `depositPool` with the memo's prize) with exactly that amount for that robot. Its EVM window is
    opened only for the two RedZone contracts, with a value budget sized for that one deposit.
 4. The vault records **the robot's owner** as the bounty owner, whoever sent the money. Payouts
    follow the referee's verdicts only.

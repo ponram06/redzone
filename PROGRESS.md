@@ -20,6 +20,7 @@ Overall: about **88%** (each phase's weight is in brackets; last updated 2026-11
 - [x] Blockhertz gas findings applied to EscrowVaultV2 source (gas only; goes live with the next deploy)
 - [x] v4 (19 Nov): RobotRegistryV4 = v3 + 10-minute play pass (one QoreX approval for many rounds) + paid tries (0.1 QOR each, no cap, paid straight to the treasury = main account); EscrowVaultV3 = the gas-optimised vault. 253 Foundry tests. Deployed: registry 0xef521a3a…a115, vault 0xf436fde0…2bc2 (QoreChain caps a deployment at ~5M gas, so v4 was trimmed to 20 KB)
 - [x] Demo robot #1 on v4 with a 1 QOR bounty and a 10/10 skills score
+- [x] EscrowVaultV4 (19 Nov): prize pools, a fixed prize per win, one per player, once per brain version by default; terms from the maker's signed payment memo. 348 Foundry tests (incl. pool tests and a one-prize-per-player invariant). Deployed 0xb0a270a8…ece8 (tx 0xf2d71671…5b2c); the demo bounty was taken back from EscrowVaultV3 and locked as a 1 QOR pool at 0.5 QOR per win (0xd4c35502…7625)
 
 ## Phase 3. Q-Day Drill (10%): done
 - [x] Registered for the drill: RobotRegistryV3 + EscrowVaultV2
@@ -59,13 +60,14 @@ Overall: about **88%** (each phase's weight is in brackets; last updated 2026-11
 - [x] Utility score recorded on chain for robot #1: 10/10
 - [ ] Second demo robot with the LLM brain and a small bounty
 
-## Phase 7. Audits (8%): 100% (v3 and v4 both audited)
+## Phase 7. Audits (8%): 85% (v3 and v4 audited; the prize-pool vault still to run)
 - [x] Found it: QCAI Smart Contract Auditor at dashboard.qorechain.io/audit, a main requirement of the Post-Quantum dApp bounty; 150 QOR per audit
 - [x] Self-review before paying (audits/SELF_REVIEW.md); one-file bundle audits/RedZone.flat.sol so one run covers both contracts
 - [x] Server fix for finding 1: no bounty take-back while a win can still be recorded or paid
 - [x] QCAI stage 1 and stage 2 (two runs on the deployed v3), with written answers (audits/QCAI-stage*-response.md)
 - [x] Adversarial audit of v3 (audits/ADVERSARIAL_AUDIT.md), fixed and redeployed; Blockhertz reports triaged
 - [x] QCAI stage 1 (85/100) and stage 2 (87/100, QUANTUM-SAFE) on v4, answers in audits/QCAI-v4-stage*-response.md; no contract change needed
+- [ ] QCAI stage 1 and stage 2 on EscrowVaultV4 (bundle ready: audits/RedZone.v5.flat.sol; owner runs it, 150 QOR each)
 - [x] Solidity PQC checks: the site can't auto-verify them; README section "Solidity PQC checks: where to look" for jurors
 
 ## Phase 8. Hosting (4%): 0%

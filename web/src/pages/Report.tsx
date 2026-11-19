@@ -13,6 +13,7 @@ const TABS: [Tab, string][] = [
 ];
 
 const AUDITS = [
+  { date: "To run", review: "QCAI · prize-pool vault (EscrowVaultV4)", v: "v4", result: "Bundle ready · not yet audited", good: false, file: "RedZone.v5.flat.sol" },
   { date: "19 Nov", review: "QCAI · stage 2 (QoreChain setting)", v: "v4", result: "87 / 100 · QUANTUM-SAFE", good: true, file: "QCAI-v4-stage2-response.md" },
   { date: "19 Nov", review: "QCAI · stage 1", v: "v4", result: "85 / 100 · all findings answered", good: false, file: "QCAI-v4-stage1-response.md" },
   { date: "17 Nov", review: "Blockhertz AI auditor (vault)", v: "v3", result: "Gas improvements adopted", good: false, file: "Blockhertz-1-EscrowVaultV2.md" },
@@ -24,15 +25,15 @@ const AUDITS = [
 const SIGNERS = [
   ["Register a robot, start a round, open a play pass", "The user (QoreX), single use", "Key status + signature"],
   ["Record a round result", "The referee's own key", "Signature"],
-  ["Pay a bounty", "Nobody chooses: the earliest recorded breach", "The registry's record"],
+  ["Pay a prize", "Nobody chooses: the next eligible breach, one prize per player", "The registry's record"],
   ["Take a bounty back", "The owner, then a 3-hour wait", "Key status + signature"],
   ["Admin: pause, try price, referee", "The admin", "Key status + signature"],
   ["Start a round under a play pass", "The relayer named in the pass (10 min, ≤ 20 rounds)", "The signed pass"],
 ];
 
 const PROGRESS = [
-  { name: "Smart contracts v4", note: "Live on testnet · 253 tests passing", done: true },
-  { name: "Server & referee", note: "82 unit tests + live contract checks", done: true },
+  { name: "Smart contracts v4", note: "Live on testnet · prize pools · 348 tests passing", done: true },
+  { name: "Server & referee", note: "84 unit tests + live contract checks", done: true },
   { name: "Website", note: "Play pass, paid tries, dark arena look", done: true },
   { name: "Security reviews", note: "Six reviews across v3 and v4", done: true },
   { name: "Q-Day Drill", note: "18 Nov · no funds taken", done: true },
@@ -85,7 +86,7 @@ export function Report() {
         <>
           <div className="rp-stats">
             <Stat label="Latest security score" value="87" unit="/100" note="QCAI stage 2 · live v4" bar={87} />
-            <Stat label="Contract tests" value="253" unit="passing" note="Including attack & invariant tests" />
+            <Stat label="Contract tests" value="348" unit="passing" note="Including attack & invariant tests" />
             <Stat label="Project complete" value="88" unit="%" note="Final polish & hosting remain" />
             <Stat label="Live arena bounty" value={formatQor(bountyWei).replace(" QOR", "")} unit="QOR" note="Locked in EscrowVaultV4" live />
           </div>
@@ -237,7 +238,7 @@ export function Report() {
             </table>
           </div>
           <p className="rp-counts">
-            <b>253</b> Foundry contract tests <b>82</b> backend unit tests <b>6</b> live v4 tests
+            <b>348</b> Foundry contract tests <b>84</b> backend unit tests <b>6</b> live v4 tests
           </p>
         </>
       )}
