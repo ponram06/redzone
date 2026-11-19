@@ -5,7 +5,8 @@ import { PlayPanel } from "../components/PlayPanel";
 import { PracticePanel } from "../components/PracticePanel";
 import { RobotCard } from "../components/RobotCard";
 import { AccountGate } from "../components/AccountGate";
-import { useData } from "../data";
+import { isListed, useData } from "../data";
+import { TRAINING_BRAIN } from "../api";
 
 /** Players sign in first; then they pick a robot and practise or play for its bounty. */
 export function Play({ robotId }: { robotId?: number }) {
@@ -21,8 +22,9 @@ export function Play({ robotId }: { robotId?: number }) {
 
 function PlayArena({ robotId }: { robotId?: number }) {
   const { health, arena, robots: all, robotsLoaded, robotsError, reloadRobots } = useData();
-  // Only robots with a bounty can be played.
-  const robots = all.filter((r) => r.bounty.totalWei !== "0");
+  // Robots with a bounty, plus robots that have been played (so a win doesn't make the robot,
+  // and its result, vanish when its bounty is paid out). Bounty robots first.
+  const robots = all.filter(isListed).sort((a, b) => Number(b.bounty.totalWei !== "0") - Number(a.bounty.totalWei !== "0"));
   const [chosen, setChosen] = useState<number | undefined>(robotId);
   const [mode, setMode] = useState<"practice" | "real">("practice");
   const [trace, setTrace] = useState<Trace | null>(null);
@@ -85,7 +87,19 @@ function PlayArena({ robotId }: { robotId?: number }) {
                 </button>
               </div>
               {mode === "practice" ? (
-                <PracticePanel key={robot.id} brainHash={robot.brainHash} name={robot.name} maxInstruction={arena.maxInstruction} onResult={(r) => show(r.trace)} />
+                <>
+                  <p className="note">
+                    Practice is with a training robot that has no safety rules, so you can learn the map and how the robot moves. {robot.name}{" "}
+                    has its own defences: you only meet them in a bounty round.
+                  </p>
+                  <PracticePanel
+                    key="training"
+                    brainHash={TRAINING_BRAIN}
+                    name="the training robot"
+                    maxInstruction={arena.maxInstruction}
+                    onResult={(r) => show(r.trace)}
+                  />
+                </>
               ) : (
                 <PlayPanel key={robot.id} health={health} robot={robot} maxInstruction={arena.maxInstruction} onResult={show} onFinished={reloadRobots} />
               )}

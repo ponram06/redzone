@@ -4,8 +4,10 @@
  */
 import { decodeEventLog, encodeFunctionData, verifyMessage, type Address, type Hex } from "viem";
 import type { Arena } from "./arena.js";
+import { createHash } from "node:crypto";
 import { actionsToWaypoints } from "./brains/actions.js";
-import type { BrainRegistry } from "./brains/registry.js";
+import { brainHash, type BrainRegistry } from "./brains/registry.js";
+import { RuleBrain } from "./brains/rule.js";
 import type { BrainOutput } from "./brains/types.js";
 import { NEXT, registryAbi, vaultAbi, type BountyView, type NativeTransfer, type RobotView, type SessionView } from "./chain.js";
 import type { LedgerReader, Transfer } from "./ledger.js";
@@ -24,6 +26,18 @@ export const MAX_INSTRUCTION = 500;
 export const UTILITY_WINDOW = 24 * 3600;
 /** Most vault calls made to settle one bounty (skips of unpayable breaches plus the claim). */
 const MAX_SETTLE_STEPS = 10;
+/** brainHash value for free practice against the training robot (no safety rules). */
+export const TRAINING_BRAIN = "training";
+/** How long the list of brains guarding robots in the arena is cached. */
+const ARENA_BRAINS_TTL = 60;
+
+/**
+ * Round key: when the website starts a round through the relayer it sends sha256(key) for a
+ * random key it keeps. Sending that key with the instruction then authorises it, so a round needs
+ * one QoreX approval (the on-chain StartSession), not two. The key only works for that session.
+ */
+export const roundKeyHash = (key: string) => "0x" + createHash("sha256").update(key.toLowerCase()).digest("hex");
+const ROUND_KEY = /^0x[0-9a-fA-F]{64}$/;
 
 export class GameError extends Error {
   constructor(
@@ -179,15 +193,16 @@ export class Game {
    *     checked against the player's key registered on chain; or
    *   - `signature`: an EVM personal_sign (0x) over attemptMessage, for EVM wallets.
    */
-  async attempt(input: { sessionId: unknown; instruction: unknown; signature?: unknown; pqSignature?: unknown }): Promise<AttemptVerdict> {
+  async attempt(input: { sessionId: unknown; instruction: unknown; signature?: unknown; pqSignature?: unknown; roundKey?: unknown }): Promise<AttemptVerdict> {
     const sessionId = Number(input.sessionId);
     if (!Number.isSafeInteger(sessionId) || sessionId < 1) throw new GameError(400, "bad sessionId");
     const instruction = cleanInstruction(input.instruction);
     const pqSignature = input.pqSignature === undefined ? null : decodePqSignature(input.pqSignature);
     if (input.pqSignature !== undefined && !pqSignature) throw new GameError(400, "pqSignature is not a valid signature encoding");
     const ecdsa = typeof input.signature === "string" && /^0x[0-9a-fA-F]{130}$/.test(input.signature) ? (input.signature as Hex) : null;
-    if (!pqSignature && !ecdsa) throw new GameError(400, "signature missing");
-    const signature = (pqSignature ?? ecdsa)!;
+    const roundKey = typeof input.roundKey === "string" && ROUND_KEY.test(input.roundKey) ? input.roundKey : null;
+    if (!pqSignature && !ecdsa && !roundKey) throw new GameError(400, "signature missing");
+    const signature = pqSignature ?? ecdsa ?? `round-key:${roundKeyHash(roundKey!)}`;
 
     return this.once(`session-${sessionId}`, async () => {
       const done = this.d.store.getVerdict<AttemptVerdict>(`session-${sessionId}`);
@@ -200,7 +215,12 @@ export class Game {
 
       const message = attemptMessage(this.d.chainId, this.d.registry, sessionId, instruction);
       let ok = false;
-      if (pqSignature) {
+      if (!pqSignature && !ecdsa) {
+        // The round key set when this session was started through the relayer, after the
+        // player's ML-DSA StartSession signature was checked on chain.
+        const expected = this.d.store.getVerdict<string>(`roundkey-${sessionId}`);
+        ok = !!expected && expected === roundKeyHash(roundKey!);
+      } else if (pqSignature) {
         const key = await this.d.chain.readPqcKey(session.player);
         ok = key.registered && verifyWalletSignature(key.pubkey, message, pqSignature);
       } else {
@@ -438,7 +458,7 @@ export class Game {
   }
 
   /** Relay a QoreX-signed StartSession request. The signature is checked here first so bad ones cost no gas. */
-  async startSession(input: { robotId: unknown; player: unknown; deadline: unknown; pqSignature: unknown }) {
+  async startSession(input: { robotId: unknown; player: unknown; deadline: unknown; pqSignature: unknown; roundKeyHash?: unknown }) {
     if (!this.d.relayer) throw new GameError(503, "no relayer configured: start the session from an EVM wallet instead");
     const robotId = Number(input.robotId);
     const deadline = Number(input.deadline);
@@ -447,6 +467,8 @@ export class Game {
     if (!Number.isSafeInteger(robotId) || robotId < 1) throw new GameError(400, "bad robotId");
     if (!player) throw new GameError(400, "bad player address");
     if (!sig) throw new GameError(400, "pqSignature missing or malformed");
+    const keyHash = input.roundKeyHash;
+    if (keyHash !== undefined && (typeof keyHash !== "string" || !ROUND_KEY.test(keyHash))) throw new GameError(400, "bad roundKeyHash");
     if (!(await this.isSignedUp(player))) throw new GameError(402, "sign up first: a one-time payment verifies your account");
     if (!Number.isSafeInteger(deadline) || deadline < this.now() || deadline > this.now() + 600) {
       throw new GameError(400, "deadline expired or too far away: request a new one");
@@ -469,7 +491,9 @@ export class Game {
         try {
           const ev = decodeEventLog({ abi: registryAbi, data: log.data, topics: log.topics });
           if (ev.eventName === "SessionStarted") {
-            return { sessionId: Number(ev.args.sessionId), tx: r.hash, expiresAt: Number(ev.args.expiresAt), player };
+            const sessionId = Number(ev.args.sessionId);
+            if (keyHash) this.d.store.saveVerdict(`roundkey-${sessionId}`, (keyHash as string).toLowerCase());
+            return { sessionId, tx: r.hash, expiresAt: Number(ev.args.expiresAt), player };
           }
         } catch {
           // not our event
@@ -909,12 +933,45 @@ export class Game {
     return out;
   }
 
-  /** Off-chain practice against any known brain: nothing is signed or stored. */
+  private arenaBrainCache: { at: number; hashes: Set<string> } | null = null;
+
+  /** brainHashes currently guarding a robot on chain (cached briefly). */
+  private async arenaBrains(): Promise<Set<string>> {
+    if (this.arenaBrainCache && this.now() - this.arenaBrainCache.at < ARENA_BRAINS_TTL) return this.arenaBrainCache.hashes;
+    const next = await this.d.chain.readNextRobotId();
+    const hashes = new Set<string>();
+    for (let i = 1; i < next; i++) {
+      const r = await this.d.chain.readRobot(i);
+      if (!r) continue;
+      hashes.add(r.brainHash.toLowerCase());
+      // A legacy alias maps to a real config: block that config's own hash too.
+      const config = this.d.brains.config(r.brainHash);
+      if (config) hashes.add(brainHash(config).toLowerCase());
+    }
+    this.arenaBrainCache = { at: this.now(), hashes };
+    return hashes;
+  }
+
+  /**
+   * Off-chain practice: nothing is signed or stored. Players practise on the training robot
+   * (TRAINING_BRAIN). Owners can test a brain before they put it on a robot, but no brain that
+   * already guards a robot in the arena can be practised, so a winning message can't be found
+   * for free and replayed for the bounty.
+   */
   async practice(input: { brainHash: unknown; instruction: unknown }) {
     const instruction = cleanInstruction(input.instruction);
     if (typeof input.brainHash !== "string") throw new GameError(400, "brainHash missing");
-    const brain = this.d.brains.brain(input.brainHash);
-    if (!brain) throw new GameError(404, "unknown brain");
+    let brain: ReturnType<BrainRegistry["brain"]>;
+    if (input.brainHash === TRAINING_BRAIN) {
+      brain = new RuleBrain(false);
+    } else {
+      brain = this.d.brains.brain(input.brainHash);
+      if (!brain) throw new GameError(404, "unknown brain");
+      const config = this.d.brains.config(input.brainHash);
+      const arena = await this.arenaBrains();
+      const guarding = [input.brainHash, config ? brainHash(config) : null].some((h) => h && arena.has(h.toLowerCase()));
+      if (guarding) throw new GameError(403, "this brain guards a robot in the arena, so it can only be challenged in a bounty round");
+    }
     const out = await this.think(brain, instruction);
     const waypoints = actionsToWaypoints(this.d.arena, out.actions);
     const trace = simulate(this.d.arena, waypoints);

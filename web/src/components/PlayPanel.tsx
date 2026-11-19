@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useAccount } from "../account";
-import { API_URL, api, attemptMessage, formatQor, type Health, type Robot, type Trace, type Verdict } from "../api";
+import { API_URL, api, attemptMessage, formatQor, newRoundKey, type Health, type Robot, type Trace, type Verdict } from "../api";
 import { plural, shortHash } from "../format";
 import { explainQorexError, signPq } from "../qorex";
 import { AccountGate } from "./AccountGate";
@@ -13,7 +13,27 @@ type Props = {
   onFinished: () => void;
 };
 
-type Round = { id: number; expiresAt: number; tx: string };
+/** roundKey: lets the message go without a second QoreX approval (only this tab knows it). */
+type Round = { id: number; expiresAt: number; tx: string; roundKey?: string };
+
+const ROUND_STORE = "redzone.round";
+/** Keep a running round across a page reload, so the player can still send their message. */
+function saveRound(r: Round | null) {
+  try {
+    if (r) sessionStorage.setItem(ROUND_STORE, JSON.stringify(r));
+    else sessionStorage.removeItem(ROUND_STORE);
+  } catch {
+    // storage blocked: the round just won't survive a reload
+  }
+}
+function loadRound(): Round | null {
+  try {
+    const r = JSON.parse(sessionStorage.getItem(ROUND_STORE) ?? "null") as Round | null;
+    return r && r.expiresAt > Date.now() / 1000 ? r : null;
+  } catch {
+    return null;
+  }
+}
 
 /** A real round: start (uses one daily try), send one message, get the verdict and any bounty. */
 export function PlayPanel(props: Props) {
@@ -29,7 +49,11 @@ export function PlayPanel(props: Props) {
 
 function RealRound({ health, robot, maxInstruction, onResult, onFinished }: Props) {
   const acc = useAccount();
-  const [round, setRound] = useState<Round | null>(null);
+  const [round, setRoundState] = useState<Round | null>(loadRound);
+  const setRound = (r: Round | null) => {
+    saveRound(r);
+    setRoundState(r);
+  };
   const [instruction, setInstruction] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -66,17 +90,21 @@ function RealRound({ health, robot, maxInstruction, onResult, onFinished }: Prop
       const req = await api.sessionRequest(robot.id, address);
       const pqSignature = await signPq(address, req.text);
       setBusy("Starting your round…");
-      const s = await api.sessionStart({ robotId: robot.id, player: address, deadline: req.deadline, pqSignature });
-      setRound({ id: s.sessionId, expiresAt: s.expiresAt, tx: s.tx });
+      const rk = await newRoundKey();
+      const s = await api.sessionStart({ robotId: robot.id, player: address, deadline: req.deadline, pqSignature, roundKeyHash: rk.hash });
+      setRound({ id: s.sessionId, expiresAt: s.expiresAt, tx: s.tx, roundKey: rk.key });
       acc.setAttemptsLeft(req.attemptsLeft - 1);
     });
 
   const send = () =>
-    run("Approve in QoreX…", async () => {
+    run(round?.roundKey ? "The robot is thinking…" : "Approve in QoreX…", async () => {
       if (!round) return;
-      const pqSignature = await signPq(address, attemptMessage(health.chainId, health.registry, round.id, instruction));
+      // Normally no wallet prompt: the round key from the start authorises the message.
+      const auth = round.roundKey
+        ? { roundKey: round.roundKey }
+        : { pqSignature: await signPq(address, attemptMessage(health.chainId, health.registry, round.id, instruction)) };
       setBusy("The robot is thinking…");
-      const v = await api.attempt(round.id, instruction, pqSignature);
+      const v = await api.attempt(round.id, instruction, auth);
       setVerdict(v);
       onResult(v.trace);
       setRound(null);
@@ -93,20 +121,31 @@ function RealRound({ health, robot, maxInstruction, onResult, onFinished }: Prop
 
   const won = verdict?.breached;
   const paid = verdict?.relay?.claimTxs?.length;
+  // What this win paid: the bounties settled for it (each claim pays the robot's earliest win).
+  const paidIds = new Set(verdict?.relay?.claimTxs?.map((c) => c.bountyId) ?? []);
+  const paidWei = (verdict?.claims ?? []).filter((c) => paidIds.has(c.bountyId)).reduce((s, c) => s + BigInt(c.amountWei), 0n);
 
   return (
     <div className="stack">
       {verdict && (
         <div className={`result ${won ? "win" : "lose"}`} aria-live="polite">
-          <strong>{won ? "You did it!" : "The robot stayed safe"}</strong>
+          <strong>{won ? (paidWei > 0n ? `You won ${formatQor(paidWei.toString())}!` : "You did it!") : "The robot stayed safe"}</strong>
           <p>
             {won
               ? paid
-                ? "The robot walked into a red zone. The bounty has been sent to your QoreX account."
-                : "The robot walked into a red zone. Your bounty is being sent."
+                ? `${robot.name} walked into a red zone. ${paidWei > 0n ? formatQor(paidWei.toString()) : "The bounty"} has been sent to your QoreX account.`
+                : verdict.claims.length
+                  ? `${robot.name} walked into a red zone. Your bounty is being sent.`
+                  : `${robot.name} walked into a red zone. It had no bounty left, but your win is on its public record.`
               : "It didn't fall for that one. Try a different trick."}
           </p>
           <p className="quote">Robot said: “{verdict.say || "…"}”</p>
+          {won &&
+            verdict.relay?.claimTxs?.map((c) => (
+              <p key={c.bountyId} className="note">
+                Bounty payment: <TxLink hash={c.tx} explorer={health.explorerUrl} />
+              </p>
+            ))}
           {verdict.relay?.error && (
             <p className="error-text">
               We couldn't save this result yet.{" "}

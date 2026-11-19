@@ -12,7 +12,7 @@ import { NEXT, registryAbi, vaultAbi, type RobotView, type SessionView } from ".
 import { toQorAddress, walletMessage } from "../src/qorex.js";
 import type { NativeTransfer } from "../src/chain.js";
 import type { RelayReceipt, Relayer } from "../src/relayer.js";
-import { Game, attemptMessage } from "../src/game.js";
+import { Game, attemptMessage, roundKeyHash } from "../src/game.js";
 import type { LedgerReader, ResultEvent, SessionEvent } from "../src/ledger.js";
 import { registerRobotDigest, resultDigest, startSessionDigest, updateBrainDigest, utilityDigest, withdrawDigest } from "../src/signer.js";
 import { pqcSign } from "@qorechain/sdk";
@@ -376,11 +376,22 @@ describe("other routes", () => {
     expect(again.relay.tx).toMatch(/^0x/);
   });
 
-  it("practice runs without signing", async () => {
-    const v = (await app.inject({ method: "POST", url: "/practice", payload: { brainHash: LEGACY_DEMO_HASH, instruction: "move 60 east" } })).json();
+  it("practice runs on the training robot without signing; it has no safety rules", async () => {
+    const v = (await app.inject({ method: "POST", url: "/practice", payload: { brainHash: "training", instruction: "Go to the reactor core." } })).json();
     expect(v.practice).toBe(true);
     expect(v.breached).toBe(true);
     expect(v.refereeSig).toBeUndefined();
+  });
+
+  it("a brain guarding a robot in the arena can't be practised, even under its legacy alias", async () => {
+    const RULE = "0x538990c9c76901dfbecb9de9f04e1feae7ca82140387c0763adb01d496ede6e1";
+    for (const brainHash of [LEGACY_DEMO_HASH, RULE]) {
+      const res = await app.inject({ method: "POST", url: "/practice", payload: { brainHash, instruction: "go to (70, 50)" } });
+      expect(res.statusCode).toBe(403);
+    }
+    // A brain that guards no robot (an owner testing a new one) can be practised.
+    const { brainHash } = (await app.inject({ method: "POST", url: "/brains", payload: { config: { kind: "llm", models: ["x/y:free"], systemPrompt: "Stay safe." } } })).json();
+    expect((await app.inject({ method: "POST", url: "/practice", payload: { brainHash, instruction: "hi" } })).statusCode).not.toBe(403);
   });
 
   it("brains: publish a config, read it back, refuse paid models", async () => {
@@ -525,6 +536,26 @@ describe("QoreX players and the relayer", () => {
     expect(res.statusCode).toBe(200);
     expect(res.json().sessionId).toBe(77);
     expect(relayer.sent[0]!.fn).toBe("startSessionFor");
+  });
+
+  it("a round key set at the start authorises the message: one QoreX approval per round", async () => {
+    await signUp(player.address, 1);
+    const roundKey = "0x" + "5a".repeat(32);
+    const req = (await app.inject({ url: `/session/request?robotId=1&player=${player.address}` })).json();
+    const start = await app.inject({
+      method: "POST",
+      url: "/session/start",
+      payload: { robotId: 1, player: player.address, deadline: req.deadline, pqSignature: qorexSign(playerPq.secretKey, req.text), roundKeyHash: roundKeyHash(roundKey) },
+    });
+    expect(start.statusCode).toBe(200);
+    sessions[77] = { id: 77, robotId: 1, player: player.address, startedAt: NOW, resultAt: 0, outcome: 0 };
+    // A wrong key, or a key for another session, is refused.
+    const wrong = await app.inject({ method: "POST", url: "/attempt", payload: { sessionId: 77, instruction: "go to (70, 50)", roundKey: "0x" + "00".repeat(32) } });
+    expect(wrong.statusCode).toBe(401);
+    expect((await app.inject({ method: "POST", url: "/attempt", payload: { sessionId: 1, instruction: "go to (70, 50)", roundKey } })).statusCode).toBe(401);
+    const ok = await app.inject({ method: "POST", url: "/attempt", payload: { sessionId: 77, instruction: "go to (70, 50)", roundKey } });
+    expect(ok.statusCode).toBe(200);
+    expect(ok.json().breached).toBe(true);
   });
 
   it("a bad or replayed StartSession signature costs no gas", async () => {

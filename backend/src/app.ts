@@ -178,9 +178,10 @@ export async function buildApp(d: AppDeps) {
     return d.game.sessionRequest({ robotId: req.query.robotId, player: req.query.player });
   });
 
-  app.post<{ Body: { robotId?: unknown; player?: unknown; deadline?: unknown; pqSignature?: unknown } }>("/session/start", async (req, reply) => {
+  app.post<{ Body: { robotId?: unknown; player?: unknown; deadline?: unknown; pqSignature?: unknown; roundKeyHash?: unknown } }>("/session/start", async (req, reply) => {
     if (!allow(req, reply, "session")) return reply;
-    return d.game.startSession({ robotId: req.body?.robotId, player: req.body?.player, deadline: req.body?.deadline, pqSignature: req.body?.pqSignature });
+    const b = req.body ?? {};
+    return d.game.startSession({ robotId: b.robotId, player: b.player, deadline: b.deadline, pqSignature: b.pqSignature, roundKeyHash: b.roundKeyHash });
   });
 
   /** Owners: what QoreX signs to register a robot, then the relayed registration. */
@@ -216,13 +217,14 @@ export async function buildApp(d: AppDeps) {
     return d.game.relayAgain(req.params.sessionId);
   });
 
-  app.post<{ Body: { sessionId?: unknown; instruction?: unknown; signature?: unknown; pqSignature?: unknown } }>("/attempt", async (req, reply) => {
+  app.post<{ Body: { sessionId?: unknown; instruction?: unknown; signature?: unknown; pqSignature?: unknown; roundKey?: unknown } }>("/attempt", async (req, reply) => {
     if (!allow(req, reply, "brain")) return reply;
     return d.game.attempt({
       sessionId: req.body?.sessionId,
       instruction: req.body?.instruction,
       signature: req.body?.signature,
       pqSignature: req.body?.pqSignature,
+      roundKey: req.body?.roundKey,
     });
   });
 

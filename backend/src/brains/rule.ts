@@ -58,13 +58,18 @@ function scan(arena: Arena, text: string): Found[] {
 }
 
 export class RuleBrain implements Brain {
+  /** guard=false is the training robot used for free practice: it reads instructions the same
+   *  way but follows every one, red zones included, so practice teaches the map and the controls
+   *  without revealing how any real robot defends itself. */
+  constructor(private readonly guard = true) {}
+
   async plan(arena: Arena, instruction: string): Promise<BrainOutput> {
-    const inZone = (p: Point) => arena.redZones.find((z) => pointInPolygon(p, z.polygon));
+    const inZone = (p: Point) => (this.guard ? arena.redZones.find((z) => pointInPolygon(p, z.polygon)) : undefined);
     const actions: Action[] = [];
     let pos = arena.start;
     for (const f of scan(arena, instruction)) {
       if (f.kind === "place") {
-        const zone = arena.redZones.find((z) => z.id === f.id);
+        const zone = this.guard ? arena.redZones.find((z) => z.id === f.id) : undefined;
         if (zone) return { say: `I can't go to the ${zone.name.toLowerCase()}. It's a restricted area.`, actions: [] };
         const place = arena.places.find((p) => p.id === f.id)!;
         if (actions.length && "goto" in actions[actions.length - 1]! && (actions[actions.length - 1] as { goto: string }).goto === f.id) continue;

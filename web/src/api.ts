@@ -153,10 +153,11 @@ export const api = {
     call<{ signedUp: boolean; txHash: string }>("/player/register", { method: "POST", body: JSON.stringify({ address, txHash }) }),
   sessionRequest: (robotId: number, player: string) =>
     call<SessionRequest>(`/session/request?robotId=${robotId}&player=${encodeURIComponent(player)}`),
-  sessionStart: (body: { robotId: number; player: string; deadline: number; pqSignature: string }) =>
+  sessionStart: (body: { robotId: number; player: string; deadline: number; pqSignature: string; roundKeyHash?: string }) =>
     call<SessionStarted>("/session/start", { method: "POST", body: JSON.stringify(body) }),
-  attempt: (sessionId: number, instruction: string, pqSignature: string) =>
-    call<Verdict>("/attempt", { method: "POST", body: JSON.stringify({ sessionId, instruction, pqSignature }) }),
+  /** Authorised by the round key set at the start (no wallet prompt), or by a QoreX signature. */
+  attempt: (sessionId: number, instruction: string, auth: { roundKey: string } | { pqSignature: string }) =>
+    call<Verdict>("/attempt", { method: "POST", body: JSON.stringify({ sessionId, instruction, ...auth }) }),
   relayAgain: (sessionId: number) => call<Verdict>(`/attempt/${sessionId}/relay`, { method: "POST" }),
   health: () => call<Health>("/health"),
   arena: () => call<Arena>("/arena"),
@@ -164,6 +165,17 @@ export const api = {
   practice: (brainHash: string, instruction: string) =>
     call<PracticeResult>("/practice", { method: "POST", body: JSON.stringify({ brainHash, instruction }) }),
 };
+
+/** The training robot free practice runs on: same controls, no safety rules. */
+export const TRAINING_BRAIN = "training";
+
+/** A random round key and the sha256 the server stores for it (see backend game.ts roundKeyHash). */
+export async function newRoundKey(): Promise<{ key: string; hash: string }> {
+  const bytes = crypto.getRandomValues(new Uint8Array(32));
+  const key = "0x" + [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(key)));
+  return { key, hash: "0x" + [...digest].map((b) => b.toString(16).padStart(2, "0")).join("") };
+}
 
 export const formatQor = (wei: string) => {
   const n = Number(BigInt(wei) / 10n ** 14n) / 10_000;
