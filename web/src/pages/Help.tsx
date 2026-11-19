@@ -82,7 +82,7 @@ export function Help() {
                 RobotRegistryV4: <code>{health.registry}</code>
               </li>
               <li>
-                EscrowVaultV2: <code>{health.vault}</code>
+                EscrowVaultV3: <code>{health.vault}</code>
               </li>
               <li>
                 Referee key hash: <code>{shortHash(health.refereePubkeyHash)}</code>
