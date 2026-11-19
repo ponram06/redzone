@@ -16,7 +16,9 @@
     "deploy:registry": "forge script script/DeployRedZone.s.sol --rpc-url qorechain_testnet --broadcast",
     "v3-proofs": "tsx --env-file=.env scripts/v3-proofs.ts",
     "deploy:v3": "tsx --env-file=.env scripts/deploy-v3.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "v4-proofs": "tsx --env-file=.env scripts/v4-proofs.ts",
+    "deploy:v4": "tsx --env-file=.env scripts/deploy-v4.ts"
   },
   "dependencies": {
     "@cosmjs/stargate": "^0.39.0",

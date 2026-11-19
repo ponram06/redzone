@@ -1,13 +1,13 @@
 /**
- * Parity check against the deployed v3 contracts (read-only, spends nothing):
+ * Parity check against the deployed v4 contracts (read-only, spends nothing):
  *   npm run test:live
  * Needs the referee key at ../contracts/.referee-key.json (or REFEREE_KEY_FILE).
  */
 import { keccak256, stringToBytes, encodeFunctionData, decodeFunctionResult, parseAbi, type Hex } from "viem";
 import { describe, expect, it } from "vitest";
-import { CHAIN_ID, PQC_VERIFY, REGISTRY, REGISTRY_DEPLOY_BLOCK, REST_URL, VAULT, VAULT_DEPLOY_BLOCK, client, readBounty, readRules, registryAbi, vaultAbi } from "../src/chain.js";
+import { CHAIN_ID, PQC_VERIFY, REGISTRY, REGISTRY_DEPLOY_BLOCK, REST_URL, VAULT, VAULT_DEPLOY_BLOCK, client, readRules, readTryPrice, registryAbi, vaultAbi } from "../src/chain.js";
 import { ChainLedger } from "../src/ledger.js";
-import { loadRefereeKey, registerRobotDigest, resultDigest, signDigest, startSessionDigest, updateBrainDigest, utilityDigest, withdrawDigest } from "../src/signer.js";
+import { loadRefereeKey, openPassDigest, registerRobotDigest, resultDigest, signDigest, startSessionDigest, updateBrainDigest, utilityDigest, withdrawDigest } from "../src/signer.js";
 
 const key = loadRefereeKey(process.env.REFEREE_KEY_FILE ?? "../contracts/.referee-key.json");
 const H = ("0x" + "cd".repeat(32)) as Hex;
@@ -34,6 +34,9 @@ describe("live contracts", { timeout: 60_000 }, () => {
     expect(updateBrainDigest(CHAIN_ID, REGISTRY, 3n, H, 4n, deadline)).toBe(onChainUpdate);
     const onChainWithdraw = await client.readContract({ address: VAULT, abi: vaultAbi, functionName: "withdrawDigest", args: [2n, player, 7n, deadline] });
     expect(withdrawDigest(CHAIN_ID, VAULT, 2n, player, 7n, deadline)).toBe(onChainWithdraw);
+    const operator = "0x2222222222222222222222222222222222222222";
+    const onChainPass = await client.readContract({ address: REGISTRY, abi: registryAbi, functionName: "openPassDigest", args: [player, operator, 1_900_000_000n, 5n, 3n, deadline] });
+    expect(openPassDigest(CHAIN_ID, REGISTRY, player, operator, 1_900_000_000n, 5n, 3n, deadline)).toBe(onChainPass);
   });
 
   it("the chain's pqcVerify precompile accepts our signature and rejects a changed digest", async () => {
@@ -48,11 +51,10 @@ describe("live contracts", { timeout: 60_000 }, () => {
     expect(await call(resultDigest(CHAIN_ID, REGISTRY, 999_999_999n, 1n, player, false, H, 1n))).toBe(false);
   });
 
-  it("bounty 1 decodes with the deployed field order: robot 1's open 1 QOR bounty, owned by the admin", async () => {
-    const b = await readBounty(1);
-    expect(b).toMatchObject({ id: 1, robotId: 1, amountWei: 10n ** 18n, withdrawRequestedAt: 0 });
-    expect(b.owner.toLowerCase()).toBe("0x454dcd55dcb9154216fefb173c0b5b4d26ba80a2");
-    expect([1, 2, 3]).toContain(b.status); // open, or later claimed / withdrawn
+  it("paid tries cost 0.1 QOR and go to the treasury in the deployment record", async () => {
+    const t = await readTryPrice();
+    expect(t.priceWei).toBe(10n ** 17n);
+    expect(t.treasury.toLowerCase()).toBe("0xc0e118ab9b754432f5b8ca3a91e1e419e5cb67cb");
   });
 
   it("game rules are read from the contracts", async () => {
@@ -64,6 +66,8 @@ describe("live contracts", { timeout: 60_000 }, () => {
       maxNameLength: 64,
       maxStartTtl: 600,
       withdrawDelay: 3 * 3600,
+      passTtl: 600,
+      maxPassRounds: 20,
     });
   });
 

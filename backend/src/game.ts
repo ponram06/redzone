@@ -9,12 +9,12 @@ import { actionsToWaypoints } from "./brains/actions.js";
 import { brainHash, type BrainRegistry } from "./brains/registry.js";
 import { RuleBrain } from "./brains/rule.js";
 import type { BrainOutput } from "./brains/types.js";
-import { NEXT, registryAbi, vaultAbi, type BountyView, type NativeTransfer, type RobotView, type SessionView } from "./chain.js";
+import { NEXT, registryAbi, vaultAbi, type BountyView, type NativeTransfer, type PlayerState, type RobotView, type SessionView } from "./chain.js";
 import type { LedgerReader, Transfer } from "./ledger.js";
 import { SIGNUP_MEMO, decodePqSignature, toEvmAddress, toQorAddress, verifyWalletSignature, walletText } from "./qorex.js";
 import { simulate, taskPassed, type Trace } from "./referee.js";
 import type { Relayer } from "./relayer.js";
-import { registerRobotDigest, resultDigest, signDigest, startSessionDigest, updateBrainDigest, utilityDigest, withdrawDigest, type RefereeKey } from "./signer.js";
+import { openPassDigest, registerRobotDigest, resultDigest, signDigest, startSessionDigest, updateBrainDigest, utilityDigest, withdrawDigest, type RefereeKey } from "./signer.js";
 import type { Store } from "./store.js";
 
 /** A signed owner request is valid for this long (the contracts allow at most 1 hour). */
@@ -53,7 +53,9 @@ export type ChainReader = {
   readRobot(id: number): Promise<RobotView | null>;
   openBounties(robotId: number): Promise<{ id: number; amountWei: string }[]>;
   readPqcKey(account: Address): Promise<{ registered: boolean; algorithmId: number; pubkey: Hex }>;
-  readPlayer(player: Address): Promise<{ nonce: bigint; attemptsLeft: number }>;
+  readPlayer(player: Address): Promise<PlayerState>;
+  /** RobotRegistryV4.tryPrice / treasury. */
+  readTryPrice(): Promise<{ priceWei: bigint; treasury: Address }>;
   readNativeTransfer(txHash: string): Promise<NativeTransfer | null>;
   readBounty(id: number): Promise<BountyView>;
   /** EscrowVaultV2.nextBreach: state of the breach at the bounty's cursor (see NEXT). */
@@ -67,6 +69,8 @@ export type ChainReader = {
 /** Makers pay bounties to the relayer (QoreX can't call contracts yet); the relayer locks them in the vault, owned by the robot's owner. */
 export type PrizeConfig = { minUqor: bigint; payTo: string };
 export const bountyMemo = (robotId: number) => `RedZone bounty #${robotId}`;
+/** Memo of a QoreX payment for extra tries (paid to the relayer, which buys them on chain). */
+export const TRIES_MEMO = "RedZone tries";
 /** 10,000 QOR: a sanity cap on a single bounty payment. */
 const MAX_BOUNTY_UQOR = 10_000n * 1_000_000n;
 const WEI_PER_UQOR = 10n ** 12n;
@@ -93,6 +97,12 @@ export type GameDeps = {
   resultGrace: number;
   /** EscrowVaultV2.WITHDRAW_DELAY: time between a take-back request and its payout. */
   withdrawDelay: number;
+  /** Chain height the current contracts were deployed at: bounty and paid-try payments made
+   *  before it belonged to older contracts and never count again. Sign-ups have no such limit. */
+  paymentsFromHeight?: number;
+  /** RobotRegistryV4.PASS_TTL and MAX_PASS_ROUNDS (play pass). */
+  passTtl?: number;
+  maxPassRounds?: number;
   /** Sends startSessionFor / recordResult / claimBounty for players. Optional: without it, players relay. */
   relayer?: Relayer | null;
   /** When set, players pay a small one-time fee before their first session. */
@@ -389,8 +399,19 @@ export class Game {
   async playerStatus(addressRaw: unknown) {
     const evm = toEvmAddress(addressRaw);
     if (!evm) throw new GameError(400, "address must be a qor1… or 0x… address");
-    const [key, state, record] = await Promise.all([this.d.chain.readPqcKey(evm), this.d.chain.readPlayer(evm), this.signupFor(evm)]);
+    const [key, state, record, price] = await Promise.all([
+      this.d.chain.readPqcKey(evm),
+      this.d.chain.readPlayer(evm),
+      this.signupFor(evm),
+      this.d.chain.readTryPrice(),
+    ]);
+    const relayer = this.d.relayer?.address.toLowerCase();
+    const passLive = !!relayer && state.pass.operator.toLowerCase() === relayer && state.pass.validUntil > this.now() && state.pass.roundsLeft > 0;
     return {
+      extraTries: state.extraTries,
+      pass: passLive ? { validUntil: state.pass.validUntil, roundsLeft: state.pass.roundsLeft } : null,
+      tries:
+        this.d.relayer && price.priceWei > 0n ? { priceUqor: (price.priceWei / WEI_PER_UQOR).toString(), payTo: this.d.prize?.payTo ?? null, memo: TRIES_MEMO } : null,
       evm,
       qor: toQorAddress(evm),
       pqKeyRegistered: key.registered,
@@ -503,6 +524,178 @@ export class Game {
     });
   }
 
+  // ---------------------------------------------------------- play pass (one QoreX approval for many rounds)
+  //
+  // The player signs OpenPass once in QoreX: for PASS_TTL (10 minutes) the relayer may start up to
+  // maxRounds rounds for them with startSessionWithPass, so the wallet is not asked every round.
+  // The website also sends sha256(passKey) for a random passKey only it knows; starting a round under
+  // the pass needs that key, so nobody else can spend the player's tries through this server.
+
+  private passMaxRounds(attemptsLeft: number): number {
+    return Math.max(1, Math.min(attemptsLeft, this.d.maxPassRounds ?? 20));
+  }
+
+  /** What the player's wallet signs to open a play pass. */
+  async passRequest(input: { player: unknown }) {
+    if (!this.d.relayer) throw new GameError(503, "no relayer configured");
+    const player = toEvmAddress(input.player);
+    if (!player) throw new GameError(400, "player must be a qor1… or 0x… address");
+    const [key, state] = await Promise.all([this.d.chain.readPqcKey(player), this.d.chain.readPlayer(player)]);
+    if (!key.registered) throw new GameError(409, "this account has no ML-DSA-87 key registered yet (register it in QoreX first)");
+    if (!(await this.isSignedUp(player))) throw new GameError(402, "sign up first: a one-time payment verifies your account");
+    if (state.attemptsLeft < 1) throw new GameError(429, "no tries left today: buy more tries or come back tomorrow");
+    // A small margin, so the pass is still within PASS_TTL of the block that opens it.
+    const validUntil = this.now() + (this.d.passTtl ?? 600) - 20;
+    const maxRounds = this.passMaxRounds(state.attemptsLeft);
+    const deadline = this.now() + START_TTL;
+    const digest = openPassDigest(this.d.chainId, this.d.registry, player, this.d.relayer.address, BigInt(validUntil), BigInt(maxRounds), state.nonce, BigInt(deadline));
+    return { player, validUntil, maxRounds, deadline, digest, text: walletText("OpenPass", digest) };
+  }
+
+  /** Relay a QoreX-signed OpenPass. The signature is checked here first so bad ones cost no gas. */
+  async openPass(input: { player: unknown; validUntil: unknown; maxRounds: unknown; deadline: unknown; pqSignature: unknown; passKeyHash: unknown }) {
+    if (!this.d.relayer) throw new GameError(503, "no relayer configured");
+    const player = toEvmAddress(input.player);
+    const validUntil = Number(input.validUntil);
+    const maxRounds = Number(input.maxRounds);
+    const deadline = this.checkDeadline(input.deadline);
+    const sig = decodePqSignature(input.pqSignature);
+    if (!player) throw new GameError(400, "bad player address");
+    if (!sig) throw new GameError(400, "pqSignature missing or malformed");
+    if (typeof input.passKeyHash !== "string" || !ROUND_KEY.test(input.passKeyHash)) throw new GameError(400, "bad passKeyHash");
+    if (!Number.isSafeInteger(validUntil) || validUntil <= this.now() || validUntil > this.now() + (this.d.passTtl ?? 600)) {
+      throw new GameError(400, "pass time expired or too long: request a new one");
+    }
+    if (!Number.isSafeInteger(maxRounds) || maxRounds < 1 || maxRounds > (this.d.maxPassRounds ?? 20)) throw new GameError(400, "bad maxRounds");
+    const passKeyHash = input.passKeyHash.toLowerCase();
+
+    return this.once(`nonce-${player.toLowerCase()}`, async () => {
+      const [key, state] = await Promise.all([this.d.chain.readPqcKey(player), this.d.chain.readPlayer(player)]);
+      if (!key.registered) throw new GameError(409, "no ML-DSA-87 key registered for this account");
+      const digest = openPassDigest(this.d.chainId, this.d.registry, player, this.d.relayer!.address, BigInt(validUntil), BigInt(maxRounds), state.nonce, BigInt(deadline));
+      if (!verifyWalletSignature(key.pubkey, walletText("OpenPass", digest), sig)) {
+        throw new GameError(401, "signature does not match this request (it may be used already: request a new one)");
+      }
+      const r = await this.d.relayer!.send(
+        this.d.registry,
+        encodeFunctionData({ abi: registryAbi, functionName: "openPassFor", args: [player, this.d.relayer!.address, BigInt(validUntil), BigInt(maxRounds), BigInt(deadline), sig] }),
+      );
+      if (r.status !== "success") throw new GameError(502, `openPassFor reverted on chain (${r.hash})`);
+      this.d.store.saveVerdict(this.passKeyName(player), { keyHash: passKeyHash, validUntil });
+      return { validUntil, roundsLeft: maxRounds, tx: r.hash };
+    });
+  }
+
+  private passKeyName(player: Address): string {
+    return `pass-${player.slice(2).toLowerCase()}`;
+  }
+
+  /** Start a round under the player's play pass: no wallet prompt. Needs the pass key from openPass. */
+  async startWithPass(input: { robotId: unknown; player: unknown; passKey: unknown; roundKeyHash?: unknown }) {
+    if (!this.d.relayer) throw new GameError(503, "no relayer configured");
+    const robotId = Number(input.robotId);
+    const player = toEvmAddress(input.player);
+    if (!Number.isSafeInteger(robotId) || robotId < 1) throw new GameError(400, "bad robotId");
+    if (!player) throw new GameError(400, "bad player address");
+    if (typeof input.passKey !== "string" || !ROUND_KEY.test(input.passKey)) throw new GameError(400, "bad passKey");
+    const keyHash = input.roundKeyHash;
+    if (keyHash !== undefined && (typeof keyHash !== "string" || !ROUND_KEY.test(keyHash))) throw new GameError(400, "bad roundKeyHash");
+    const passKey = input.passKey;
+
+    return this.once(`nonce-${player.toLowerCase()}`, async () => {
+      const saved = this.d.store.getVerdict<{ keyHash: string; validUntil: number }>(this.passKeyName(player));
+      if (!saved || saved.keyHash !== roundKeyHash(passKey)) throw new GameError(401, "this browser has no play pass for this account: approve a new one");
+      if (this.now() >= saved.validUntil) throw new GameError(410, "your play pass has ended: approve a new one");
+      const [robot, state] = await Promise.all([this.d.chain.readRobot(robotId), this.d.chain.readPlayer(player)]);
+      if (!robot) throw new GameError(404, "robot not found");
+      if (robot.owner.toLowerCase() === player.toLowerCase()) throw new GameError(409, "owners cannot attack their own robot");
+      if (state.pass.operator.toLowerCase() !== this.d.relayer!.address.toLowerCase() || state.pass.validUntil <= this.now() || state.pass.roundsLeft < 1) {
+        throw new GameError(410, "your play pass has ended: approve a new one");
+      }
+      if (state.attemptsLeft < 1) throw new GameError(429, "no tries left: buy more tries or come back tomorrow");
+      const r = await this.d.relayer!.send(
+        this.d.registry,
+        encodeFunctionData({ abi: registryAbi, functionName: "startSessionWithPass", args: [BigInt(robotId), player] }),
+      );
+      if (r.status !== "success") throw new GameError(502, `startSessionWithPass reverted on chain (${r.hash})`);
+      for (const log of r.logs) {
+        try {
+          const ev = decodeEventLog({ abi: registryAbi, data: log.data, topics: log.topics });
+          if (ev.eventName === "SessionStarted") {
+            const sessionId = Number(ev.args.sessionId);
+            if (keyHash) this.d.store.saveVerdict(`roundkey-${sessionId}`, (keyHash as string).toLowerCase());
+            return { sessionId, tx: r.hash, expiresAt: Number(ev.args.expiresAt), player, passRoundsLeft: state.pass.roundsLeft - 1 };
+          }
+        } catch {
+          // not our event
+        }
+      }
+      throw new GameError(502, `session started but no SessionStarted event found (${r.hash})`);
+    });
+  }
+
+  // ---------------------------------------------------------- paid tries (paid in QoreX, bought by the relayer)
+  //
+  // The player pays n x tryPrice to the relayer from QoreX with memo "RedZone tries"; the relayer
+  // calls buyTries(player, n) with exactly that value, and the registry forwards it to the treasury.
+  // Like bounties, everything is worked out from the chain: paid (the player's transfers with the
+  // memo) minus bought (TriesBought events the relayer paid for this player). Retries never double-buy.
+
+  async buyTries(input: { player: unknown; txHash: unknown }) {
+    if (!this.d.relayer || !this.d.prize) throw new GameError(503, "tries can't be bought on this referee");
+    const player = toEvmAddress(input.player);
+    if (!player) throw new GameError(400, "bad player address");
+    if (typeof input.txHash !== "string" || !/^(0x)?[0-9a-fA-F]{64}$/.test(input.txHash)) throw new GameError(400, "bad txHash");
+    const txHash = input.txHash.replace(/^0x/, "").toUpperCase();
+    const qor = toQorAddress(player);
+
+    return this.once(`tries-${player.toLowerCase()}`, async () => {
+      const { priceWei } = await this.d.chain.readTryPrice();
+      if (priceWei === 0n) throw new GameError(409, "extra tries are not for sale right now");
+      const priceUqor = priceWei / WEI_PER_UQOR;
+      const tx = await this.d.chain.readNativeTransfer(txHash);
+      if (!tx) throw new GameError(404, "payment not found on chain yet: wait a few seconds and try again");
+      if (tx.code !== 0) throw new GameError(400, "that transaction failed on chain");
+      if (tx.from !== qor) throw new GameError(400, "the payment was not sent from this account");
+      if (tx.to !== this.d.prize!.payTo) throw new GameError(400, "the payment went to the wrong address");
+      if (tx.memo.trim() !== TRIES_MEMO) throw new GameError(400, `the payment memo must be "${TRIES_MEMO}"`);
+      if (tx.height < (this.d.paymentsFromHeight ?? 0)) throw new GameError(400, "that payment was for RedZone's previous contracts");
+      if (tx.uqor < priceUqor) throw new GameError(400, "the payment is smaller than the price of one try");
+
+      const from = this.d.paymentsFromHeight ?? 0;
+      const paidTxs = (await this.d.ledger.transfers(qor, this.d.prize!.payTo)).filter((t) => t.height >= from && t.memo.trim() === TRIES_MEMO && t.uqor <= MAX_BOUNTY_UQOR);
+      if (!paidTxs.some((t) => t.txHash === txHash)) throw new GameError(404, "payment not indexed on chain yet: wait a few seconds and try again");
+      const paidUqor = paidTxs.reduce((s, t) => s + t.uqor, 0n);
+      await this.d.ledger.sync();
+      const relayer = this.d.relayer!.address.toLowerCase();
+      let boughtUqor = this.d.ledger
+        .tries()
+        .filter((e) => e.player.toLowerCase() === player.toLowerCase() && e.payer.toLowerCase() === relayer)
+        .reduce((s, e) => s + e.paidWei / WEI_PER_UQOR, 0n);
+      // A purchase we sent may not be visible to getLogs yet.
+      const pendingKey = `tries-sent-${player.slice(2).toLowerCase()}`;
+      // Only recent ones count: after 10 minutes a send that never showed up did not happen.
+      const sent = (this.d.store.getVerdict<{ tx: string; uqor: string; at?: number }[]>(pendingKey) ?? []).filter((x) => (x.at ?? 0) > this.now() - 600);
+      const seen = new Set(this.d.ledger.tries().map((e) => e.tx.toLowerCase()));
+      for (const s of sent) if (!seen.has(s.tx.toLowerCase())) boughtUqor += BigInt(s.uqor);
+      const count = (paidUqor - boughtUqor) / priceUqor;
+      const state = await this.d.chain.readPlayer(player);
+      if (count <= 0n) return { player, bought: 0, extraTries: state.extraTries, tx: null };
+
+      const value = count * priceUqor * WEI_PER_UQOR;
+      const r = await this.d.relayer!.send(
+        this.d.registry,
+        encodeFunctionData({ abi: registryAbi, functionName: "buyTries", args: [player, count] }),
+        value,
+        (hash) => this.d.store.saveVerdict(pendingKey, [...sent, { tx: hash, uqor: (count * priceUqor).toString(), at: this.now() }]),
+      ).catch((e: Error) => {
+        throw new GameError(502, `your payment arrived, but adding the tries failed (${e.message.slice(0, 120)}). Try again in a minute: you won't pay twice`);
+      });
+      if (r.status !== "success") throw new GameError(502, `adding the tries failed on chain (${r.hash}). Try again: you won't pay twice`);
+      return { player, bought: Number(count), extraTries: state.extraTries + Number(count), tx: r.hash };
+    });
+  }
+
   // ---------------------------------------------------------- bounties (paid in QoreX, locked by the relayer)
   //
   // QoreX can't call contracts yet, so a maker can't call EscrowVaultV2.depositBounty themselves.
@@ -519,7 +712,8 @@ export class Game {
   /** Sum of valid bounty payments for a robot, from the chain. */
   private async paidFor(robotId: number, owner: Address): Promise<{ total: bigint; txs: Transfer[] }> {
     const all = await this.d.ledger.transfers(toQorAddress(owner), this.d.prize!.payTo);
-    const txs = all.filter((t) => t.memo.trim() === bountyMemo(robotId) && t.uqor >= this.d.prize!.minUqor && t.uqor <= MAX_BOUNTY_UQOR);
+    const from = this.d.paymentsFromHeight ?? 0;
+    const txs = all.filter((t) => t.height >= from && t.memo.trim() === bountyMemo(robotId) && t.uqor >= this.d.prize!.minUqor && t.uqor <= MAX_BOUNTY_UQOR);
     return { total: txs.reduce((s, t) => s + t.uqor, 0n), txs };
   }
 
@@ -567,6 +761,7 @@ export class Game {
       if (tx.from !== toQorAddress(owner)) throw new GameError(400, "the payment was not sent from this account");
       if (tx.to !== this.d.prize!.payTo) throw new GameError(400, "the payment went to the wrong address");
       if (tx.memo.trim() !== bountyMemo(robotId)) throw new GameError(400, `the payment memo must be "${bountyMemo(robotId)}"`);
+      if (tx.height < (this.d.paymentsFromHeight ?? 0)) throw new GameError(400, "that payment was for RedZone's previous contracts");
       if (tx.uqor < this.d.prize!.minUqor) throw new GameError(400, "the bounty is smaller than the minimum");
       if (tx.uqor > MAX_BOUNTY_UQOR) throw new GameError(400, "the bounty is too large");
 

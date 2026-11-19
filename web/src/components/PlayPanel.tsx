@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useAccount } from "../account";
 import { API_URL, api, attemptMessage, formatQor, newRoundKey, type Health, type Robot, type Trace, type Verdict } from "../api";
 import { plural, shortHash } from "../format";
-import { explainQorexError, signPq } from "../qorex";
+import { explainQorexError, payNative, signPq } from "../qorex";
 import { AccountGate } from "./AccountGate";
 
 type Props = {
@@ -30,6 +30,26 @@ function loadRound(): Round | null {
   try {
     const r = JSON.parse(sessionStorage.getItem(ROUND_STORE) ?? "null") as Round | null;
     return r && r.expiresAt > Date.now() / 1000 ? r : null;
+  } catch {
+    return null;
+  }
+}
+
+/** The play pass this browser opened: its key (never sent until a round starts) and end time. */
+type StoredPass = { player: string; key: string; validUntil: number };
+const PASS_STORE = "redzone.pass";
+function savePass(p: StoredPass | null) {
+  try {
+    if (p) sessionStorage.setItem(PASS_STORE, JSON.stringify(p));
+    else sessionStorage.removeItem(PASS_STORE);
+  } catch {
+    // storage blocked: a reload just asks for a new pass
+  }
+}
+function loadPass(address: string | null): StoredPass | null {
+  try {
+    const p = JSON.parse(sessionStorage.getItem(PASS_STORE) ?? "null") as StoredPass | null;
+    return p && address && p.player === address.toLowerCase() && p.validUntil > Date.now() / 1000 ? p : null;
   } catch {
     return null;
   }
@@ -84,16 +104,42 @@ function RealRound({ health, robot, maxInstruction, onResult, onFinished }: Prop
     }
   }
 
+  const [pass, setPassState] = useState<StoredPass | null>(() => loadPass(address));
+
+  /** One QoreX approval opens a play pass; rounds then start with no wallet prompt until it ends. */
+  async function openPass(): Promise<StoredPass> {
+    setBusy("Approve once in QoreX: it covers your rounds for the next 10 minutes…");
+    const req = await api.passRequest(address);
+    const pqSignature = await signPq(address, req.text);
+    setBusy("Opening your play pass…");
+    const pk = await newRoundKey();
+    const r = await api.passOpen({ player: address, validUntil: req.validUntil, maxRounds: req.maxRounds, deadline: req.deadline, pqSignature, passKeyHash: pk.hash });
+    const p = { player: address.toLowerCase(), key: pk.key, validUntil: r.validUntil };
+    savePass(p);
+    setPassState(p);
+    return p;
+  }
+
   const start = () =>
-    run("Approve in QoreX…", async () => {
+    run("Starting your round…", async () => {
       setVerdict(null);
-      const req = await api.sessionRequest(robot.id, address);
-      const pqSignature = await signPq(address, req.text);
-      setBusy("Starting your round…");
-      const rk = await newRoundKey();
-      const s = await api.sessionStart({ robotId: robot.id, player: address, deadline: req.deadline, pqSignature, roundKeyHash: rk.hash });
-      setRound({ id: s.sessionId, expiresAt: s.expiresAt, tx: s.tx, roundKey: rk.key });
-      acc.setAttemptsLeft(req.attemptsLeft - 1);
+      const live = pass && pass.validUntil > Math.floor(Date.now() / 1000) + 15 ? pass : null;
+      const begin = async (p: StoredPass) => {
+        setBusy("Starting your round…");
+        const rk = await newRoundKey();
+        const s = await api.sessionStartWithPass({ robotId: robot.id, player: address, passKey: p.key, roundKeyHash: rk.hash });
+        setRound({ id: s.sessionId, expiresAt: s.expiresAt, tx: s.tx, roundKey: rk.key });
+      };
+      try {
+        await begin(live ?? (await openPass()));
+      } catch (e) {
+        // The pass ended or was used up: approve a new one once, then start.
+        if (!live || !/play pass|ended|used up|no play pass/i.test((e as Error).message)) throw e;
+        savePass(null);
+        setPassState(null);
+        await begin(await openPass());
+      }
+      acc.setAttemptsLeft(player.attemptsLeft - 1);
     });
 
   const send = () =>
@@ -195,9 +241,15 @@ function RealRound({ health, robot, maxInstruction, onResult, onFinished }: Prop
           </button>
           <p className="note">
             {player.attemptsLeft > 0
-              ? `${plural(player.attemptsLeft, "try", "tries")} left today.${health.rules ? ` Each round lasts ${Math.round(health.rules.sessionTtl / 60)} minutes.` : ""}`
-              : `You've used all ${health.rules?.attemptsPerDay ?? "your"} tries for today. Come back tomorrow, or keep practising for free.`}
+              ? `${plural(player.attemptsLeft, "try", "tries")} left${player.extraTries ? ` (${player.extraTries} bought)` : " today"}.${health.rules ? ` Each round lasts ${Math.round(health.rules.sessionTtl / 60)} minutes.` : ""}`
+              : `You've used all ${health.rules?.attemptsPerDay ?? "your"} free tries for today. Buy more below, come back tomorrow, or keep practising for free.`}
           </p>
+          <p className="note">
+            {pass && pass.validUntil > now
+              ? `Play pass on until ${new Date(pass.validUntil * 1000).toLocaleTimeString()}: rounds start without asking QoreX.`
+              : "QoreX asks once, then you can play for 10 minutes without approving every round."}
+          </p>
+          {player.tries && <BuyTries address={address} tries={player.tries} onBought={acc.refresh} />}
         </>
       ) : (
         <>
@@ -222,6 +274,62 @@ function RealRound({ health, robot, maxInstruction, onResult, onFinished }: Prop
       {busy && <p className="note">{busy}</p>}
       {error && <p className="error-text">{error}</p>}
     </div>
+  );
+}
+
+/** Buy extra tries: pay from QoreX, then RedZone adds them on chain (the payment goes to the site owner). */
+function BuyTries({ address, tries, onBought }: { address: string; tries: { priceUqor: string; payTo: string; memo: string }; onBought: () => Promise<void> }) {
+  const [count, setCount] = useState(5);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState<string | null>(null);
+  const price = BigInt(tries.priceUqor);
+  const n = Number.isSafeInteger(count) && count >= 1 && count <= 100 ? count : 0;
+  const totalUqor = price * BigInt(n);
+  const qor = (u: bigint) => formatQor((u * 10n ** 12n).toString());
+
+  const buy = async () => {
+    if (!n) return;
+    setBusy("Approve the payment in QoreX…");
+    setError(null);
+    setDone(null);
+    try {
+      const tx = await payNative(address, tries.payTo, totalUqor.toString(), tries.memo);
+      setBusy("Adding your tries…");
+      for (let i = 0; ; i++) {
+        try {
+          const r = await api.buyTries(address, tx);
+          setDone(`Added ${plural(r.bought, "try", "tries")}. You have ${plural(r.extraTries, "bought try", "bought tries")}.`);
+          break;
+        } catch (e) {
+          // The payment can take a few seconds to show up on chain; retrying never charges twice.
+          if (i >= 10 || !/not (found|indexed)/i.test((e as Error).message)) throw e;
+          await new Promise((ok) => setTimeout(ok, 3000));
+        }
+      }
+      await onBought();
+    } catch (e) {
+      setError(explainQorexError(e));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  return (
+    <details className="buy-tries">
+      <summary>Want more tries? {qor(price)} each</summary>
+      <div className="row">
+        <label htmlFor="try-count">Tries</label>
+        <input id="try-count" type="number" min={1} max={100} value={count} onChange={(e) => setCount(Number(e.target.value))} style={{ width: "5em" }} />
+        <button className="btn small" disabled={!n || !!busy} onClick={buy}>
+          Buy {n || ""} for {qor(totalUqor)}
+        </button>
+      </div>
+      <p className="note">Bought tries never expire and are used after your free daily ones.</p>
+      {busy && <p className="note">{busy}</p>}
+      {done && <p className="note">{done}</p>}
+      {error && <p className="error-text">{error}</p>}
+    </details>
   );
 }
 

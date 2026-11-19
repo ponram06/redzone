@@ -113,7 +113,9 @@ if (robotId) {
 const ledger = new ChainLedger(client, REGISTRY, REGISTRY_DEPLOY_BLOCK, VAULT, VAULT_DEPLOY_BLOCK, REST_URL);
 const memo = bountyMemo(robotId);
 const paidUqor = async () =>
-  (await ledger.transfers(admin.cosmos, relayer.cosmosAddress)).filter((t) => t.memo.trim() === memo).reduce((s, t) => s + t.uqor, 0n);
+  (await ledger.transfers(admin.cosmos, relayer.cosmosAddress))
+    .filter((t) => t.height >= Number(REGISTRY_DEPLOY_BLOCK) && t.memo.trim() === memo) // payments for older contracts don't count
+    .reduce((s, t) => s + t.uqor, 0n);
 let paid = await paidUqor();
 if (paid >= BOUNTY_UQOR) {
   console.log(`2. already paid ${paid} uqor with memo "${memo}"`);

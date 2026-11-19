@@ -14,9 +14,10 @@ verified on chain, so a leaked or quantum-broken ECDSA key cannot drain the vaul
 1. Open the website and sign in with the QoreX wallet (testnet).
 2. Pick a robot and try free practice rounds. Nothing is paid or saved.
 3. To play for the bounty, verify your account once with a 0.1 QOR payment from QoreX.
-4. Start a round. You get 10 minutes and one message. QoreX asks you to approve the start and
-   your message.
-5. If the robot touches a red zone, the result is recorded on chain and the bounty is paid to
+4. Start a round. You get 10 minutes and one message. QoreX asks you once for a 10-minute
+   **play pass**; rounds you start during it need no further approval.
+5. 5 free tries a day. Want more? Buy extra tries (0.1 QOR each) from QoreX; they never expire.
+6. If the robot touches a red zone, the result is recorded on chain and the bounty is paid to
    your account automatically.
 
 **Robot makers**
@@ -44,8 +45,8 @@ flowchart LR
         G[Ledger<br/>reads chain history]
     end
     subgraph QoreChain["QoreChain testnet"]
-        REG[RobotRegistryV3]
-        V[EscrowVaultV2]
+        REG[RobotRegistryV4]
+        V[EscrowVaultV3]
         P[pqcVerify / pqcKeyStatus<br/>precompiles]
     end
     W -- "sign request / message" --> Q
@@ -83,27 +84,43 @@ flowchart LR
 
 | Part | State |
 |---|---|
-| `contracts/` v3: RobotRegistryV3, EscrowVaultV2, PQAccess, MLDSA87, QoreXMessage | 167 Foundry tests passing (v1/v2 suites, the v3 suite, audit proof-of-concepts and a vault invariant test) |
-| `backend/` robot brains + ML-DSA-87 referee API | Working on v3: 74 tests, plus a live parity test against the deployed v3 contracts ([backend/README.md](backend/README.md)) |
-| `web/` website for players, robot makers and buyers | Working: play (free practice and prize rounds), safety rankings, robot pages, add a robot, take a bounty back, help. Sign-in with QoreX; a relayer pays gas |
-| `audits/` | Self-review, QCAI stage 1 and stage 2 (with written answers), an adversarial audit of v3 (all findings fixed before the final deploy), and Blockhertz reports on EscrowVaultV2 ([audits/](audits/)) |
-| Q-Day Drill (18 Nov) | Hybrid-signed proof accepted; no successful attack, nothing taken from the drill account ([docs/QDAY_DRILL.md](docs/QDAY_DRILL.md)) |
+| `contracts/` v4: RobotRegistryV4, EscrowVaultV3 (on PQAccess, MLDSA87, QoreXMessage) | 253 Foundry tests passing: the whole v3 suite re-run on v4, new play-pass and paid-try tests, vault invariant tests, and the older v1/v2/v3 suites |
+| `backend/` robot brains + ML-DSA-87 referee API | Working on v4: 82 tests, plus a live parity test against the deployed v4 contracts ([backend/README.md](backend/README.md)) |
+| `web/` website for players, robot makers and buyers | Working: play (training-robot practice, play pass, bounty rounds, buy extra tries), safety rankings, robot pages, add a robot, take a bounty back, help. Sign-in with QoreX; a relayer pays gas |
+| `audits/` | v3: self-review, QCAI stage 1 and stage 2 (with written answers), an adversarial audit (all findings fixed), Blockhertz reports on the vault. v4: flattened for its QCAI runs ([audits/RedZone.v4.flat.sol](audits/RedZone.v4.flat.sol)) |
+| Q-Day Drill (18 Nov) | Hybrid-signed proof accepted; no successful attack, nothing taken from the drill account (drill ran on v3: [docs/QDAY_DRILL.md](docs/QDAY_DRILL.md)) |
 
 ## Deployed on testnet
 
 | Contract | Address |
 |---|---|
-| RobotRegistryV3 | `0x69564de848d807ea895e1987b53749e1648cadbf` (current) |
-| EscrowVaultV2 | `0x16cc5efcda75a788f597dd0c785862db1bdbeb7f` (current) |
+| RobotRegistryV4 | `0xef521a3a178a344a5cdd6854271e1fca466fa115` (current: v3 + play pass + paid tries) |
+| EscrowVaultV3 | `0xf436fde024c90bf70e2c179391931f8a2c352bc2` (current: the gas-optimised vault, for v4) |
+| RobotRegistryV3, EscrowVaultV2 | `0x69564de848d807ea895e1987b53749e1648cadbf`, `0x16cc5efcda75a788f597dd0c785862db1bdbeb7f` (Q-Day Drill contracts, QCAI-audited; superseded 19 Nov) |
 | RobotRegistryV2, EscrowVault v1, RobotRegistry v1 | `0x354f71Da76314Cd74A18524899Aeb43611d86448`, `0xcD9AAd1ad2D7981699f256e73F2780dac86f0266`, `0x7733d4f2D707c2F8160831e2e0ca2b6B90Ef4940` (superseded, kept for history) |
 | Admin / deployer | `qor1g4xu64wuhy25y9h7lvtncz6mf5nt4q9ze87qvv` (`0x454DCD55DCB9154216fEfb173C0B5B4D26bA80A2`) |
 
 Transactions and the live precompile check are in [deployments/testnet.json](deployments/testnet.json).
-The deployed EscrowVaultV2 is the audited build flattened in [audits/RedZone.v3.flat.sol](audits/RedZone.v3.flat.sol).
-The Blockhertz gas fixes in `contracts/src/v3/EscrowVaultV2.sol` came after it. They don't change
-behaviour, but they reorder the `Bounty` struct, so the `bounties()` getter returns its fields in a
-different order. The backend reads the deployed order; they go live with the next deployment.
-Q-Day Drill notes: [docs/QDAY_DRILL.md](docs/QDAY_DRILL.md).
+
+**What v4 changes, and why.** v3 asked for a QoreX approval for every round, and the 5 free tries
+a day were the only tries. v4 keeps all of v3 and adds two things:
+
+- **Play pass.** The player signs `openPassFor` once (ML-DSA, QoreX). For 10 minutes the RedZone
+  relayer may start up to N of the player's rounds (`startSessionWithPass`), N being the tries they
+  have left. Limits: the pass names one operator, ends after 10 minutes, and caps the rounds.
+  This is the one place a `msg.sender` check is used (the operator), and the worst a stolen
+  operator ECDSA key can do is start some of that player's rounds within those minutes: never move
+  funds, record a result or act after the pass ends. The relayer also only starts a pass round
+  for the browser that opened the pass (a secret pass key, checked off chain).
+- **Paid tries.** After the free 5, a player can use tries bought with `buyTries` (0.1 QOR each,
+  no daily cap, they never expire). The payment is forwarded to the treasury in the same
+  transaction. Only the admin's ML-DSA signature can change the price or the treasury, and buyers
+  always send the exact price, so a change can never charge anyone more than they agreed to.
+
+**QoreChain's deployment gas limit.** A contract creation on this chain is capped at about 5M gas
+(measured: eth_estimateGas refuses beyond it, though the chain's per-transaction cap is 30M).
+At ~216 gas per byte of code, v4 had to fit in about 20 KB, so it keeps the admin-only digest
+helpers and a few getters internal (tests compute them the same way). It deployed at 4.98M gas.
 
 ## Network
 
@@ -123,14 +140,17 @@ account's ML-DSA-87 key opens with a hybrid-signed native message (`npm run wind
 
 | Action | Who authorises it | Checked with |
 |---|---|---|
-| `registerRobotFor`, `updateBrain`, `startSessionFor` | the user's ML-DSA signature (QoreX), single use (nonce) | `pqcKeyStatus` + `pqcVerify` |
+| `registerRobotFor`, `updateBrain`, `startSessionFor`, `openPassFor` | the user's ML-DSA signature (QoreX), single use (nonce) | `pqcKeyStatus` + `pqcVerify` |
+| `startSessionWithPass` | the operator named in the player's ML-DSA-signed pass, for 10 minutes and N rounds | the pass (`openPassFor`) |
+| `buyTries` | anyone pays the exact price; the money goes straight to the treasury | - |
+| `setTryPrice` | admin's ML-DSA signature (price capped at 10 QOR) | `pqcKeyStatus` + `pqcVerify` |
 | `recordResult`, `recordUtility` | the referee's ML-DSA verdict, bound to session, robot, player and replay hash | `pqcVerify` (key checked against the stored hash) |
 | `depositBounty` | anyone; the robot's owner always owns the bounty | - |
 | `claimBounty` | anyone; pays the robot's earliest eligible breach to that session's player | registry's breach list |
 | `requestWithdraw` | the bounty owner's ML-DSA signature; pays out only after 3 hours, and never while a win is unpaid | `pqcKeyStatus` + `pqcVerify` |
 | `setPaused`, `transferAdmin`, `proposeReferee` | admin's ML-DSA signature (a new referee also waits 2 days) | `pqcKeyStatus` + `pqcVerify` |
 
-`msg.sender` is never used for authorisation. Signed digests include the contract kind, chain id,
+Apart from the play-pass operator above, `msg.sender` is never used for authorisation. Signed digests include the contract kind, chain id,
 contract address, a per-signer nonce and a deadline, so signatures cannot be replayed elsewhere.
 
 ## Solidity PQC checks: where to look
@@ -142,17 +162,20 @@ automatically, so here is the evidence in one place.
 |---|---|---|
 | Precompile call | [PQGuard.sol:24-29](contracts/src/PQGuard.sol#L24-L29) (`staticcall` to `0x…0a01`) | [PQGuard.sol:31-41](contracts/src/PQGuard.sol#L31-L41) (`staticcall` to `0x…0a02`) |
 | ML-DSA-87 wrapper (length checks, fail closed) | [MLDSA87.sol `verify`](contracts/src/v3/MLDSA87.sol#L61-L64) | [MLDSA87.sol `accountKey` / `requireKey`](contracts/src/v3/MLDSA87.sol#L43-L57) |
-| Used for | user requests ([PQAccess.sol:252-257](contracts/src/v3/PQAccess.sol#L252-L257)), admin actions ([PQAccess.sol:104-110](contracts/src/v3/PQAccess.sol#L104-L110)), referee verdicts ([RobotRegistryV3.sol:150-154](contracts/src/v3/RobotRegistryV3.sol#L150-L154)), deploy proofs | looking up each signer's registered key; new admin must hold an ML-DSA-87 key ([PQAccess.sol:173](contracts/src/v3/PQAccess.sol#L173)) |
-| Tests | [RedZoneV3.t.sol](contracts/test/v3/RedZoneV3.t.sol): forged, replayed and wrong-length signatures, `test_NoEcdsaShortcuts`, `test_Attack_PrecompileMissingFailsClosed` | `test_Stage2_NonMLDSA87KeyRefused`, `test_Stage2_RefereeKeyMustBeMLDSA87`, `test_Stage2_PrecompileAvailability` |
+| Used for | user requests ([PQAccess.sol:252-257](contracts/src/v3/PQAccess.sol#L252-L257)), admin actions ([PQAccess.sol:104-110](contracts/src/v3/PQAccess.sol#L104-L110)), referee verdicts ([RobotRegistryV4.sol:198-202](contracts/src/v4/RobotRegistryV4.sol#L198-L202)), deploy proofs | looking up each signer's registered key; new admin must hold an ML-DSA-87 key ([PQAccess.sol:173](contracts/src/v3/PQAccess.sol#L173)) |
+| Tests | [RedZoneV4.t.sol](contracts/test/v4/RedZoneV4.t.sol) (and the v3 suite): forged, replayed and wrong-length signatures, `test_NoEcdsaShortcuts`, `test_Attack_PrecompileMissingFailsClosed` | `test_Stage2_NonMLDSA87KeyRefused`, `test_Stage2_RefereeKeyMustBeMLDSA87`, `test_Stage2_PrecompileAvailability` |
 
 Proven on testnet, not only in tests:
 
 - Both deployed contracts call the precompiles: their runtime code holds `PUSH2 0x0a01` and
-  `PUSH2 0x0a02` (check with `cast code 0x69564de848d807ea895e1987b53749e1648cadbf --rpc-url https://evm-testnet.qore.host | grep -o 610a0[12]`).
+  `PUSH2 0x0a02` (check with `cast code 0xef521a3a178a344a5cdd6854271e1fca466fa115 --rpc-url https://evm-testnet.qore.host | grep -o 610a0[12]`).
 - The constructors verify ML-DSA-87 deploy proofs with the live `pqcVerify`, so the deployments
-  themselves (RobotRegistryV3 `0xb0677bac…f694f`, EscrowVaultV2 `0xcd95d102…7ca39d`) could only
+  themselves (RobotRegistryV4 `0x065e60a4…c1e006`, EscrowVaultV3 `0x34e5986a…53a78e`; earlier v3
+  `0xb0677bac…f694f`, `0xcd95d102…7ca39d`) could only
   succeed with working post-quantum checks.
-- Live calls on 19 Nov: robot #1 registered with the owner's ML-DSA signature (`0x2d05c43c…3a7c`:
+- Live calls on 19 Nov on v4: robot #1 registered with the owner's ML-DSA signature
+  (`0x0f2bffbb…93c1`) and its skills score recorded with a referee verdict (`0xe4cf7313…f8b4`).
+  Earlier on v3: robot #1 registered (`0x2d05c43c…3a7c`:
   `pqcKeyStatus` + `pqcVerify`); a player's round recorded with the referee's ML-DSA verdict
   (`0x1d33af4d…8c4d`) and its bounty paid (`0xeccb101f…4570`).
 - `cd backend && npm run test:live` signs with the referee key and has the chain's `pqcVerify`
@@ -166,9 +189,9 @@ hashes are on chain).
 
 | What you see | Source |
 |---|---|
-| Robots, owners, names, attacks, wins, safety score, badge, skills score | `RobotRegistryV3` reads (`getRobot`, `getRating`, `getTier`) |
-| Bounties on each robot, and take-backs in progress | `EscrowVaultV2.bounties` |
-| Tries left today | `RobotRegistryV3.attemptsLeftToday` |
+| Robots, owners, names, attacks, wins, safety score, badge, skills score | `RobotRegistryV4` reads (`getRobot`, `getRating`, `getTier`) |
+| Bounties on each robot, and take-backs in progress | `EscrowVaultV3.bounties` |
+| Tries left (free today + bought), play pass | `RobotRegistryV4.attemptsLeftToday`, `extraTries`, `passes` |
 | Game rules (tries per day, round length, number of tasks, name length) | Contract constants, read when the server starts |
 | Top players leaderboard | `Breached` / `Defended` events and `BountyClaimed` events, scanned from the deploy blocks |
 | "Account verified" | The player's sign-up transfer, found with the chain's transaction search |
@@ -183,13 +206,13 @@ chain, so a restored copy can be checked.
 
 **Robots and the brain fingerprint.** Every robot gets a brain fingerprint (`brainHash`) that
 anyone can check against its published config, and `updateBrain` lets owners change it (which
-resets its scores). The v3 contracts started empty, and the demo robots go on v3 with
+resets its scores). Each new contract version starts empty, and the demo robots are registered on it with
 their real fingerprints, so the placeholder fingerprint of the old v1/v2 robot #1 is not used.
 
 ## Known limitation: QoreX can't send transactions to contracts yet
 
 Robot makers add a bounty at the same time as they add their robot. Ideally they would call
-`EscrowVaultV2.depositBounty` straight from their wallet. **The QoreX wallet (0.4.2) can't do that
+`EscrowVaultV3.depositBounty` straight from their wallet. **The QoreX wallet (0.4.2) can't do that
 yet.** Its EVM lane can connect and read but can't sign EVM transactions, and its native lane can
 only send ordinary transfers. Until that changes, RedZone uses this workaround:
 
@@ -228,17 +251,17 @@ npm run forge-std
 forge test
 ```
 
-Deploy v3 (needs a registered ML-DSA-87 key and an open EVM window):
+Deploy v4 (needs a registered ML-DSA-87 key and an open EVM window):
 
 ```sh
 cp .env.example .env        # set PRIVATE_KEY, QORE_PQC_RECOVERY_CODE
 npm run window status
 npm run referee-key         # creates the referee ML-DSA key (.referee-key.json, git-ignored)
 forge build
-npm run v3-proofs           # deploy-time ML-DSA-87 proofs the v3 constructors check
-npm run deploy:v3 -- --dry-run
+npm run v4-proofs           # deploy-time ML-DSA-87 proofs the v4 constructors check
+TREASURY=0x... npm run deploy:v4 -- --dry-run
 npm run window open
-npm run deploy:v3           # Foundry can't simulate QoreChain's precompiles, so this uses viem
+TREASURY=0x... npm run deploy:v4   # Foundry can't simulate QoreChain's precompiles, so this uses viem
 ```
 
 ## Credits

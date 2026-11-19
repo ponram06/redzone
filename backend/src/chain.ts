@@ -18,23 +18,24 @@ const deployments = JSON.parse(
   evmChainId: number;
   network: string;
   contracts: {
-    EscrowVaultV2: { address: Address; deployBlock: number };
-    RobotRegistryV3: { address: Address; deployBlock: number; nativeChainId: string };
+    EscrowVaultV3: { address: Address; deployBlock: number };
+    RobotRegistryV4: { address: Address; deployBlock: number; nativeChainId: string };
   };
 };
 
 /** Native (Cosmos) chain id QoreX signs for, from the deployment record. */
-export const NATIVE_CHAIN_ID = deployments.contracts.RobotRegistryV3.nativeChainId;
-export const REGISTRY_DEPLOY_BLOCK = BigInt(deployments.contracts.RobotRegistryV3.deployBlock);
-export const VAULT_DEPLOY_BLOCK = BigInt(deployments.contracts.EscrowVaultV2.deployBlock);
+export const NATIVE_CHAIN_ID = deployments.contracts.RobotRegistryV4.nativeChainId;
+export const REGISTRY_DEPLOY_BLOCK = BigInt(deployments.contracts.RobotRegistryV4.deployBlock);
+export const VAULT_DEPLOY_BLOCK = BigInt(deployments.contracts.EscrowVaultV3.deployBlock);
 /** Native REST endpoint: QORE_REST_URL, else the SDK's preset for this network. */
 export const REST_URL = process.env.QORE_REST_URL?.trim() || "https://api-testnet.qore.host";
 
 export const CHAIN_ID = deployments.evmChainId;
-/** EscrowVaultV2: bounties belong to the robot's owner and are paid to the earliest eligible breach. */
-export const VAULT = deployments.contracts.EscrowVaultV2.address;
-/** RobotRegistryV3: every privileged call is authorised by an ML-DSA-87 signature. Older versions stay on chain for history only. */
-export const REGISTRY = deployments.contracts.RobotRegistryV3.address;
+/** EscrowVaultV3: bounties belong to the robot's owner and are paid to the earliest eligible breach. */
+export const VAULT = deployments.contracts.EscrowVaultV3.address;
+/** RobotRegistryV4: v3 (every privileged call authorised by an ML-DSA-87 signature) plus play passes
+ *  and paid tries. Older versions stay on chain for history only. */
+export const REGISTRY = deployments.contracts.RobotRegistryV4.address;
 /** Lower-case on purpose: viem rejects the mixed-case precompile constants. */
 export const PQC_VERIFY = "0x0000000000000000000000000000000000000a01" as Address;
 
@@ -70,6 +71,18 @@ export const registryAbi = parseAbi([
   "function UTILITY_TASKS() view returns (uint8)",
   "function MAX_NAME_LENGTH() view returns (uint256)",
   "function MAX_START_TTL() view returns (uint256)",
+  "function PASS_TTL() view returns (uint256)",
+  "function MAX_PASS_ROUNDS() view returns (uint256)",
+  "function tryPrice() view returns (uint256)",
+  "function treasury() view returns (address)",
+  "function extraTries(address player) view returns (uint256)",
+  "function passes(address player) view returns (address operator, uint64 validUntil, uint32 roundsLeft)",
+  "function openPassDigest(address player, address operator, uint256 validUntil, uint256 maxRounds, uint256 nonce, uint256 deadline) view returns (bytes32)",
+  "function openPassFor(address player, address operator, uint256 validUntil, uint256 maxRounds, uint256 deadline, bytes playerSig)",
+  "function startSessionWithPass(uint256 robotId, address player) returns (uint256)",
+  "function buyTries(address player, uint256 count) payable",
+  "event PassOpened(address indexed player, address indexed operator, uint256 validUntil, uint256 maxRounds)",
+  "event TriesBought(address indexed player, address indexed payer, uint256 count, uint256 paid)",
   "event SessionStarted(uint256 indexed sessionId, uint256 indexed robotId, address indexed player, uint256 expiresAt)",
   "function registerRobotDigest(address owner, bytes32 nameHash, bytes32 brainHash, uint256 nonce, uint256 deadline) view returns (bytes32)",
   "function registerRobotFor(address owner, string name, bytes32 brainHash, uint256 deadline, bytes ownerSig) returns (uint256)",
@@ -81,9 +94,8 @@ export const registryAbi = parseAbi([
 
 export const vaultAbi = parseAbi([
   "function nextBountyId() view returns (uint256)",
-  // Field order of the DEPLOYED vault (audits/RedZone.v3.flat.sol). The gas-optimised source moves
-  // `status` before the withdrawal fields; switch this line if that version is ever deployed.
-  "function bounties(uint256 bountyId) view returns (uint256 robotId, uint256 amount, uint256 breachCursor, address owner, uint64 depositedAt, uint64 withdrawRequestedAt, address withdrawTo, uint8 status)",
+  // Field order of EscrowVaultV3 (the gas-optimised struct: status before the withdrawal fields).
+  "function bounties(uint256 bountyId) view returns (uint256 robotId, uint256 amount, uint256 breachCursor, address owner, uint64 depositedAt, uint8 status, uint64 withdrawRequestedAt, address withdrawTo)",
   "function nextBreach(uint256 bountyId) view returns (uint8 state, uint256 sessionId)",
   "function claimBounty(uint256 bountyId)",
   "function skipBreach(uint256 bountyId)",
@@ -99,7 +111,7 @@ export const vaultAbi = parseAbi([
   "event BountyWithdrawn(uint256 indexed bountyId, address indexed to, uint256 amount)",
 ]);
 
-/** EscrowVaultV2.Next: what happens to the breach at a bounty's cursor. */
+/** EscrowVaultV3.Next: what happens to the breach at a bounty's cursor. */
 export const NEXT = { None: 0, Claimable: 1, Skippable: 2, Waiting: 3 } as const;
 
 export const TIERS = ["Rookie", "Guard", "Sentinel"] as const;
@@ -177,7 +189,7 @@ export type BountyView = {
 };
 
 export async function readBounty(id: number): Promise<BountyView> {
-  const [robotId, amount, , owner, depositedAt, withdrawRequestedAt, withdrawTo, status] = await client.readContract({
+  const [robotId, amount, , owner, depositedAt, status, withdrawRequestedAt, withdrawTo] = await client.readContract({
     address: VAULT,
     abi: vaultAbi,
     functionName: "bounties",
@@ -205,7 +217,7 @@ export async function readNextBreach(bountyId: number): Promise<{ state: number;
 export async function readRules() {
   const read = <T>(functionName: "MAX_ATTEMPTS_PER_DAY" | "SESSION_TTL" | "RESULT_GRACE" | "UTILITY_TASKS" | "MAX_NAME_LENGTH" | "MAX_START_TTL") =>
     client.readContract({ address: REGISTRY, abi: registryAbi, functionName }) as Promise<T>;
-  const [attemptsPerDay, sessionTtl, resultGrace, utilityTasks, maxNameLength, maxStartTtl, withdrawDelay] = await Promise.all([
+  const [attemptsPerDay, sessionTtl, resultGrace, utilityTasks, maxNameLength, maxStartTtl, withdrawDelay, passTtl, maxPassRounds] = await Promise.all([
     read<bigint>("MAX_ATTEMPTS_PER_DAY"),
     read<bigint>("SESSION_TTL"),
     read<bigint>("RESULT_GRACE"),
@@ -213,6 +225,8 @@ export async function readRules() {
     read<bigint>("MAX_NAME_LENGTH"),
     read<bigint>("MAX_START_TTL"),
     client.readContract({ address: VAULT, abi: vaultAbi, functionName: "WITHDRAW_DELAY" }),
+    client.readContract({ address: REGISTRY, abi: registryAbi, functionName: "PASS_TTL" }),
+    client.readContract({ address: REGISTRY, abi: registryAbi, functionName: "MAX_PASS_ROUNDS" }),
   ]);
   return {
     attemptsPerDay: Number(attemptsPerDay),
@@ -222,6 +236,8 @@ export async function readRules() {
     maxNameLength: Number(maxNameLength),
     maxStartTtl: Number(maxStartTtl),
     withdrawDelay: Number(withdrawDelay),
+    passTtl: Number(passTtl),
+    maxPassRounds: Number(maxPassRounds),
   };
 }
 
@@ -275,13 +291,37 @@ export async function readPqcKey(account: Address): Promise<{ registered: boolea
   return { registered, algorithmId, pubkey };
 }
 
-/** Per-player state on RobotRegistryV3: request nonce and sessions left today. */
-export async function readPlayer(player: Address): Promise<{ nonce: bigint; attemptsLeft: number }> {
-  const [nonce, left] = await Promise.all([
+export type PlayerState = {
+  nonce: bigint;
+  /** Free tries left today plus paid tries. */
+  attemptsLeft: number;
+  extraTries: number;
+  pass: { operator: Address; validUntil: number; roundsLeft: number };
+};
+
+/** Per-player state on RobotRegistryV4: request nonce, tries left, paid tries and play pass. */
+export async function readPlayer(player: Address): Promise<PlayerState> {
+  const [nonce, left, extra, pass] = await Promise.all([
     client.readContract({ address: REGISTRY, abi: registryAbi, functionName: "nonces", args: [player] }),
     client.readContract({ address: REGISTRY, abi: registryAbi, functionName: "attemptsLeftToday", args: [player] }),
+    client.readContract({ address: REGISTRY, abi: registryAbi, functionName: "extraTries", args: [player] }),
+    client.readContract({ address: REGISTRY, abi: registryAbi, functionName: "passes", args: [player] }),
   ]);
-  return { nonce, attemptsLeft: Number(left) };
+  return {
+    nonce,
+    attemptsLeft: Number(left),
+    extraTries: Number(extra),
+    pass: { operator: pass[0], validUntil: Number(pass[1]), roundsLeft: Number(pass[2]) },
+  };
+}
+
+/** Current price of one paid try (wei; 0 = off) and where it goes. */
+export async function readTryPrice(): Promise<{ priceWei: bigint; treasury: Address }> {
+  const [priceWei, treasury] = await Promise.all([
+    client.readContract({ address: REGISTRY, abi: registryAbi, functionName: "tryPrice" }),
+    client.readContract({ address: REGISTRY, abi: registryAbi, functionName: "treasury" }),
+  ]);
+  return { priceWei, treasury };
 }
 
 export type NativeTransfer = { code: number; from: string; to: string; uqor: bigint; memo: string; height: number };

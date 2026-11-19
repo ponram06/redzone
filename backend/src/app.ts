@@ -24,7 +24,7 @@ export type AppDeps = {
   relayer?: { address: Address; cosmos: string } | null;
   prize?: { minUqor: bigint; payTo: string } | null;
   /** Game rules read from the contract. */
-  rules?: { attemptsPerDay: number; sessionTtl: number; resultGrace: number; utilityTasks: number; maxNameLength: number };
+  rules?: { attemptsPerDay: number; sessionTtl: number; resultGrace: number; utilityTasks: number; maxNameLength: number; passTtl?: number; maxPassRounds?: number };
   nativeChainId?: string;
   /** One-time sign-up fee in uqor (null when sign-up is off). */
   signupFeeUqor?: bigint | null;
@@ -182,6 +182,28 @@ export async function buildApp(d: AppDeps) {
     if (!allow(req, reply, "session")) return reply;
     const b = req.body ?? {};
     return d.game.startSession({ robotId: b.robotId, player: b.player, deadline: b.deadline, pqSignature: b.pqSignature, roundKeyHash: b.roundKeyHash });
+  });
+
+  /** Play pass: one QoreX approval, then rounds start with no wallet prompt for PASS_TTL. */
+  app.get<{ Querystring: { player?: string } }>("/pass/request", async (req) => d.game.passRequest({ player: req.query.player }));
+  app.post<{ Body: { player?: unknown; validUntil?: unknown; maxRounds?: unknown; deadline?: unknown; pqSignature?: unknown; passKeyHash?: unknown } }>(
+    "/pass/open",
+    async (req, reply) => {
+      if (!allow(req, reply, "session")) return reply;
+      const b = req.body ?? {};
+      return d.game.openPass({ player: b.player, validUntil: b.validUntil, maxRounds: b.maxRounds, deadline: b.deadline, pqSignature: b.pqSignature, passKeyHash: b.passKeyHash });
+    },
+  );
+  app.post<{ Body: { robotId?: unknown; player?: unknown; passKey?: unknown; roundKeyHash?: unknown } }>("/session/start-pass", async (req, reply) => {
+    if (!allow(req, reply, "session")) return reply;
+    const b = req.body ?? {};
+    return d.game.startWithPass({ robotId: b.robotId, player: b.player, passKey: b.passKey, roundKeyHash: b.roundKeyHash });
+  });
+
+  /** Paid tries: the player pays the relayer from QoreX, then posts the payment here. */
+  app.post<{ Body: { player?: unknown; txHash?: unknown } }>("/tries/buy", async (req, reply) => {
+    if (!allow(req, reply, "session")) return reply;
+    return d.game.buyTries({ player: req.body?.player, txHash: req.body?.txHash });
   });
 
   /** Owners: what QoreX signs to register a robot, then the relayed registration. */

@@ -68,8 +68,19 @@ class FakeRelayer implements Relayer {
       throw new Error("network down");
     }
     const logs: Log[] = [];
-    if (call.functionName === "startSessionFor") {
+    if (call.functionName === "openPassFor") {
+      const [who, operator, validUntil, maxRounds] = call.args as unknown as [Address, Address, bigint, bigint];
+      passes[who.toLowerCase()] = { operator, validUntil: Number(validUntil), roundsLeft: Number(maxRounds) };
+      nonces[who.toLowerCase()] = (nonces[who.toLowerCase()] ?? 0n) + 1n;
+    }
+    if (call.functionName === "buyTries") {
+      const [who, count] = call.args as unknown as [Address, bigint];
+      extra[who.toLowerCase()] = (extra[who.toLowerCase()] ?? 0) + Number(count);
+      bought.push({ player: who, payer: this.address, count: Number(count), paidWei: value, tx: ("0x" + "b0".repeat(32)) as Hex });
+    }
+    if (call.functionName === "startSessionFor" || call.functionName === "startSessionWithPass") {
       const [robotId, who] = call.args as unknown as [bigint, Address];
+      if (call.functionName === "startSessionWithPass") passes[who.toLowerCase()]!.roundsLeft--;
       logs.push({
         address: REG,
         topics: encodeEventTopics({ abi: registryAbi, eventName: "SessionStarted", args: { sessionId: 77n, robotId, player: who } }),
@@ -152,6 +163,10 @@ const pay = (n: number) => {
 };
 const txHash = (n: number) => n.toString(16).padStart(64, "0").toUpperCase();
 let nonces: Record<string, bigint>;
+let passes: Record<string, { operator: Address; validUntil: number; roundsLeft: number }>;
+let extra: Record<string, number>;
+let bought: { player: Address; payer: Address; count: number; paidWei: bigint; tx: Hex }[];
+const TRY_PRICE = 10n ** 17n; // 0.1 QOR
 
 const robot: RobotView = {
   id: 1,
@@ -190,6 +205,9 @@ beforeEach(async () => {
   const store = new Store(dataDir);
   relayer = new FakeRelayer();
   nonces = {};
+  passes = {};
+  extra = {};
+  bought = [];
   const pqKeys: Record<string, Uint8Array> = {
     [player.address.toLowerCase()]: playerPq.publicKey,
     [stranger.address.toLowerCase()]: strangerPq.publicKey,
@@ -202,7 +220,13 @@ beforeEach(async () => {
       const k = pqKeys[a.toLowerCase()];
       return { registered: !!k, algorithmId: k ? 1 : 0, pubkey: (k ? toHex(k) : "0x") as Hex };
     },
-    readPlayer: async (a: Address) => ({ nonce: nonces[a.toLowerCase()] ?? 0n, attemptsLeft: 5 }),
+    readPlayer: async (a: Address) => ({
+      nonce: nonces[a.toLowerCase()] ?? 0n,
+      attemptsLeft: 5 + (extra[a.toLowerCase()] ?? 0),
+      extraTries: extra[a.toLowerCase()] ?? 0,
+      pass: passes[a.toLowerCase()] ?? { operator: ZERO, validUntil: 0, roundsLeft: 0 },
+    }),
+    readTryPrice: async () => ({ priceWei: TRY_PRICE, treasury: "0x00000000000000000000000000000000000000fe" as Address }),
     readNativeTransfer: async (h: string) => txs[h.replace(/^0x/, "").toUpperCase()] ?? null,
     readBounty: async (id: number) =>
       vault.bounties.get(id) ?? { id, robotId: 0, owner: ZERO, amountWei: 0n, status: 0, depositedAt: 0, withdrawRequestedAt: 0, withdrawTo: ZERO },
@@ -237,6 +261,7 @@ beforeEach(async () => {
         .filter((b) => b.indexed)
         .map((b) => ({ bountyId: b.id, robotId: b.robotId, owner: b.owner, funder: b.funder, amountWei: b.amountWei, tx: b.tx })),
     claims: () => vault.paid.map((c) => ({ ...c, amountWei: vault.bounties.get(c.bountyId)!.amountWei, tx: "0x" as Hex })),
+    tries: () => bought,
     transfers: async (from: string, to: string) =>
       Object.entries(txs)
         .filter(([, t]) => t.code === 0 && t.from === from && t.to === to)
@@ -279,8 +304,14 @@ beforeEach(async () => {
     [txHash(22)]: { code: 0, from: toQorAddress(player.address), to: PAY_TO, uqor: 999_999n, memo: "RedZone bounty #2", height: 22 },
     [txHash(23)]: { code: 0, from: toQorAddress(stranger.address), to: PAY_TO, uqor: 2_000_000n, memo: "RedZone bounty #2", height: 23 },
     [txHash(24)]: { code: 0, from: toQorAddress(player.address), to: PAY_TO, uqor: 3_000_000n, memo: "RedZone bounty #2", height: 24 },
+    [txHash(30)]: { code: 0, from: toQorAddress(player.address), to: PAY_TO, uqor: 300_000n, memo: "RedZone tries", height: 30 },
+    [txHash(31)]: { code: 0, from: toQorAddress(player.address), to: PAY_TO, uqor: 250_000n, memo: "RedZone tries", height: 31 },
+    [txHash(32)]: { code: 0, from: toQorAddress(player.address), to: PAY_TO, uqor: 300_000n, memo: "RedZone bounty #2", height: 32 },
+    // Paid before the current contracts were deployed (height 20).
+    [txHash(33)]: { code: 0, from: toQorAddress(player.address), to: PAY_TO, uqor: 300_000n, memo: "RedZone tries", height: 19 },
+    [txHash(34)]: { code: 0, from: toQorAddress(player.address), to: PAY_TO, uqor: 2_000_000n, memo: "RedZone bounty #2", height: 19 },
   };
-  const game = new Game({ arena: FACILITY, brains, store, key, chain, ledger, chainId: 9800, registry: REG, vault: VAULT, sessionTtl: 600, resultGrace: 3600, withdrawDelay: WITHDRAW_DELAY, relayer, signup: { feeUqor: FEE, payTo: PAY_TO }, prize: { minUqor: 1_000_000n, payTo: PAY_TO }, now: () => clock });
+  const game = new Game({ arena: FACILITY, brains, store, key, chain, ledger, chainId: 9800, registry: REG, vault: VAULT, sessionTtl: 600, resultGrace: 3600, withdrawDelay: WITHDRAW_DELAY, paymentsFromHeight: 20, relayer, signup: { feeUqor: FEE, payTo: PAY_TO }, prize: { minUqor: 1_000_000n, payTo: PAY_TO }, now: () => clock });
   app = await buildApp({
     game,
     arena: FACILITY,
@@ -556,6 +587,100 @@ describe("QoreX players and the relayer", () => {
     const ok = await app.inject({ method: "POST", url: "/attempt", payload: { sessionId: 77, instruction: "go to (70, 50)", roundKey } });
     expect(ok.statusCode).toBe(200);
     expect(ok.json().breached).toBe(true);
+  });
+
+  describe("play pass", () => {
+    const passKey = "0x" + "7e".repeat(32);
+    const openPass = async (secret = playerPq.secretKey, key = passKey) => {
+      const q = (await app.inject({ url: `/pass/request?player=${player.address}` })).json();
+      return {
+        q,
+        res: await app.inject({
+          method: "POST",
+          url: "/pass/open",
+          payload: { player: player.address, validUntil: q.validUntil, maxRounds: q.maxRounds, deadline: q.deadline, pqSignature: qorexSign(secret, q.text), passKeyHash: roundKeyHash(key) },
+        }),
+      };
+    };
+    const startPass = (key = passKey, robotId = 1) =>
+      app.inject({ method: "POST", url: "/session/start-pass", payload: { robotId, player: player.address, passKey: key, roundKeyHash: roundKeyHash("0x" + "11".repeat(32)) } });
+
+    it("one QoreX approval opens a 10-minute pass; rounds then start with no signature", async () => {
+      await signUp(player.address, 1);
+      const { q, res } = await openPass();
+      expect(q.text).toContain("action: OpenPass");
+      expect(q.validUntil).toBeLessThanOrEqual(NOW + 600);
+      expect(q.maxRounds).toBe(5); // never more rounds than tries left
+      expect(res.statusCode).toBe(200);
+      expect(relayer.sent.at(-1)!.fn).toBe("openPassFor");
+      expect((relayer.sent.at(-1)!.args[1] as string).toLowerCase()).toBe(relayer.address);
+      expect((await app.inject({ url: `/player/${player.address}` })).json().pass).toEqual({ validUntil: q.validUntil, roundsLeft: 5 });
+      for (let i = 0; i < 2; i++) {
+        const r = await startPass();
+        expect(r.statusCode).toBe(200);
+        expect(r.json().sessionId).toBe(77);
+      }
+      expect(relayer.sent.filter((s) => s.fn === "startSessionWithPass")).toHaveLength(2);
+      expect(passes[player.address.toLowerCase()]!.roundsLeft).toBe(3);
+    });
+
+    it("a pass needs the player's own signature, and only this browser's pass key starts rounds", async () => {
+      await signUp(player.address, 1);
+      expect((await openPass(strangerPq.secretKey)).res.statusCode).toBe(401);
+      expect(relayer.sent).toHaveLength(0);
+      await openPass();
+      const n = relayer.sent.length;
+      expect((await startPass("0x" + "00".repeat(32))).statusCode).toBe(401);
+      expect(relayer.sent.length).toBe(n);
+    });
+
+    it("an ended pass asks for a new approval", async () => {
+      await signUp(player.address, 1);
+      await openPass();
+      clock = NOW + 601;
+      expect((await startPass()).statusCode).toBe(410);
+    });
+  });
+
+  describe("paid tries", () => {
+    const buy = (n: number, who: string = player.address) => {
+      if (payments[txHash(n)]) pay(n);
+      return app.inject({ method: "POST", url: "/tries/buy", payload: { player: who, txHash: txHash(n) } });
+    };
+
+    it("a QoreX payment buys whole tries on chain, exactly once, paid to the treasury", async () => {
+      expect((await app.inject({ url: `/player/${player.address}` })).json().tries).toEqual({ priceUqor: "100000", payTo: PAY_TO, memo: "RedZone tries" });
+      const r = await buy(30); // 0.3 QOR = 3 tries
+      expect(r.statusCode).toBe(200);
+      expect(r.json()).toMatchObject({ bought: 3, extraTries: 3 });
+      expect(relayer.sent.at(-1)).toMatchObject({ fn: "buyTries" });
+      expect(relayer.sent.at(-1)!.args).toEqual([player.address, 3n]);
+      expect(relayer.values.at(-1)).toBe(3n * TRY_PRICE);
+      // Same payment again: nothing more is bought.
+      expect((await buy(30)).json()).toMatchObject({ bought: 0, tx: null });
+      // 0.25 QOR more: with the earlier 0.3, 0.55 paid in total, 0.3 used, so 2 more tries (0.05 kept as credit).
+      expect((await buy(31)).json()).toMatchObject({ bought: 2, extraTries: 5 });
+    });
+
+    it("payments made for the previous contracts never count again", async () => {
+      const r = await buy(33);
+      expect(r.statusCode).toBe(400);
+      expect(r.json().error).toMatch(/previous contracts/);
+      pay(34);
+      const b = await app.inject({ method: "POST", url: "/owner/bounty", payload: { robotId: 2, owner: player.address, txHash: txHash(34) } });
+      expect(b.statusCode).toBe(400);
+      // ... and an old payment doesn't add to a new one.
+      pay(30);
+      expect((await buy(30)).json()).toMatchObject({ bought: 3 });
+      expect(relayer.values.at(-1)).toBe(3n * TRY_PRICE);
+    });
+
+    it("refuses payments with the wrong memo or from someone else", async () => {
+      expect((await buy(32)).statusCode).toBe(400); // memo is for a bounty
+      expect((await buy(30, stranger.address)).statusCode).toBe(400); // sent by the player, not the stranger
+      expect((await buy(99)).statusCode).toBe(404);
+      expect(relayer.sent.filter((s) => s.fn === "buyTries")).toHaveLength(0);
+    });
   });
 
   it("a bad or replayed StartSession signature costs no gas", async () => {

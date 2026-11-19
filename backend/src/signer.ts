@@ -9,8 +9,8 @@ import { readFileSync } from "node:fs";
 import { pqcSign, pqcVerify } from "@qorechain/sdk";
 import { encodeAbiParameters, encodePacked, hexToBytes, keccak256, stringToBytes, toHex, type Address, type Hex } from "viem";
 
-export const REGISTRY_DOMAIN = "RedZone.RobotRegistry.v3";
-export const VAULT_DOMAIN = "RedZone.EscrowVault.v2";
+export const REGISTRY_DOMAIN = "RedZone.RobotRegistry.v4";
+export const VAULT_DOMAIN = "RedZone.EscrowVault.v3";
 
 const typehash = (s: string) => keccak256(stringToBytes(s));
 export const RESULT_TYPEHASH = typehash(
@@ -123,4 +123,26 @@ export function withdrawDigest(chainId: number, vault: Address, bountyId: bigint
     [WITHDRAW_TYPEHASH, bountyId, to, nonce, deadline],
   );
   return domainDigest(VAULT_DOMAIN, chainId, vault, data);
+}
+
+export const OPEN_PASS_TYPEHASH = typehash(
+  "RedZone.OpenPass(address player,address operator,uint256 validUntil,uint256 maxRounds,uint256 nonce,uint256 deadline)",
+);
+
+/** RobotRegistryV4.openPassDigest: what the player signs once to play for PASS_TTL without new prompts. */
+export function openPassDigest(
+  chainId: number,
+  registry: Address,
+  player: Address,
+  operator: Address,
+  validUntil: bigint,
+  maxRounds: bigint,
+  nonce: bigint,
+  deadline: bigint,
+): Hex {
+  const data = encodeAbiParameters(
+    [{ type: "bytes32" }, { type: "address" }, { type: "address" }, { type: "uint256" }, { type: "uint256" }, { type: "uint256" }, { type: "uint256" }],
+    [OPEN_PASS_TYPEHASH, player, operator, validUntil, maxRounds, nonce, deadline],
+  );
+  return domainDigest(REGISTRY_DOMAIN, chainId, registry, data);
 }

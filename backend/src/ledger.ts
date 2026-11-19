@@ -16,11 +16,13 @@ export type ResultEvent = { sessionId: number; robotId: number; player: Address;
 export type SessionEvent = { sessionId: number; robotId: number; player: Address; expiresAt: number };
 export type DepositEvent = { bountyId: number; robotId: number; owner: Address; funder: Address; amountWei: bigint; tx: Hex };
 export type ClaimEvent = { bountyId: number; sessionId: number; player: Address; amountWei: bigint; replayHash: Hex; tx: Hex };
+export type TriesEvent = { player: Address; payer: Address; count: number; paidWei: bigint; tx: Hex };
 export type Transfer = NativeTransfer & { txHash: string };
 
 const EV = {
   breached: parseAbiItem("event Breached(uint256 indexed sessionId, uint256 indexed robotId, address indexed player, bytes32 replayHash)"),
   started: parseAbiItem("event SessionStarted(uint256 indexed sessionId, uint256 indexed robotId, address indexed player, uint256 expiresAt)"),
+  tries: parseAbiItem("event TriesBought(address indexed player, address indexed payer, uint256 count, uint256 paid)"),
   defended: parseAbiItem("event Defended(uint256 indexed sessionId, uint256 indexed robotId, address indexed player, bytes32 replayHash)"),
   deposited: parseAbiItem("event BountyDeposited(uint256 indexed bountyId, uint256 indexed robotId, address indexed owner, address funder, uint256 amount)"),
   claimed: parseAbiItem("event BountyClaimed(uint256 indexed bountyId, uint256 indexed sessionId, address indexed player, bytes32 replayHash, uint256 amount)"),
@@ -33,6 +35,8 @@ export interface LedgerReader {
   sessions(): SessionEvent[];
   deposits(): DepositEvent[];
   claims(): ClaimEvent[];
+  /** Paid tries bought on the registry (RobotRegistryV4.TriesBought). */
+  tries(): TriesEvent[];
   /** Successful native transfers from `from` to `to`, newest first. */
   transfers(from: string, to: string): Promise<Transfer[]>;
 }
@@ -42,6 +46,7 @@ export class ChainLedger implements LedgerReader {
   private readonly ses: SessionEvent[] = [];
   private readonly dep: DepositEvent[] = [];
   private readonly clm: ClaimEvent[] = [];
+  private readonly tri: TriesEvent[] = [];
   private regFrom: bigint;
   private vaultFrom: bigint;
   private syncing: Promise<void> | null = null;
@@ -70,6 +75,9 @@ export class ChainLedger implements LedgerReader {
   claims() {
     return this.clm;
   }
+  tries() {
+    return this.tri;
+  }
 
   /** Read new blocks. Concurrent callers share one scan. */
   sync(): Promise<void> {
@@ -81,11 +89,15 @@ export class ChainLedger implements LedgerReader {
     const latest = await this.client.getBlockNumber();
     while (this.regFrom <= latest) {
       const to = minB(this.regFrom + CHUNK - 1n, latest);
-      const [b, d, st] = await Promise.all([
+      const [b, d, st, tb] = await Promise.all([
         this.client.getLogs({ address: this.registry, event: EV.breached, fromBlock: this.regFrom, toBlock: to }),
         this.client.getLogs({ address: this.registry, event: EV.defended, fromBlock: this.regFrom, toBlock: to }),
         this.client.getLogs({ address: this.registry, event: EV.started, fromBlock: this.regFrom, toBlock: to }),
+        this.client.getLogs({ address: this.registry, event: EV.tries, fromBlock: this.regFrom, toBlock: to }),
       ]);
+      for (const l of tb) {
+        this.tri.push({ player: l.args.player!, payer: l.args.payer!, count: Number(l.args.count), paidWei: l.args.paid!, tx: l.transactionHash! });
+      }
       for (const l of st) {
         this.ses.push({ sessionId: Number(l.args.sessionId), robotId: Number(l.args.robotId), player: l.args.player!, expiresAt: Number(l.args.expiresAt) });
       }

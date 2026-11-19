@@ -6,7 +6,7 @@ the first unchecked item of the earliest unfinished phase.
 Rules: no Claude co-author line in commits. Never commit `.env`, `.referee-key.json`, `.attacker.json`.
 Do not spend drill-account QOR or touch the fest website without the owner.
 
-Overall: about **88%** (each phase's weight is in brackets; last updated 2026-11-19).
+Overall: about **85%** (each phase's weight is in brackets; last updated 2026-11-19; v4 needs its own QCAI runs).
 
 ## Phase 1. Setup and registration (5%): done
 - [x] Hackathon registration, Post-Quantum dApp category, project page on build.qorechain.io
@@ -18,6 +18,8 @@ Overall: about **88%** (each phase's weight is in brackets; last updated 2026-11
 - [x] Deployed to qorechain-diana (see deployments/testnet.json); demo robot and 1 QOR bounty
 - [x] v3 (RobotRegistryV3 + EscrowVaultV2, ML-DSA-only access, earliest-breach payouts): fixed the adversarial audit findings, redeployed 16 Nov; 167 Foundry tests
 - [x] Blockhertz gas findings applied to EscrowVaultV2 source (gas only; goes live with the next deploy)
+- [x] v4 (19 Nov): RobotRegistryV4 = v3 + 10-minute play pass (one QoreX approval for many rounds) + paid tries (0.1 QOR each, no cap, paid straight to the treasury = main account); EscrowVaultV3 = the gas-optimised vault. 253 Foundry tests. Deployed: registry 0xef521a3a…a115, vault 0xf436fde0…2bc2 (QoreChain caps a deployment at ~5M gas, so v4 was trimmed to 20 KB)
+- [x] Demo robot #1 on v4 with a 1 QOR bounty and a 10/10 skills score
 
 ## Phase 3. Q-Day Drill (10%): done
 - [x] Registered for the drill: RobotRegistryV3 + EscrowVaultV2
@@ -57,13 +59,14 @@ Overall: about **88%** (each phase's weight is in brackets; last updated 2026-11
 - [x] Utility score recorded on chain for robot #1: 10/10
 - [ ] Second demo robot with the LLM brain and a small bounty
 
-## Phase 7. Audits (8%): done
+## Phase 7. Audits (8%): 70% (v3 done; v4 needs its two QCAI runs)
 - [x] Found it: QCAI Smart Contract Auditor at dashboard.qorechain.io/audit, a main requirement of the Post-Quantum dApp bounty; 150 QOR per audit
 - [x] Self-review before paying (audits/SELF_REVIEW.md); one-file bundle audits/RedZone.flat.sol so one run covers both contracts
 - [x] Server fix for finding 1: no bounty take-back while a win can still be recorded or paid
 - [x] QCAI stage 1 and stage 2 (two runs on the deployed v3), with written answers (audits/QCAI-stage*-response.md)
 - [x] Adversarial audit of v3 (audits/ADVERSARIAL_AUDIT.md), fixed and redeployed; Blockhertz reports triaged
-- [ ] Ask the organisers how the Solidity PQC checks are verified for judging
+- [ ] QCAI stage 1 and stage 2 on v4 (audits/RedZone.v4.flat.sol; ~150 QOR each from the main account), fix findings, publish answers
+- [x] Solidity PQC checks: the site can't auto-verify them; README section "Solidity PQC checks: where to look" for jurors
 
 ## Phase 8. Hosting (4%): 0%
 - [ ] Host the backend (needs an account from the owner)

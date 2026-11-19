@@ -109,8 +109,15 @@ export type PlayerStatus = {
   pqKeyRegistered: boolean;
   signedUp: boolean;
   signupTx: string | null;
+  /** Free tries left today plus paid tries. */
   attemptsLeft: number;
   signup: { feeUqor: string; payTo: string; memo: string } | null;
+  /** Paid tries left (used after the free daily ones; they don't expire). */
+  extraTries: number;
+  /** A live play pass held by RedZone's relayer: rounds start with no wallet prompt until validUntil. */
+  pass: { validUntil: number; roundsLeft: number } | null;
+  /** Extra tries for sale: price per try, paid from QoreX to payTo with this memo. */
+  tries: { priceUqor: string; payTo: string; memo: string } | null;
 };
 
 export type LeaderRow = { rank: number; player: string; qor: string; attempts: number; wins: number; wonWei: string };
@@ -155,6 +162,14 @@ export const api = {
     call<SessionRequest>(`/session/request?robotId=${robotId}&player=${encodeURIComponent(player)}`),
   sessionStart: (body: { robotId: number; player: string; deadline: number; pqSignature: string; roundKeyHash?: string }) =>
     call<SessionStarted>("/session/start", { method: "POST", body: JSON.stringify(body) }),
+  passRequest: (player: string) =>
+    call<{ validUntil: number; maxRounds: number; deadline: number; digest: string; text: string }>(`/pass/request?player=${encodeURIComponent(player)}`),
+  passOpen: (body: { player: string; validUntil: number; maxRounds: number; deadline: number; pqSignature: string; passKeyHash: string }) =>
+    call<{ validUntil: number; roundsLeft: number; tx: string }>("/pass/open", { method: "POST", body: JSON.stringify(body) }),
+  sessionStartWithPass: (body: { robotId: number; player: string; passKey: string; roundKeyHash: string }) =>
+    call<SessionStarted & { passRoundsLeft: number }>("/session/start-pass", { method: "POST", body: JSON.stringify(body) }),
+  buyTries: (player: string, txHash: string) =>
+    call<{ bought: number; extraTries: number; tx: string | null }>("/tries/buy", { method: "POST", body: JSON.stringify({ player, txHash }) }),
   /** Authorised by the round key set at the start (no wallet prompt), or by a QoreX signature. */
   attempt: (sessionId: number, instruction: string, auth: { roundKey: string } | { pqSignature: string }) =>
     call<Verdict>("/attempt", { method: "POST", body: JSON.stringify({ sessionId, instruction, ...auth }) }),

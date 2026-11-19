@@ -26,6 +26,7 @@ import {
   readRobots,
   readRules,
   readSession,
+  readTryPrice,
   readVaultNonce,
 } from "./chain.js";
 import { ChainLedger } from "./ledger.js";
@@ -102,6 +103,7 @@ const game = new Game({
     readVaultNonce,
     readNextRobotId,
     readDeposit,
+    readTryPrice,
   },
   ledger,
   relayer,
@@ -114,6 +116,10 @@ const game = new Game({
   sessionTtl: rules.sessionTtl,
   resultGrace: rules.resultGrace,
   withdrawDelay: rules.withdrawDelay,
+  // Bounty and paid-try payments count only from the current contracts' deployment.
+  paymentsFromHeight: Number(REGISTRY_DEPLOY_BLOCK),
+  passTtl: rules.passTtl,
+  maxPassRounds: rules.maxPassRounds,
 });
 
 const builtInBrains: Record<string, string> = { rule: brainHash(RULE_BRAIN), "demo-legacy (robot 1)": LEGACY_DEMO_HASH };
