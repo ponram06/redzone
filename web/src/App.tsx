@@ -165,10 +165,7 @@ function AccountChip() {
           </div>
           {acc.player?.signedUp && <p className="pmenu-tries">{plural(acc.player.attemptsLeft, "try", "tries")} left today</p>}
           <a role="menuitem" href="#/me">
-            My profile
-          </a>
-          <a role="menuitem" href="#/me">
-            Wallet &amp; activity
+            My profile &amp; activity
           </a>
           <a role="menuitem" href="#/players">
             Leaderboard

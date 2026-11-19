@@ -195,7 +195,7 @@ export function Profile({ address, own = false }: { address: string; own?: boole
         <div className="pf-id">
           <p className="pf-kicker">{isMe ? "Your profile" : "Player profile"}</p>
           <h1>{name}</h1>
-          {!custom(address) && <p className="note">{isMe ? "Your generated name. Pick your own below." : "Generated name"}</p>}
+          {!custom(address) && <p className="note">{isMe ? "A placeholder name made from your address. Choose your own name below." : "Placeholder name (this player hasn't chosen one yet)"}</p>}
           <div className="pf-badges">
             {s?.rank && (
               <span className="pf-badge gold">
@@ -283,8 +283,9 @@ export function Profile({ address, own = false }: { address: string; own?: boole
 
         {tab === "activity" && (
           <div className="txlist">
+            <p className="note">Your RedZone payments and prizes. Other transfers in your QoreX wallet are not shown.</p>
             {!p && <p className="note">Loading the wallet…</p>}
-            {p && !entries.length && <p className="note">{p.walletAvailable ? "No payments yet." : "The wallet history isn't available right now."}</p>}
+            {p && !entries.length && <p className="note">{p.walletAvailable ? "No RedZone payments yet." : "The payment history isn't available right now."}</p>}
             {grouped.map((g) => (
               <div key={g.label} className="txgroup">
                 <h3>{g.label}</h3>
@@ -412,6 +413,7 @@ export function Profile({ address, own = false }: { address: string; own?: boole
 /** Choose a nickname: QoreX signs it, so nobody else can rename you. */
 function NameEditor({ address, current }: { address: string; current: string | null }) {
   const { refresh } = usePlayerNames();
+  const acc = useAccount();
   const [name, setName] = useState(current ?? "");
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -425,7 +427,8 @@ function NameEditor({ address, current }: { address: string; current: string | n
       setBusy("Checking the name…");
       const req = await api.nameRequest(address, name);
       setBusy("Approve in QoreX…");
-      const pqSignature = await signPq(address, req.text);
+      // QoreX signs as the account it has unlocked: its qor1… address, not the 0x one.
+      const pqSignature = await signPq(acc.address ?? address, req.text);
       setBusy("Saving…");
       await api.saveName({ player: address, name: req.name, deadline: req.deadline, pqSignature });
       await refresh();

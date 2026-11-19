@@ -1154,7 +1154,10 @@ export class Game {
       this.d.ledger.balance ? this.d.ledger.balance(qor).catch(() => null) : Promise.resolve(null),
       this.d.ledger.wallet ? this.d.ledger.wallet(qor).catch(() => null) : Promise.resolve(null),
     ]);
-    const wallet = (txs ?? []).filter((t) => t.uqor > 0n).map((t) => {
+    // Only RedZone payments: to or from RedZone, or carrying a RedZone memo. Private transfers stay out.
+    const wallet = (txs ?? [])
+      .filter((t) => t.uqor > 0n && (ours.has(t.from === qor ? t.to : t.from) || /^RedZone /.test(t.memo.trim())))
+      .map((t) => {
       const out = t.from === qor;
       const other = out ? t.to : t.from;
       const memo = t.memo.trim();
