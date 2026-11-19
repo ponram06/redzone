@@ -10,7 +10,7 @@ import { describeRound, metres } from "../../outcome";
 /**
  * RedZone's facility in 3D. Same data as the 2D map: the arena layout from the referee and the
  * route from its replay. The referee's 2D simulation decides every result; this only shows it.
- * Arena units: x right, y down, 0..100. Scene: X = x - 50, Z = y - 50, Y up.
+ * Arena units: x right, y down, 0..width / 0..height. Scene: X = x - width/2, Z = y - height/2, Y up.
  */
 
 const SPEED = 22; // arena units per second
@@ -19,7 +19,14 @@ const OUTER_H = 8;
 const lowEnd = () =>
   typeof navigator !== "undefined" && ((navigator.hardwareConcurrency ?? 8) <= 4 || /Mobi|Android/i.test(navigator.userAgent));
 
-const to3 = (p: Point, y = 0) => new THREE.Vector3(p.x - 50, y, p.y - 50);
+/** Half the arena's size: arena (x, y) maps to scene (x - OX, y - OZ). Set from the arena on render. */
+let OX = 50;
+let OZ = 50;
+function setDims(a: Arena) {
+  OX = a.width / 2;
+  OZ = a.height / 2;
+}
+const to3 = (p: Point, y = 0) => new THREE.Vector3(p.x - OX, y, p.y - OZ);
 
 function pathLength(path: Point[]) {
   let n = 0;
@@ -46,7 +53,7 @@ function pointAt(path: Point[], d: number): { p: Point; heading: number } {
 }
 
 function floorShape(poly: Point[]) {
-  const s = new THREE.Shape(poly.map((p) => new THREE.Vector2(p.x - 50, -(p.y - 50))));
+  const s = new THREE.Shape(poly.map((p) => new THREE.Vector2(p.x - OX, -(p.y - OZ))));
   const g = new THREE.ShapeGeometry(s);
   g.rotateX(-Math.PI / 2);
   return g;
@@ -231,7 +238,7 @@ const Facility = memo(function Facility({ arena, hotZone, labels, low }: { arena
     <group>
       {/* floor: polished steel plates with live reflections */}
       <mesh rotation-x={-Math.PI / 2} receiveShadow position-y={-0.01}>
-        <planeGeometry args={[100, 100]} />
+        <planeGeometry args={[OX * 2, OZ * 2]} />
         {low ? (
           <meshStandardMaterial map={tex.floor} roughness={0.6} metalness={0.4} />
         ) : (
@@ -257,41 +264,52 @@ const Facility = memo(function Facility({ arena, hotZone, labels, low }: { arena
         <meshStandardMaterial color="#07080b" roughness={1} />
       </mesh>
 
-      {/* outer walls, with steel ribs */}
+      {/* outer walls, with steel ribs every 10 units */}
       {[
-        [0, -50.75, 101.5, 1.5],
-        [0, 50.75, 101.5, 1.5],
-        [-50.75, 0, 1.5, 101.5],
-        [50.75, 0, 1.5, 101.5],
+        [0, -OZ - 0.75, OX * 2 + 1.5, 1.5],
+        [0, OZ + 0.75, OX * 2 + 1.5, 1.5],
+        [-OX - 0.75, 0, 1.5, OZ * 2 + 1.5],
+        [OX + 0.75, 0, 1.5, OZ * 2 + 1.5],
       ].map(([x, z, w, d], i) => (
         <Wall key={i} cx={x!} cz={z!} w={w!} d={d!} h={OUTER_H} tex={tex.wall} />
       ))}
-      {Array.from({ length: 11 }, (_, i) => -50 + i * 10).flatMap((v) =>
-        [
-          [v, -49.7],
-          [v, 49.7],
-          [-49.7, v],
-          [49.7, v],
-        ].map(([x, z], j) => (
-          <mesh key={`${v}-${j}`} position={[x!, OUTER_H / 2, z!]} castShadow>
-            <boxGeometry args={[0.8, OUTER_H, 0.8]} />
-            <meshStandardMaterial color="#232833" metalness={0.9} roughness={0.3} />
-          </mesh>
-        )),
-      )}
+      {[
+        ...Array.from({ length: Math.round((OX * 2) / 10) + 1 }, (_, i) => -OX + i * 10).flatMap((v) => [
+          [v, -OZ + 0.3],
+          [v, OZ - 0.3],
+        ]),
+        ...Array.from({ length: Math.round((OZ * 2) / 10) + 1 }, (_, i) => -OZ + i * 10).flatMap((v) => [
+          [-OX + 0.3, v],
+          [OX - 0.3, v],
+        ]),
+      ].map(([x, z], j) => (
+        <mesh key={j} position={[x!, OUTER_H / 2, z!]} castShadow>
+          <boxGeometry args={[0.8, OUTER_H, 0.8]} />
+          <meshStandardMaterial color="#232833" metalness={0.9} roughness={0.3} />
+        </mesh>
+      ))}
+
+      {/* painted walkway lanes and the main corridor */}
+      <FloorMarkings arena={arena} />
 
       {/* inner walls */}
       {arena.walls.map((w, i) => {
         const b = bounds(w);
-        return <Wall key={i} cx={(b.x0 + b.x1) / 2 - 50} cz={(b.y0 + b.y1) / 2 - 50} w={b.x1 - b.x0} d={b.y1 - b.y0} h={WALL_H} tex={tex.wall} />;
+        return <Wall key={i} cx={(b.x0 + b.x1) / 2 - OX} cz={(b.y0 + b.y1) / 2 - OZ} w={b.x1 - b.x0} d={b.y1 - b.y0} h={WALL_H} tex={tex.wall} />;
       })}
 
       {/* flood lights in the corners */}
       {[
-        [-46, -46],
-        [46, -46],
-        [-46, 46],
-        [46, 46],
+        [-OX + 4, -OZ + 4],
+        [OX - 4, -OZ + 4],
+        [-OX + 4, OZ - 4],
+        [OX - 4, OZ - 4],
+        ...(OX > 60
+          ? [
+              [0, -OZ + 4],
+              [0, OZ - 4],
+            ]
+          : []),
       ].map(([x, z], i) => (
         <FloodLight key={i} x={x!} z={z!} />
       ))}
@@ -366,7 +384,7 @@ function edgeWall(poly: Point[], h: number) {
     const b = poly[(i + 1) % poly.length]!;
     const len = Math.hypot(b.x - a.x, b.y - a.y);
     const k = pos.length / 3;
-    pos.push(a.x - 50, 0, a.y - 50, b.x - 50, 0, b.y - 50, b.x - 50, h, b.y - 50, a.x - 50, h, a.y - 50);
+    pos.push(a.x - OX, 0, a.y - OZ, b.x - OX, 0, b.y - OZ, b.x - OX, h, b.y - OZ, a.x - OX, h, a.y - OZ);
     uv.push(run / 3, 0, (run + len) / 3, 0, (run + len) / 3, 1, run / 3, 1);
     idx.push(k, k + 1, k + 2, k, k + 2, k + 3);
     run += len;
@@ -390,7 +408,7 @@ function edgeTape(poly: Point[], w: number) {
     const nz = ((b.x - a.x) / len) * (w / 2);
     const k = pos.length / 3;
     const y = 0.05;
-    pos.push(a.x - 50 - nx, y, a.y - 50 - nz, b.x - 50 - nx, y, b.y - 50 - nz, b.x - 50 + nx, y, b.y - 50 + nz, a.x - 50 + nx, y, a.y - 50 + nz);
+    pos.push(a.x - OX - nx, y, a.y - OZ - nz, b.x - OX - nx, y, b.y - OZ - nz, b.x - OX + nx, y, b.y - OZ + nz, a.x - OX + nx, y, a.y - OZ + nz);
     uv.push(0, 0, len / w / 2, 0, len / w / 2, 1, 0, 1);
     idx.push(k, k + 2, k + 1, k, k + 3, k + 2);
   });
@@ -448,8 +466,11 @@ function Zone({
       {poly.map((p, i) => (
         <Beacon key={i} at={p} hot={hot} phase={i * 1.3} />
       ))}
-      {id === "reactor" ? <ReactorCore at={c} hot={hot} /> : <ChemTanks at={c} />}
-      <Html position={[c.x - 50, 9, c.y - 50]} center distanceFactor={95} zIndexRange={[10, 0]}>
+      {id === "reactor" && <ReactorCore at={c} hot={hot} />}
+      {id === "chemstore" && <ChemTanks at={c} />}
+      {id === "substation" && <Substation poly={poly} hot={hot} />}
+      {id === "crane" && <Crane poly={poly} hot={hot} />}
+      <Html position={[c.x - OX, 9, c.y - OZ]} center distanceFactor={95} zIndexRange={[10, 0]}>
         <div className={`a3-tag danger ${hot ? "hot" : ""}`}>⚠ {name}</div>
       </Html>
     </group>
@@ -468,7 +489,7 @@ function Beacon({ at, hot, phase }: { at: Point; hot: boolean; phase: number }) 
     }
   });
   return (
-    <group position={[at.x - 50, 0, at.y - 50]}>
+    <group position={[at.x - OX, 0, at.y - OZ]}>
       <mesh position-y={1.4} castShadow>
         <cylinderGeometry args={[0.18, 0.25, 2.8, 10]} />
         <meshStandardMaterial color="#2a2f38" metalness={0.8} roughness={0.35} />
@@ -532,7 +553,7 @@ function ReactorCore({ at, hot }: { at: Point; hot: boolean }) {
     [],
   );
   return (
-    <group position={[at.x - 50, 0, at.y - 50]}>
+    <group position={[at.x - OX, 0, at.y - OZ]}>
       {/* platform with ribs */}
       <mesh position-y={0.35} castShadow receiveShadow>
         <cylinderGeometry args={[4.4, 4.8, 0.7, 40]} />
@@ -610,7 +631,7 @@ function ChemTanks({ at }: { at: Point }) {
     [],
   );
   return (
-    <group position={[at.x - 50, 0, at.y - 50]}>
+    <group position={[at.x - OX, 0, at.y - OZ]}>
       {tanks.map(([x, z], i) => (
         <group key={i} position={[x, 0, z]}>
           <mesh position-y={2.4} castShadow receiveShadow>
@@ -653,13 +674,17 @@ function ChemTanks({ at }: { at: Point }) {
 function Place({ id, name, at, restricted, label }: { id: string; name: string; at: Point; restricted: boolean; label: boolean }) {
   if (restricted) return null;
   return (
-    <group position={[at.x - 50, 0, at.y - 50]}>
+    <group position={[at.x - OX, 0, at.y - OZ]}>
       {id === "dock" && <ChargingPad />}
       {id === "lab" && <Benches color="#5fa8ff" />}
       {id === "control" && <Desks />}
       {(id === "storage" || id === "loading") && <Crates seed={id === "storage" ? 1 : 2} />}
       {id === "office" && <Benches color="#9aa4b8" />}
       {id === "exit" && <ExitDoor />}
+      {id === "workshop" && <Workshop />}
+      {id === "canteen" && <Canteen />}
+      {id === "loading" && <Truck />}
+      {WORKERS[id] && <Worker {...WORKERS[id]!} />}
       <mesh position-y={0.06} rotation-x={-Math.PI / 2}>
         <ringGeometry args={[0.9, 1.2, 32]} />
         <meshBasicMaterial color={[0.6, 0.9, 1.4]} transparent opacity={0.7} toneMapped={false} />
@@ -1106,14 +1131,24 @@ function ActiveRobot({ path, trace, runKey, color, say, onMove }: { path: Point[
 }
 
 const ParkedRobots = memo(function ParkedRobots({ robots, labels }: { robots: Robot[]; labels: boolean }) {
-  const bays = [
-    { x: 4, y: 95 },
-    { x: 24, y: 95 },
-    { x: 40, y: 95 },
-    { x: 60, y: 95 },
-    { x: 76, y: 95 },
-    { x: 96, y: 95 },
-  ];
+  const wide = OX > 60;
+  const bays = wide
+    ? [
+        { x: 4, y: 28 },
+        { x: 4, y: 36 },
+        { x: 4, y: 64 },
+        { x: 4, y: 72 },
+        { x: 4, y: 20 },
+        { x: 4, y: 80 },
+      ]
+    : [
+        { x: 4, y: 95 },
+        { x: 24, y: 95 },
+        { x: 40, y: 95 },
+        { x: 60, y: 95 },
+        { x: 76, y: 95 },
+        { x: 96, y: 95 },
+      ];
   return (
     <>
       {robots.slice(0, bays.length).map((r, i) => (
@@ -1123,7 +1158,7 @@ const ParkedRobots = memo(function ParkedRobots({ robots, labels }: { robots: Ro
             <ringGeometry args={[2.6, 2.9, 4, 1, Math.PI / 4]} />
             <meshBasicMaterial color={[2.2, 1.8, 0.2]} toneMapped={false} />
           </mesh>
-          <group rotation-y={Math.PI / 2} scale={0.8}>
+          <group rotation-y={wide ? 0 : Math.PI / 2} scale={0.8}>
             <RobotModel color={robotColor(r.id)} state="idle" />
           </group>
           {labels && (
@@ -1142,6 +1177,357 @@ const ParkedRobots = memo(function ParkedRobots({ robots, labels }: { robots: Ro
 const COLORS = ["#d99a00", "#36c5ff", "#a78bfa", "#3ee08f", "#ff7ab6", "#f97316"];
 export const robotColor = (id: number) => COLORS[(id - 1) % COLORS.length]!;
 
+
+// ------------------------------------------------------- real-world details
+
+/** Painted floor lanes: the main corridor the robot starts on, and a walkway border. */
+function FloorMarkings({ arena }: { arena: Arena }) {
+  const y = arena.start.y;
+  const dashes = useMemo(() => Array.from({ length: Math.floor((arena.width - 8) / 6) }, (_, i) => 4 + i * 6), [arena.width]);
+  return (
+    <group>
+      {[-5, 5].map((d) => (
+        <mesh key={d} rotation-x={-Math.PI / 2} position={[0, 0.015, y + d - OZ]}>
+          <planeGeometry args={[arena.width - 4, 0.35]} />
+          <meshStandardMaterial color="#d9a400" roughness={0.6} emissive="#3a2a00" />
+        </mesh>
+      ))}
+      {dashes.map((x) => (
+        <mesh key={x} rotation-x={-Math.PI / 2} position={[x - OX, 0.015, y - OZ]}>
+          <planeGeometry args={[2.6, 0.25]} />
+          <meshStandardMaterial color="#e8ecf2" roughness={0.6} transparent opacity={0.55} />
+        </mesh>
+      ))}
+      {/* walkway border along the walls */}
+      {[
+        [0, -OZ + 3, arena.width - 6, 0.25],
+        [0, OZ - 3, arena.width - 6, 0.25],
+        [-OX + 3, 0, 0.25, arena.height - 6],
+        [OX - 3, 0, 0.25, arena.height - 6],
+      ].map(([x, z, w, d], i) => (
+        <mesh key={i} rotation-x={-Math.PI / 2} position={[x!, 0.014, z!]}>
+          <planeGeometry args={[w!, d!]} />
+          <meshStandardMaterial color="#3d7a4a" roughness={0.7} emissive="#0b2412" />
+        </mesh>
+      ))}
+    </group>
+  );
+}
+
+/** High-voltage substation: transformers, insulator stacks, bus bars, and arcing (wild on a breach). */
+function Substation({ poly, hot }: { poly: Point[]; hot: boolean }) {
+  const b = bounds(poly);
+  const cx = (b.x0 + b.x1) / 2 - OX;
+  const cz = (b.y0 + b.y1) / 2 - OZ;
+  const arc = useRef<THREE.MeshBasicMaterial>(null);
+  const light = useRef<THREE.PointLight>(null);
+  useFrame(({ clock }) => {
+    const t = clock.elapsedTime;
+    const flick = Math.random() < (hot ? 0.6 : 0.04) ? 1 : 0;
+    if (arc.current) arc.current.opacity = flick * (0.6 + 0.4 * Math.sin(t * 60));
+    if (light.current) light.current.intensity = flick * (hot ? 160 : 60);
+  });
+  const units = [
+    [-6, -5],
+    [6, -5],
+    [-6, 5],
+    [6, 5],
+  ];
+  return (
+    <group position={[cx, 0, cz]}>
+      <mesh position-y={0.1} receiveShadow>
+        <boxGeometry args={[b.x1 - b.x0 - 3, 0.2, b.y1 - b.y0 - 3]} />
+        <meshStandardMaterial color="#3b3f46" roughness={0.95} />
+      </mesh>
+      {units.map(([x, z], i) => (
+        <group key={i} position={[x!, 0, z!]}>
+          <RoundedBox args={[4.2, 3.6, 3]} radius={0.15} position-y={2} castShadow receiveShadow>
+            <meshStandardMaterial color="#59636e" metalness={0.6} roughness={0.45} />
+          </RoundedBox>
+          {Array.from({ length: 7 }, (_, k) => (
+            <mesh key={k} position={[-1.8 + k * 0.6, 2, 1.65]} castShadow>
+              <boxGeometry args={[0.12, 3, 0.5]} />
+              <meshStandardMaterial color="#4a525c" metalness={0.7} roughness={0.4} />
+            </mesh>
+          ))}
+          {[-1.2, 0, 1.2].map((ix) => (
+            <group key={ix} position={[ix, 3.8, -0.4]}>
+              {Array.from({ length: 5 }, (_, k) => (
+                <mesh key={k} position-y={k * 0.32}>
+                  <cylinderGeometry args={[0.32, 0.32, 0.12, 14]} />
+                  <meshStandardMaterial color="#8a5a3a" roughness={0.35} />
+                </mesh>
+              ))}
+              <mesh position-y={0.7}>
+                <cylinderGeometry args={[0.12, 0.12, 1.6, 8]} />
+                <meshStandardMaterial color="#6b4a33" roughness={0.4} />
+              </mesh>
+            </group>
+          ))}
+        </group>
+      ))}
+      {[-9.5, 9.5].map((x) => (
+        <mesh key={x} position={[x, 4.5, 0]} castShadow>
+          <boxGeometry args={[0.5, 9, 0.5]} />
+          <meshStandardMaterial color="#9aa3ad" metalness={0.85} roughness={0.3} />
+        </mesh>
+      ))}
+      {[-0.8, 0, 0.8].map((z) => (
+        <mesh key={z} position={[0, 8.6, z]} rotation-z={Math.PI / 2}>
+          <cylinderGeometry args={[0.06, 0.06, 19, 6]} />
+          <meshStandardMaterial color="#c8cdd4" metalness={0.9} roughness={0.2} />
+        </mesh>
+      ))}
+      {/* warning sign */}
+      <group position={[0, 1.6, (b.y1 - b.y0) / 2 - 1.2]}>
+        <mesh>
+          <circleGeometry args={[1.1, 3]} />
+          <meshBasicMaterial color={[2.2, 1.8, 0.1]} toneMapped={false} />
+        </mesh>
+        <mesh position-z={0.01}>
+          <planeGeometry args={[0.18, 0.9]} />
+          <meshBasicMaterial color="#111" />
+        </mesh>
+      </group>
+      <mesh position={[0, 7.4, 0]}>
+        <boxGeometry args={[12, 0.08, 0.08]} />
+        <meshBasicMaterial ref={arc} color={[1.5, 2.5, 6]} transparent opacity={0} toneMapped={false} />
+      </mesh>
+      <pointLight ref={light} position={[0, 7, 0]} color="#8fb4ff" intensity={0} distance={30} decay={2} />
+    </group>
+  );
+}
+
+/** A gantry crane over the drop zone, with a load swinging on its cables. */
+function Crane({ poly, hot }: { poly: Point[]; hot: boolean }) {
+  const b = bounds(poly);
+  const cx = (b.x0 + b.x1) / 2 - OX;
+  const cz = (b.y0 + b.y1) / 2 - OZ;
+  const w = b.x1 - b.x0 + 4;
+  const d = b.y1 - b.y0;
+  const load = useRef<THREE.Group>(null);
+  const trolley = useRef<THREE.Group>(null);
+  useFrame(({ clock }) => {
+    const t = clock.elapsedTime;
+    if (trolley.current) trolley.current.position.x = Math.sin(t * 0.25) * (w / 2 - 3);
+    if (load.current) load.current.rotation.z = Math.sin(t * 1.3) * (hot ? 0.35 : 0.08);
+  });
+  return (
+    <group position={[cx, 0, cz]}>
+      {[-1, 1].flatMap((sx) =>
+        [-1, 1].map((sz) => (
+          <mesh key={`${sx}${sz}`} position={[(sx * w) / 2, 7, (sz * d) / 2]} castShadow>
+            <boxGeometry args={[0.7, 14, 0.7]} />
+            <meshStandardMaterial color="#e0a800" metalness={0.5} roughness={0.5} />
+          </mesh>
+        )),
+      )}
+      {[-1, 1].map((sz) => (
+        <mesh key={sz} position={[0, 14, (sz * d) / 2]} castShadow>
+          <boxGeometry args={[w + 0.7, 1, 0.9]} />
+          <meshStandardMaterial color="#e0a800" metalness={0.5} roughness={0.5} />
+        </mesh>
+      ))}
+      <group ref={trolley} position-y={14}>
+        <mesh castShadow>
+          <boxGeometry args={[2.4, 1.2, d + 1]} />
+          <meshStandardMaterial color="#2b313c" metalness={0.8} roughness={0.35} />
+        </mesh>
+        <group ref={load}>
+          {[-0.5, 0.5].map((z) => (
+            <mesh key={z} position={[0, -3.8, z]}>
+              <cylinderGeometry args={[0.05, 0.05, 7, 6]} />
+              <meshStandardMaterial color="#9aa3ad" metalness={0.9} roughness={0.3} />
+            </mesh>
+          ))}
+          <RoundedBox args={[3.4, 2.6, 2.6]} radius={0.1} position-y={-8.6} castShadow>
+            <meshStandardMaterial color="#5d6a7a" metalness={0.6} roughness={0.5} />
+          </RoundedBox>
+          <mesh position-y={-7.2}>
+            <boxGeometry args={[3.6, 0.15, 2.8]} />
+            <meshBasicMaterial color={[2.4, 1.6, 0.1]} toneMapped={false} />
+          </mesh>
+        </group>
+      </group>
+    </group>
+  );
+}
+
+function Workshop() {
+  return (
+    <group>
+      <mesh position={[0, 1.6, -5]} castShadow receiveShadow>
+        <boxGeometry args={[9, 0.3, 2.6]} />
+        <meshStandardMaterial color="#6b4f2e" roughness={0.8} />
+      </mesh>
+      {[-4, 4].map((x) => (
+        <mesh key={x} position={[x, 0.75, -5]} castShadow>
+          <boxGeometry args={[0.3, 1.5, 2.2]} />
+          <meshStandardMaterial color="#2b313c" metalness={0.8} roughness={0.4} />
+        </mesh>
+      ))}
+      <mesh position={[0, 3.6, -6.4]} castShadow>
+        <boxGeometry args={[9, 3.4, 0.2]} />
+        <meshStandardMaterial color="#384150" metalness={0.4} roughness={0.6} />
+      </mesh>
+      {[-3, -1.5, 0, 1.5, 3].map((x, i) => (
+        <mesh key={x} position={[x, 3.4 + (i % 2) * 0.6, -6.25]}>
+          <boxGeometry args={[0.25, 1.4, 0.15]} />
+          <meshStandardMaterial color={i % 2 ? "#d0242b" : "#c8cdd4"} metalness={0.6} roughness={0.35} />
+        </mesh>
+      ))}
+      {/* a pump waiting for repair */}
+      <group position={[5, 0, 1]}>
+        <mesh position-y={0.9} rotation-z={Math.PI / 2} castShadow>
+          <cylinderGeometry args={[0.9, 0.9, 2.6, 20]} />
+          <meshStandardMaterial color="#2f6db5" metalness={0.5} roughness={0.4} />
+        </mesh>
+        <mesh position={[1.6, 0.9, 0]} castShadow>
+          <sphereGeometry args={[0.8, 16, 12]} />
+          <meshStandardMaterial color="#2a5d9a" metalness={0.5} roughness={0.4} />
+        </mesh>
+      </group>
+    </group>
+  );
+}
+
+function Canteen() {
+  return (
+    <group>
+      {[
+        [-4, -3],
+        [4, -3],
+        [-4, 4],
+        [4, 4],
+      ].map(([x, z], i) => (
+        <group key={i} position={[x!, 0, z!]}>
+          <mesh position-y={1.4} castShadow receiveShadow>
+            <cylinderGeometry args={[1.4, 1.4, 0.12, 24]} />
+            <meshStandardMaterial color="#e7e2d6" roughness={0.5} />
+          </mesh>
+          <mesh position-y={0.7}>
+            <cylinderGeometry args={[0.12, 0.12, 1.4, 8]} />
+            <meshStandardMaterial color="#2b313c" metalness={0.8} roughness={0.4} />
+          </mesh>
+          {[0, 1, 2].map((k) => {
+            const a = (k / 3) * Math.PI * 2 + i;
+            return (
+              <mesh key={k} position={[Math.cos(a) * 2.1, 0.55, Math.sin(a) * 2.1]} castShadow>
+                <boxGeometry args={[0.8, 1.1, 0.8]} />
+                <meshStandardMaterial color={["#d0242b", "#2f6db5", "#e0a800"][k]} roughness={0.6} />
+              </mesh>
+            );
+          })}
+        </group>
+      ))}
+      <mesh position={[0, 1.1, -8]} castShadow receiveShadow>
+        <boxGeometry args={[10, 2.2, 1.6]} />
+        <meshStandardMaterial color="#c8cdd4" metalness={0.7} roughness={0.25} />
+      </mesh>
+      <pointLight position={[0, 6, 0]} color="#ffd9a0" intensity={30} distance={18} decay={2} />
+    </group>
+  );
+}
+
+/** A box truck backed up to the loading bay. */
+function Truck() {
+  return (
+    <group position={[0, 0, 7]}>
+      <RoundedBox args={[10, 5, 4.4]} radius={0.2} position={[-1.5, 3.2, 0]} castShadow receiveShadow>
+        <meshStandardMaterial color="#e8ecf2" metalness={0.3} roughness={0.5} />
+      </RoundedBox>
+      <mesh position={[-1.5, 3.2, 2.22]}>
+        <planeGeometry args={[8, 1.2]} />
+        <meshBasicMaterial color={[2.2, 0.3, 0.3]} toneMapped={false} />
+      </mesh>
+      <RoundedBox args={[3.2, 3.6, 4.2]} radius={0.3} position={[5.4, 2.4, 0]} castShadow>
+        <meshStandardMaterial color="#c8202a" metalness={0.5} roughness={0.35} />
+      </RoundedBox>
+      <mesh position={[7.02, 3.1, 0]} rotation-y={Math.PI / 2}>
+        <planeGeometry args={[3.6, 1.5]} />
+        <meshStandardMaterial color="#10141c" metalness={0.9} roughness={0.1} />
+      </mesh>
+      {[-4.5, -1, 5.2].flatMap((x) =>
+        [-2.1, 2.1].map((z) => (
+          <mesh key={`${x}${z}`} position={[x, 0.75, z]} rotation-x={Math.PI / 2} castShadow>
+            <cylinderGeometry args={[0.75, 0.75, 0.6, 18]} />
+            <meshStandardMaterial color="#14161b" roughness={0.9} />
+          </mesh>
+        )),
+      )}
+      {[-1, 1].map((z) => (
+        <mesh key={z} position={[7.05, 1.6, z * 1.5]}>
+          <sphereGeometry args={[0.25, 10, 8]} />
+          <meshBasicMaterial color={[3, 2.8, 2]} toneMapped={false} />
+        </mesh>
+      ))}
+    </group>
+  );
+}
+
+/** A worker in a hard hat and hi-vis vest, breathing and looking around. */
+function Worker({ x, z, turn, vest }: { x: number; z: number; turn: number; vest: string }) {
+  const head = useRef<THREE.Group>(null);
+  const body = useRef<THREE.Group>(null);
+  const seed = x * 7 + z;
+  useFrame(({ clock }) => {
+    const t = clock.elapsedTime + seed;
+    if (body.current) body.current.position.y = Math.sin(t * 1.6) * 0.03;
+    if (head.current) head.current.rotation.y = Math.sin(t * 0.4) * 0.6;
+  });
+  return (
+    <group position={[x, 0, z]} rotation-y={turn}>
+      {[-0.28, 0.28].map((lx) => (
+        <mesh key={lx} position={[lx, 0.85, 0]} castShadow>
+          <capsuleGeometry args={[0.2, 1.2, 4, 8]} />
+          <meshStandardMaterial color="#2c3646" roughness={0.8} />
+        </mesh>
+      ))}
+      <group ref={body}>
+        <mesh position-y={2.35} castShadow>
+          <capsuleGeometry args={[0.5, 1, 4, 12]} />
+          <meshStandardMaterial color={vest} roughness={0.6} emissive={vest} emissiveIntensity={0.15} />
+        </mesh>
+        {[2.05, 2.55].map((y) => (
+          <mesh key={y} position-y={y}>
+            <cylinderGeometry args={[0.52, 0.52, 0.08, 16, 1, true]} />
+            <meshBasicMaterial color={[2.2, 2.2, 2.2]} toneMapped={false} side={THREE.DoubleSide} />
+          </mesh>
+        ))}
+        {[-0.68, 0.68].map((ax) => (
+          <mesh key={ax} position={[ax, 2.3, 0]} rotation-z={ax * 0.25} castShadow>
+            <capsuleGeometry args={[0.15, 0.9, 4, 8]} />
+            <meshStandardMaterial color={vest} roughness={0.6} />
+          </mesh>
+        ))}
+        <group ref={head} position-y={3.45}>
+          <mesh castShadow>
+            <sphereGeometry args={[0.36, 16, 12]} />
+            <meshStandardMaterial color="#c99a7a" roughness={0.7} />
+          </mesh>
+          <mesh position-y={0.18}>
+            <sphereGeometry args={[0.42, 16, 10, 0, Math.PI * 2, 0, Math.PI / 2]} />
+            <meshStandardMaterial color="#f5f5f0" roughness={0.35} />
+          </mesh>
+          <mesh position-y={0.18} rotation-x={-Math.PI / 2}>
+            <ringGeometry args={[0.42, 0.55, 20]} />
+            <meshStandardMaterial color="#f5f5f0" roughness={0.35} side={THREE.DoubleSide} />
+          </mesh>
+        </group>
+      </group>
+    </group>
+  );
+}
+
+/** Who stands where (offsets from the place, in arena units). */
+const WORKERS: Record<string, { x: number; z: number; turn: number; vest: string }> = {
+  control: { x: 4, z: 3, turn: Math.PI, vest: "#ff7a00" },
+  workshop: { x: -3, z: -2, turn: 0.4, vest: "#c6ff00" },
+  canteen: { x: 6, z: -6, turn: -0.8, vest: "#ff7a00" },
+  loading: { x: -6, z: 2, turn: 1.2, vest: "#c6ff00" },
+  lab: { x: 3, z: 4, turn: 2.6, vest: "#e8ecf2" },
+};
+
 // -------------------------------------------------------------------- camera
 
 export type CamMode = "overview" | "follow" | "top";
@@ -1149,9 +1535,14 @@ export type CamMode = "overview" | "follow" | "top";
 /** Aim a little in front of the middle, so the arena sits higher on screen, clear of the message dock. */
 const OVERVIEW_LOOK = new THREE.Vector3(0, 0, 14);
 
+/** How far back the camera must stand so the whole arena fits a screen of this shape. */
+function fit(aspect: number): number {
+  const a = Math.max(0.5, aspect);
+  return Math.max(OZ / 50, OX / 50 / (a * 0.95), aspect < 1 ? 1 / a : 0) * (aspect > 1.5 ? 0.9 : 1);
+}
+
 function overviewPos(aspect: number): THREE.Vector3 {
-  // tall screens step back to fit the width; wide screens come a little closer
-  const k = aspect < 1 ? 1 / aspect : aspect > 1.5 ? 0.86 : 1;
+  const k = fit(aspect);
   return new THREE.Vector3(0, 84 * k, 96 * k + 14);
 }
 
@@ -1187,18 +1578,18 @@ function CameraRig({ mode, target, shakeAt, onIntroDone }: { mode: CamMode; targ
     if (mode === "follow" && t.done) {
       // the round is over: circle the robot slowly, robot in the middle of the frame
       heading.current += 0.004;
-      want.current.set(t.p.x - 50 - Math.cos(heading.current) * 17, 11, t.p.y - 50 - Math.sin(heading.current) * 17);
-      look.current.set(t.p.x - 50, 5, t.p.y - 50);
+      want.current.set(t.p.x - OX - Math.cos(heading.current) * 17, 11, t.p.y - OZ - Math.sin(heading.current) * 17);
+      look.current.set(t.p.x - OX, 5, t.p.y - OZ);
     } else if (mode === "follow") {
       let d = t.heading - heading.current;
       d = Math.atan2(Math.sin(d), Math.cos(d));
       heading.current += d * 0.04;
       const bx = Math.cos(heading.current);
       const bz = Math.sin(heading.current);
-      want.current.set(t.p.x - 50 - bx * 20, 15, t.p.y - 50 - bz * 20);
-      look.current.set(t.p.x - 50 + bx * 6, 2.5, t.p.y - 50 + bz * 6);
+      want.current.set(t.p.x - OX - bx * 20, 15, t.p.y - OZ - bz * 20);
+      look.current.set(t.p.x - OX + bx * 6, 2.5, t.p.y - OZ + bz * 6);
     } else if (mode === "top") {
-      want.current.set(0, 128, 0.01);
+      want.current.set(0, 128 * fit(size.width / Math.max(1, size.height)), 0.01);
       look.current.set(0, 0, 0);
     } else return;
     camera.position.lerp(want.current, 0.06);
@@ -1237,6 +1628,7 @@ export default function Arena3D({
   others?: Robot[];
   say?: string;
 }) {
+  setDims(arena);
   const path = useMemo(() => trace?.path ?? [arena.start], [trace, arena.start]);
   const [mode, setMode] = useState<CamMode>("overview");
   const [introDone, setIntroDone] = useState(false);
@@ -1272,7 +1664,7 @@ export default function Arena3D({
     <div className={`arena3d ${breachAt ? "alarm" : ""}`}>
       <Canvas shadows={!low} dpr={low ? 1 : [1, 1.75]} camera={{ position: [0, 26, 70], fov: 45, near: 0.5, far: 700 }} gl={{ antialias: false, powerPreference: "high-performance" }}>
         <color attach="background" args={["#050609"]} />
-        <fog attach="fog" args={["#050609", 120, 300]} />
+        <fog attach="fog" args={["#050609", 120 * (OX / 50), 320 * (OX / 50)]} />
         <hemisphereLight args={["#8fa6ff", "#08090d", 0.35]} />
         <ambientLight intensity={0.12} />
         <directionalLight
@@ -1282,10 +1674,11 @@ export default function Arena3D({
           castShadow={!low}
           shadow-mapSize={[2048, 2048]}
           shadow-bias={-0.0004}
-          shadow-camera-left={-62}
-          shadow-camera-right={62}
-          shadow-camera-top={62}
-          shadow-camera-bottom={-62}
+          shadow-camera-left={-OX - 12}
+          shadow-camera-right={OX + 12}
+          shadow-camera-top={OZ + 12}
+          shadow-camera-bottom={-OZ - 12}
+          shadow-camera-far={400}
         />
         {/* soft studio reflections for the metal, built locally (no downloads) */}
         <Environment resolution={256} frames={1}>
@@ -1297,7 +1690,7 @@ export default function Arena3D({
 
         <Facility arena={arena} hotZone={hotZone} labels={mode !== "follow"} low={low} />
         <ParkedRobots robots={parked} labels={mode !== "follow"} />
-        {!low && <Sparkles count={160} scale={[100, 18, 100]} position-y={9} size={2.2} speed={0.25} opacity={0.35} color="#b8c8ff" />}
+        {!low && <Sparkles count={Math.round(160 * (OX / 50))} scale={[OX * 2, 18, OZ * 2]} position-y={9} size={2.2} speed={0.25} opacity={0.35} color="#b8c8ff" />}
 
         {trace && <Line points={path.map((p) => to3(p, 0.15))} color="#5b6375" lineWidth={1.2} dashed dashSize={1} gapSize={1} />}
         {run.driven.length > 1 && <Line points={run.driven.map((p) => to3(p, 0.2))} color={breachAt ? new THREE.Color(4, 0.4, 0.4) : new THREE.Color(3, 2.2, 0.4)} lineWidth={4} toneMapped={false} />}

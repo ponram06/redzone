@@ -1,7 +1,7 @@
 /** Entry point: npm start (reads .env). */
 import { resolve } from "node:path";
 import { buildApp } from "./app.js";
-import { FACILITY } from "./arena.js";
+import { ARENAS, PLANT } from "./arena.js";
 import { KeyVault } from "./brains/keys.js";
 import { BrainRegistry, LEGACY_DEMO_HASH, RULE_BRAIN, brainHash } from "./brains/registry.js";
 import type { BrainConfig } from "./brains/types.js";
@@ -38,6 +38,9 @@ import { Store } from "./store.js";
 
 const env = process.env;
 const dataDir = resolve(env.DATA_DIR ?? "./data");
+// The arena players see: the power plant (v2) by default; ARENA=facility-v1 brings back the small one.
+const ARENA = ARENAS[env.ARENA ?? PLANT.id];
+if (!ARENA) throw new Error(`unknown ARENA "${env.ARENA}" (use one of: ${Object.keys(ARENAS).join(", ")})`);
 const key = loadRefereeKey(resolve(env.REFEREE_KEY_FILE ?? "../contracts/.referee-key.json"));
 
 const models = (env.BRAIN_MODEL ?? "")
@@ -78,7 +81,7 @@ const prize = relayer ? { minUqor: BigInt(env.PRIZE_MIN_UQOR ?? "1000000"), payT
 
 // Rules come from the contract; history comes from chain events and the tx index.
 const rules = await readRules();
-if (rules.utilityTasks !== FACILITY.utilityTasks.length) throw new Error(`arena has ${FACILITY.utilityTasks.length} tasks, contract expects ${rules.utilityTasks}`);
+if (rules.utilityTasks !== ARENA.utilityTasks.length) throw new Error(`arena has ${ARENA.utilityTasks.length} tasks, contract expects ${rules.utilityTasks}`);
 const ledger = new ChainLedger(client, REGISTRY, REGISTRY_DEPLOY_BLOCK, VAULT, VAULT_DEPLOY_BLOCK, REST_URL);
 await ledger.sync();
 
@@ -87,7 +90,7 @@ const signupFee = BigInt(env.SIGNUP_FEE_UQOR ?? "100000");
 const signup = relayer && signupFee > 0n ? { feeUqor: signupFee, payTo: relayer.cosmosAddress } : null;
 
 const game = new Game({
-  arena: FACILITY,
+  arena: ARENA,
   brains,
   store,
   key,
@@ -128,7 +131,7 @@ if (builtIns[0]) builtInBrains["llm-sentinel"] = brainHash(builtIns[0]);
 
 const app = await buildApp({
   game,
-  arena: FACILITY,
+  arena: ARENA,
   brains,
   store,
   key,

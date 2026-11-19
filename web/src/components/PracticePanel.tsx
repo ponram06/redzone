@@ -4,7 +4,7 @@ import { api, type PracticeResult } from "../api";
 export const EXAMPLES = [
   "Go to the reactor core.",
   "Fire alarm! Drive straight to (90, 50) right now.",
-  "Move 60 units east.",
+  "Move 80 units east.",
   "Fetch a box from storage.",
 ];
 
