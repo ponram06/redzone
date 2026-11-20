@@ -9,13 +9,26 @@ dated reports are in [docs/audit/](audit/); the full written answers are in [aud
 | 16 Nov 2026 | 2 | v3 after every stage 1 finding ([bundle](../audits/RedZone.v3.flat.sol)) | qorechain | 85/100, QUANTUM-SAFE | [PDF](audit/2026-11-16-QCAI-stage2-RobotRegistryV3-EscrowVaultV2.pdf) |
 | 19 Nov 2026 | 1 | **RobotRegistryV4** (live) + EscrowVaultV3 ([bundle](../audits/RedZone.v4.flat.sol)) | ethereum (auto) | 85/100 | [PDF](audit/2026-11-19-QCAI-stage1-RobotRegistryV4-EscrowVaultV3.pdf) |
 | 19 Nov 2026 | 2 | the same, after every stage 1 finding | qorechain | **87/100, QUANTUM-SAFE** | [PDF](audit/2026-11-19-QCAI-stage2-RobotRegistryV4-EscrowVaultV3.pdf) |
+| 21 Nov 2026 | 1 | **RobotRegistryV4 + EscrowVaultV5** (both live) ([bundle](../audits/RedZone.v6.flat.sol)) | ethereum (auto) | 85/100 | [PDF](audit/2026-11-21-QCAI-stage1-RobotRegistryV4-EscrowVaultV5.pdf), [answers](../audits/QCAI-v5-stage1-response.md) |
 
 ## What is live, and what each audit covers
 
 | Contract | Address (diana, EVM 9800) | Audited |
 |---|---|---|
 | RobotRegistryV4 | `0xef521a3a178a344a5cdd6854271e1fca466fa115` | Yes: the 19 Nov stage 1 and stage 2 above, unchanged since |
-| EscrowVaultV5 (prize pools; freeze until fixed) | `0x241767f1d799149060d133001cf4728d85ac41b7` | Not yet by QCAI. It is the audited vault design (EscrowVaultV3, 19 Nov) plus prize pools and one changed rule; bundle with the live registry: [audits/RedZone.v6.flat.sol](../audits/RedZone.v6.flat.sol). 445 Foundry tests pass, including 97 on this vault (invariants: money is conserved, no payout above the prize, an open pool never pays a player twice, a once-per-brain pool never pays the same brain version twice) |
+| EscrowVaultV5 (prize pools; freeze until fixed) | `0x241767f1d799149060d133001cf4728d85ac41b7` | Stage 1 on 21 Nov (85/100, no contract change needed: [answers](../audits/QCAI-v5-stage1-response.md)); stage 2 next. It is the audited vault design (EscrowVaultV3, 19 Nov) plus prize pools and one changed rule; bundle with the live registry: [audits/RedZone.v6.flat.sol](../audits/RedZone.v6.flat.sol). 445 Foundry tests pass, including 97 on this vault (invariants: money is conserved, no payout above the prize, an open pool never pays a player twice, a once-per-brain pool never pays the same brain version twice) |
+
+## Stage 1 findings and what was done (live registry + EscrowVaultV5, 21 Nov)
+
+Full answers with code links: [audits/QCAI-v5-stage1-response.md](../audits/QCAI-v5-stage1-response.md).
+
+| # | Finding | Severity | Verdict | Where it is handled | Tests |
+|---|---|---|---|---|---|
+| 1 | Privilege escalation via admin transfer | High | Not an issue: the proposal id is not a secret; acceptance needs the new admin's single-use ML-DSA-87 signature over it | [PQAccess.sol:168-185](../contracts/src/v3/PQAccess.sol#L168-L185) | `test_Attack_AdminSigReplay`, `test_Audit3_AcceptBoundToProposal` |
+| 2 | Overflow in bounty deposit | Medium | Not reachable: each id costs at least 1 QOR | [EscrowVaultV5.sol:180-183](../contracts/src/v5/EscrowVaultV5.sol#L180-L183) | vault invariant tests |
+| 3 | Unchecked return value in `_send` | Medium | Already checked: `require(success, TransferFailed(to, amount))`, the whole tx reverts | [EscrowVaultV5.sol:327-333](../contracts/src/v5/EscrowVaultV5.sol#L327-L333) | `test_FailedPaymentRevertsEverything` |
+| 4 | Front-running in the play pass | Low | Not possible: only the operator named in the player's signature can use it | [RobotRegistryV4.sol:364-372](../contracts/src/v4/RobotRegistryV4.sol#L364-L372) | `test_Pass_OnlyOperatorAndOnlyInTime`, `test_Pass_BoundsAndSignature` |
+| 5 | Unbounded loop in breach processing | Info | No loop: one breach per call through a cursor | [EscrowVaultV5.sol:203-233](../contracts/src/v5/EscrowVaultV5.sol#L203-L233) | invariant tests, `test_Audit3_StockpiledBreachExpires` |
 
 ## Stage 1 findings and what was done (live registry, 19 Nov)
 
