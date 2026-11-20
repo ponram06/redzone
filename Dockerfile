@@ -14,8 +14,8 @@ FROM node:22-slim
 ENV NODE_ENV=production HOST=0.0.0.0 PORT=8787 DATA_DIR=/data WEB_DIST=/app/web/dist
 WORKDIR /app/backend
 COPY backend/package.json backend/package-lock.json ./
-# tsx runs the TypeScript directly, so it is installed too (dev tools like vitest are skipped).
-RUN npm ci --omit=dev && npm install --no-save tsx@4 && npm cache clean --force
+# tsx (a regular dependency) runs the TypeScript directly; dev tools like vitest are skipped.
+RUN npm ci --omit=dev && npm cache clean --force
 COPY backend/src ./src
 COPY backend/tsconfig.json ./
 COPY deployments /app/deployments

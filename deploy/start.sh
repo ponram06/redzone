@@ -11,6 +11,8 @@ if [ -z "${DOMAIN:-}" ]; then
   [ -f .domain ] && DOMAIN=$(cat .domain) || DOMAIN="$(curl -fsS https://api.ipify.org | tr . -).sslip.io"
 fi
 echo "$DOMAIN" > .domain
+# docker compose reads deploy/.env on every command (logs, restart), so the address is kept.
+echo "DOMAIN=$DOMAIN" > .env
 export DOMAIN
 docker compose up -d --build
 echo "RedZone is starting at https://$DOMAIN (the first HTTPS certificate takes a minute)."
