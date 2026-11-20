@@ -3,6 +3,9 @@
 A public crash-test arena for AI robots, with bounties protected by post-quantum signatures.
 Built for the QoreChain "Build Before Q-Day" hackathon (Post-Quantum dApp category).
 
+**Live (testnet):** https://redzone.malaysiawest.cloudapp.azure.com · **Audit:** two-stage QCAI
+reports and how every finding was handled are in [docs/AUDIT.md](docs/AUDIT.md).
+
 Robot owners register an AI brain and lock a bounty. Players get a few attempts a day to trick
 the robot into a forbidden "red zone". A confirmed breach pays the bounty; every defense raises
 the robot's public safety rating. Every action that moves money needs an ML-DSA-87 signature
@@ -56,7 +59,7 @@ flowchart LR
     end
     subgraph QoreChain["QoreChain testnet"]
         REG[RobotRegistryV4]
-        V[EscrowVaultV4]
+        V[EscrowVaultV5]
         P[pqcVerify / pqcKeyStatus<br/>precompiles]
     end
     W -- "sign request / message" --> Q
@@ -97,7 +100,7 @@ flowchart LR
 | `contracts/` v4: RobotRegistryV4, EscrowVaultV4 prize pools, EscrowVaultV5 (freeze until fixed: a fixed robot pays the next breach to anyone) (on PQAccess, MLDSA87, QoreXMessage) | 445 Foundry tests passing: the v4 suite re-run on both prize-pool vaults, freeze-and-reopen tests, invariants, and the older v1/v2/v3/v4 suites |
 | `backend/` robot brains + ML-DSA-87 referee API | Working on v4: 110 unit tests, plus 6 live tests against the deployed contracts ([backend/README.md](backend/README.md)) |
 | `web/` website for players, robot makers and buyers | Working: play (training-robot practice, play pass, bounty rounds, buy extra tries), safety rankings, robot pages, add a robot, take a bounty back, help. Sign-in with QoreX; a relayer pays gas |
-| `audits/` | v3: self-review, QCAI stage 1 and stage 2 (with written answers), an adversarial audit (all findings fixed), Blockhertz reports on the vault. v4: QCAI stage 1 (85/100) and stage 2 (87/100, QUANTUM-SAFE), with written answers; No contract change needed ([audits/QCAI-v4-stage2-response.md](audits/QCAI-v4-stage2-response.md)). EscrowVaultV4 (prize pools, 19 Nov) is new and has not been through QCAI yet; its one-file bundle is [audits/RedZone.v5.flat.sol](audits/RedZone.v5.flat.sol) |
+| `audits/` | v3: self-review, QCAI stage 1 and stage 2 (with written answers), an adversarial audit (all findings fixed), Blockhertz reports on the vault. v4: QCAI stage 1 (85/100) and stage 2 (87/100, QUANTUM-SAFE), with written answers; No contract change needed ([audits/QCAI-v4-stage2-response.md](audits/QCAI-v4-stage2-response.md)). The live vault, EscrowVaultV5 (prize pools, freeze until fixed, 21 Nov), has not been through QCAI yet; its one-file bundle with the live registry is [audits/RedZone.v6.flat.sol](audits/RedZone.v6.flat.sol). Summary and the dated reports: [docs/AUDIT.md](docs/AUDIT.md) |
 | Q-Day Drill (18 Nov) | Hybrid-signed proof accepted; no successful attack, nothing taken from the drill account (drill ran on v3: [docs/QDAY_DRILL.md](docs/QDAY_DRILL.md)) |
 
 ## Deployed on testnet
@@ -105,7 +108,8 @@ flowchart LR
 | Contract | Address |
 |---|---|
 | RobotRegistryV4 | `0xef521a3a178a344a5cdd6854271e1fca466fa115` (current: v3 + play pass + paid tries) |
-| EscrowVaultV4 | `0xb0a270a8fe9a54ba2600b582830f324c94fdece8` (current: prize pools) |
+| EscrowVaultV5 | `0x241767f1d799149060d133001cf4728d85ac41b7` (current: prize pools, freeze until fixed; deployed 21 Nov, tx `0x4595c86a…053536`) |
+| EscrowVaultV4 | `0xb0a270a8fe9a54ba2600b582830f324c94fdece8` (prize pools; superseded 21 Nov, its pools were taken back and locked again in V5; its payouts stay in the site's history) |
 | EscrowVaultV3 | `0xf436fde024c90bf70e2c179391931f8a2c352bc2` (the gas-optimised vault; superseded 19 Nov, its demo bounty was taken back) |
 | RobotRegistryV3, EscrowVaultV2 | `0x69564de848d807ea895e1987b53749e1648cadbf`, `0x16cc5efcda75a788f597dd0c785862db1bdbeb7f` (Q-Day Drill contracts, QCAI-audited; superseded 19 Nov) |
 | RobotRegistryV2, EscrowVault v1, RobotRegistry v1 | `0x354f71Da76314Cd74A18524899Aeb43611d86448`, `0xcD9AAd1ad2D7981699f256e73F2780dac86f0266`, `0x7733d4f2D707c2F8160831e2e0ca2b6B90Ef4940` (superseded, kept for history) |
@@ -143,6 +147,14 @@ win (for example 20 QOR at 1.5 QOR per win), and the robot stays in the arena un
   (`updateBrain`) is paid, so copying a known trick earns nothing and every payout is a new bug.
   The maker can turn this off to pay every new winner;
 - `depositBounty` keeps the old behaviour (the whole bounty is one prize).
+
+**Freeze until fixed (EscrowVaultV5, live).** One rule changed from V4: in a once-per-brain pool,
+V4 also refused a player who had won before, forever. V5 pays the first breach of each brain version
+to **anyone**: after a paid breach the robot is frozen (the server refuses paid rounds, and the
+vault would skip any other breach of that version), the owner fixes it on the website ("Fix this
+robot", with a free test of the breaking message), and the fixed version pays the next breach,
+even to the earlier winner, because it can only be a new trick. Open pools still pay each player
+once; they are kept for the rule-based practice robot, so every new player can see a payout.
 
 The maker's terms travel in the memo of their QoreX payment, which only they can sign:
 `RedZone bounty #N` (one prize), `RedZone bounty #N prize X` (X per win, once per brain version)
@@ -196,7 +208,7 @@ Proven on testnet, not only in tests:
 - Both deployed contracts call the precompiles: their runtime code holds `PUSH2 0x0a01` and
   `PUSH2 0x0a02` (check with `cast code 0xef521a3a178a344a5cdd6854271e1fca466fa115 --rpc-url https://evm-testnet.qore.host | grep -o 610a0[12]`).
 - The constructors verify ML-DSA-87 deploy proofs with the live `pqcVerify`, so the deployments
-  themselves (RobotRegistryV4 `0x065e60a4…c1e006`, EscrowVaultV4 `0xf2d71671…7b5b2c`, EscrowVaultV3 `0x34e5986a…53a78e`; earlier v3
+  themselves (RobotRegistryV4 `0x065e60a4…c1e006`, EscrowVaultV5 `0x4595c86a…053536`, EscrowVaultV4 `0xf2d71671…7b5b2c`, EscrowVaultV3 `0x34e5986a…53a78e`; earlier v3
   `0xb0677bac…f694f`, `0xcd95d102…7ca39d`) could only
   succeed with working post-quantum checks.
 - Live calls on 19 Nov on v4: robot #1 registered with the owner's ML-DSA signature
@@ -216,7 +228,7 @@ hashes are on chain).
 | What you see | Source |
 |---|---|
 | Robots, owners, names, attacks, wins, safety score, badge, skills score | `RobotRegistryV4` reads (`getRobot`, `getRating`, `getTier`) |
-| Bounties and prize pools on each robot, and take-backs in progress | `EscrowVaultV4.bounties`, `hasWon` |
+| Bounties and prize pools on each robot, and take-backs in progress | `EscrowVaultV5.bounties`, `hasWon` (payouts of the earlier EscrowVaultV4 are read too) |
 | Tries left (free today + bought), play pass | `RobotRegistryV4.attemptsLeftToday`, `extraTries`, `passes` |
 | Game rules (tries per day, round length, number of tasks, name length) | Contract constants, read when the server starts |
 | Top players leaderboard | `Breached` / `Defended` events and `BountyClaimed` events, scanned from the deploy blocks |
@@ -238,7 +250,7 @@ their real fingerprints, so the placeholder fingerprint of the old v1/v2 robot #
 ## Known limitation: QoreX can't send transactions to contracts yet
 
 Robot makers add a bounty at the same time as they add their robot. Ideally they would call
-`EscrowVaultV4.depositPool` straight from their wallet. **The QoreX wallet (0.4.2) can't do that
+`EscrowVaultV5.depositPool` straight from their wallet. **The QoreX wallet (0.4.2) can't do that
 yet.** Its EVM lane can connect and read but can't sign EVM transactions, and its native lane can
 only send ordinary transfers. Until that changes, RedZone uses this workaround:
 
@@ -301,7 +313,11 @@ Built during the QoreChain Developer Fest (4 Nov – 2 Dec 2026). Third-party co
 | [@qorechain/evm](https://www.npmjs.com/package/@qorechain/evm) 0.14.0 | Precompile addresses and ABIs (`pqcVerify`, `pqcKeyStatus`) | Apache-2.0 |
 | [Foundry](https://github.com/foundry-rs/foundry) and [forge-std](https://github.com/foundry-rs/forge-std) | Build, tests, deploy scripts | MIT / Apache-2.0 |
 | [viem](https://viem.sh), [CosmJS](https://github.com/cosmos/cosmjs) | Chain clients (window helper, backend chain reads and digests) | MIT / Apache-2.0 |
-| [Fastify](https://fastify.dev), [@fastify/cors](https://github.com/fastify/fastify-cors) | Backend HTTP API | MIT |
+| [OpenZeppelin Contracts](https://github.com/OpenZeppelin/openzeppelin-contracts) | `ReentrancyGuard` in the vault | MIT |
+| [Fastify](https://fastify.dev), [@fastify/cors](https://github.com/fastify/fastify-cors), [@fastify/static](https://github.com/fastify/fastify-static) | Backend HTTP API and serving the website | MIT |
+| [React](https://react.dev), [Vite](https://vite.dev) | Website | MIT |
+| [three.js](https://threejs.org), [@react-three/fiber](https://github.com/pmndrs/react-three-fiber), [@react-three/drei](https://github.com/pmndrs/drei), [@react-three/postprocessing](https://github.com/pmndrs/react-postprocessing), [postprocessing](https://github.com/pmndrs/postprocessing) | 3D arena | MIT (postprocessing: Zlib) |
+| [Docker](https://www.docker.com), [Caddy](https://caddyserver.com) | Hosting (one container behind automatic HTTPS) | Apache-2.0 |
 | [Vitest](https://vitest.dev), [tsx](https://github.com/privatenumber/tsx), [TypeScript](https://www.typescriptlang.org) | Backend tests and runtime | MIT / Apache-2.0 |
 | Free LLMs via [OpenRouter](https://openrouter.ai) (default `nvidia/nemotron-3.5-super-vl:free`, Gemma 4 as fallback) | Optional LLM robot brain | Provider terms |
 

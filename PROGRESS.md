@@ -62,6 +62,8 @@ Overall: about **88%** (each phase's weight is in brackets; last updated 2026-11
 - [x] Skills test for robots #2-#4: all 10/10, recorded on chain 19 Nov (tx 0x0b6323…, 0x188dc7… for #3, #4)
 - [x] Owner page: removed the "Try to trick it yourself" step (owners test their own brains; the site is for players to find the weak spots)
 
+- [x] EscrowVaultV5 (21 Nov): freeze until fixed (a once-per-brain pool pays each brain version once, to anyone); 445 Foundry tests. Deployed 0x241767f1…41b7; pools moved from V4
+
 ## Phase 7. Audits (8%): 85% (v3 and v4 audited; the prize-pool vault still to run)
 - [x] Found it: QCAI Smart Contract Auditor at dashboard.qorechain.io/audit, a main requirement of the Post-Quantum dApp bounty; 150 QOR per audit
 - [x] Self-review before paying (audits/SELF_REVIEW.md); one-file bundle audits/RedZone.flat.sol so one run covers both contracts
@@ -72,16 +74,17 @@ Overall: about **88%** (each phase's weight is in brackets; last updated 2026-11
 - [ ] QCAI stage 1 and stage 2 on EscrowVaultV4 (bundle ready: audits/RedZone.v5.flat.sol; owner runs it, 150 QOR each)
 - [x] Solidity PQC checks: the site can't auto-verify them; README section "Solidity PQC checks: where to look" for jurors
 
-## Phase 8. Hosting (4%): 0%
-- [ ] Host the backend (needs an account from the owner)
-- [ ] Host the website (needs an account from the owner)
+## Phase 8. Hosting (4%): done
+- [x] Backend and website in one Docker container on an Azure for Students VM (Malaysia West), Caddy with automatic HTTPS: https://redzone.malaysiawest.cloudapp.azure.com (20 Nov)
 
 ## Phase 9. Submission (8%): 30%
 - [x] README with deployed addresses and credits; AI_USAGE.md log
 - [x] README: architecture diagram, how to play, v3 addresses and protections
 - [ ] README: screenshots
 - [ ] Cover image and demo video (owner, planned for 1 Dec)
-- [ ] Final check against the official rules and submit before 2 Dec
+- [x] docs/audit/ (dated QCAI PDFs), docs/AUDIT.md (every stage 1 finding mapped), README line pointing to it (21 Nov)
+- [ ] QCAI stage 1 and stage 2 on the live vault EscrowVaultV5 (bundle audits/RedZone.v6.flat.sol; owner runs it)
+- [ ] Final check against the official rules and submit before 2 Dec 23:59 UTC
 
 ## Checkpoint 19 Nov (resume here)
 - Done today: EscrowVaultV4 docs + QCAI bundle audits/RedZone.v5.flat.sol (de8bb18); realistic 3D arena (ce13624); Sentinel-01 pool 1 QOR / 0.5 per win; AI robots #2-#4 funded
