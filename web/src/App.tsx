@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { AccountProvider, useAccount } from "./account";
 import { Backdrop, LiveTicker, useCursorGlow } from "./components/Backdrop";
-import { TopBar } from "./components/TopBar";
+import { Icon, TopBar } from "./components/TopBar";
 import { DataProvider, useData } from "./data";
 import { plural, qorAmount } from "./format";
 import { api } from "./api";
@@ -63,8 +63,7 @@ function Shell() {
   return (
     <>
       <Backdrop />
-      <TopBar page={page ?? ""} account={<AccountChip />} />
-      <LiveTicker />
+      <TopBar page={page ?? ""} account={<AccountChip />} ticker={<LiveTicker />} />
       <main className="shell page-enter" key={`${page ?? ""}/${arg ?? ""}`}>
         {error ? (
           <div className="panel">
@@ -112,8 +111,9 @@ function AccountChip() {
 
   if (!acc.address) {
     return (
-      <button className="btn small" disabled={!!acc.busy} onClick={acc.signIn}>
-        Sign in
+      <button className="tb-signin" disabled={!!acc.busy} onClick={acc.signIn}>
+        <Icon name="key" size={16} />
+        <span>{acc.busy ? "Signing in…" : "Sign in"}</span>
       </button>
     );
   }
