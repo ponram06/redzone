@@ -13,7 +13,7 @@ const TABS: [Tab, string][] = [
 ];
 
 const AUDITS = [
-  { date: "To run", review: "QCAI · prize-pool vault (EscrowVaultV4)", v: "v4", result: "Bundle ready · not yet audited", good: false, file: "RedZone.v5.flat.sol" },
+  { date: "To run", review: "QCAI · live vault (EscrowVaultV5, freeze until fixed)", v: "v4", result: "Bundle ready · not yet audited", good: false, file: "RedZone.v6.flat.sol" },
   { date: "19 Nov", review: "QCAI · stage 2 (QoreChain setting)", v: "v4", result: "87 / 100 · QUANTUM-SAFE", good: true, file: "QCAI-v4-stage2-response.md" },
   { date: "19 Nov", review: "QCAI · stage 1", v: "v4", result: "85 / 100 · all findings answered", good: false, file: "QCAI-v4-stage1-response.md" },
   { date: "17 Nov", review: "Blockhertz AI auditor (vault)", v: "v3", result: "Gas improvements adopted", good: false, file: "Blockhertz-1-EscrowVaultV2.md" },
