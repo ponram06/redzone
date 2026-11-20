@@ -135,10 +135,65 @@ export type RobotView = {
   ratingBps: number;
   tier: (typeof TIERS)[number];
   bounty: { open: OpenBounty[]; totalWei: string };
+  /** What one breach in a round started now pays a new player, summed over every open pool. */
+  nextWinWei: string;
 };
 
-/** An open prize pool: what is left, the prize per win, and whether it pays once per brain version. */
-export type OpenBounty = { id: number; amountWei: string; prizeWei: string; oncePerBrain: boolean };
+/**
+ * An open prize pool: what is left, the prize per win, and whether it pays once per brain version.
+ * minBrainVersion: breaches against an older brain are not paid (set after a once-per-brain win).
+ * withdrawRequestedAt: 0, or when the owner asked for it back (unix seconds).
+ */
+export type OpenBounty = {
+  id: number;
+  amountWei: string;
+  prizeWei: string;
+  oncePerBrain: boolean;
+  minBrainVersion: number;
+  withdrawRequestedAt: number;
+};
+
+/** EscrowVaultV4: a round that starts later than this after a take-back request is not paid. */
+const START_GRACE = 600;
+/** EscrowVaultV4: a take-back request stays live this long (WITHDRAW_DELAY + WITHDRAW_EXPIRY). */
+const WITHDRAW_LIVE = 3 * 3600 + 7 * 86400;
+
+/**
+ * What one breach in a round starting `at` would pay from this pool to a player who has not won it
+ * yet, following EscrowVaultV4._next: nothing for a brain older than minBrainVersion, nothing for a
+ * round starting after a live take-back request's grace, otherwise min(prize, what is left).
+ */
+export function payableWei(b: OpenBounty, brainVersion: number, at: number): bigint {
+  if (brainVersion < b.minBrainVersion) return 0n;
+  const r = b.withdrawRequestedAt;
+  if (r !== 0 && at <= r + WITHDRAW_LIVE && at > r + START_GRACE) return 0n;
+  const prize = BigInt(b.prizeWei);
+  const left = BigInt(b.amountWei);
+  return prize < left ? prize : left;
+}
+
+/** Sum of what a breach starting now pays a new player: every open pool pays the same breach. */
+export const nextWinWei = (open: OpenBounty[], brainVersion: number, now = Math.floor(Date.now() / 1000)) =>
+  open.reduce((s, b) => s + payableWei(b, brainVersion, now), 0n);
+
+/** What a breach starting now would pay this player on this robot (skips pools they already won). */
+export async function prizeFor(robotId: number, player: Address): Promise<{ wei: string; wonAll: boolean; bounties: { id: number; wei: string; won: boolean }[] }> {
+  const robot = await readRobot(robotId);
+  if (!robot) return { wei: "0", wonAll: false, bounties: [] };
+  const now = Math.floor(Date.now() / 1000);
+  const rows = await Promise.all(
+    robot.bounty.open.map(async (b) => {
+      const won = await client.readContract({ address: VAULT, abi: vaultAbi, functionName: "hasWon", args: [BigInt(b.id), player] });
+      return { id: b.id, won, wei: won ? 0n : payableWei(b, robot.brainVersion, now) };
+    }),
+  );
+  const wei = rows.reduce((s, r) => s + r.wei, 0n);
+  return {
+    wei: wei.toString(),
+    wonAll: rows.length > 0 && rows.every((r) => r.won || r.wei === 0n) && rows.some((r) => r.won),
+    bounties: rows.map((r) => ({ id: r.id, wei: r.wei.toString(), won: r.won })),
+  };
+}
 
 export async function readRobot(id: number): Promise<RobotView | null> {
   const r = await client.readContract({ address: REGISTRY, abi: registryAbi, functionName: "getRobot", args: [BigInt(id)] });
@@ -149,6 +204,7 @@ export async function readRobot(id: number): Promise<RobotView | null> {
     openBounties(id),
   ]);
   return {
+    nextWinWei: nextWinWei(bounty, r.brainVersion).toString(),
     id,
     owner: r.owner,
     name: r.name,
@@ -172,16 +228,53 @@ export async function readRobots(): Promise<RobotView[]> {
   return (await Promise.all(ids.map(readRobot))).filter((r): r is RobotView => r !== null);
 }
 
+/** Bounties that can never change again (claimed or withdrawn): read once, kept forever. */
+const closedBounties = new Map<number, BountyView>();
+/** The last full read, shared by every caller for BOUNTY_TTL_MS (one page load asks many times). */
+let bountySnapshot: { at: number; all: Promise<BountyView[]> } | null = null;
+const BOUNTY_TTL_MS = 3000;
+
+/** Every bounty in the vault, read in parallel; closed ones come from memory. */
+export function allBounties(): Promise<BountyView[]> {
+  const now = Date.now();
+  if (bountySnapshot && now - bountySnapshot.at < BOUNTY_TTL_MS) return bountySnapshot.all;
+  const all = (async () => {
+    const next = Number(await client.readContract({ address: VAULT, abi: vaultAbi, functionName: "nextBountyId" }));
+    const ids = Array.from({ length: Math.max(0, next - 1) }, (_, i) => i + 1);
+    return Promise.all(
+      ids.map(async (id) => {
+        const known = closedBounties.get(id);
+        if (known) return known;
+        const b = await readBounty(id);
+        if (b.status === 2 || b.status === 3) closedBounties.set(id, b);
+        return b;
+      }),
+    );
+  })();
+  bountySnapshot = { at: now, all };
+  all.catch(() => {
+    if (bountySnapshot?.all === all) bountySnapshot = null;
+  });
+  return all;
+}
+
+/** Forget the shared read, so the next caller sees a bounty just deposited, paid or taken back. */
+export function refreshBounties(): void {
+  bountySnapshot = null;
+}
+
 /** Open bounties for a robot (status 1 = Open). */
 export async function openBounties(robotId: number): Promise<OpenBounty[]> {
-  const next = await client.readContract({ address: VAULT, abi: vaultAbi, functionName: "nextBountyId" });
-  const out: OpenBounty[] = [];
-  for (let i = 1; i < Number(next); i++) {
-    const b = await readBounty(i);
-    if (b.robotId === robotId && b.status === 1)
-      out.push({ id: b.id, amountWei: b.amountWei.toString(), prizeWei: b.prizePerWinWei.toString(), oncePerBrain: b.oncePerBrain });
-  }
-  return out;
+  return (await allBounties())
+    .filter((b) => b.robotId === robotId && b.status === 1)
+    .map((b) => ({
+      id: b.id,
+      amountWei: b.amountWei.toString(),
+      prizeWei: b.prizePerWinWei.toString(),
+      oncePerBrain: b.oncePerBrain,
+      minBrainVersion: b.minBrainVersion,
+      withdrawRequestedAt: b.withdrawRequestedAt,
+    }));
 }
 
 /** status: 0 none, 1 open, 2 claimed, 3 withdrawn. withdrawRequestedAt is 0 when no withdrawal was asked for. */
@@ -198,10 +291,12 @@ export type BountyView = {
   prizePerWinWei: bigint;
   /** After a win, only breaches against a newer brain version are paid. */
   oncePerBrain: boolean;
+  /** Breaches against an older brain version are skipped. */
+  minBrainVersion: number;
 };
 
 export async function readBounty(id: number): Promise<BountyView> {
-  const [robotId, amount, , owner, depositedAt, status, oncePerBrain, withdrawRequestedAt, withdrawTo, , prizePerWin] = await client.readContract({
+  const [robotId, amount, , owner, depositedAt, status, oncePerBrain, withdrawRequestedAt, withdrawTo, minBrainVersion, prizePerWin] = await client.readContract({
     address: VAULT,
     abi: vaultAbi,
     functionName: "bounties",
@@ -218,6 +313,7 @@ export async function readBounty(id: number): Promise<BountyView> {
     withdrawTo,
     prizePerWinWei: prizePerWin,
     oncePerBrain,
+    minBrainVersion: Number(minBrainVersion),
   };
 }
 
@@ -361,5 +457,32 @@ export async function readNativeTransfer(txHash: string, rest = REST_URL): Promi
     uqor,
     memo: body.tx?.body?.memo ?? "",
     height: Number(body.tx_response?.height ?? 0),
+  };
+}
+
+/** The public RPC every read comes from, so anyone can repeat a check without trusting us. */
+export const RPC_URL = qorechain.rpcUrls.default.http[0]!;
+
+/**
+ * A transaction as the chain reports it, for players to check a proof while the testnet has no
+ * block explorer. Only our two contracts' transactions are described (null otherwise).
+ */
+export async function readTxSummary(hash: Hex) {
+  const receipt = await client.getTransactionReceipt({ hash }).catch(() => null);
+  if (!receipt) return null;
+  const to = receipt.to?.toLowerCase();
+  if (to !== REGISTRY.toLowerCase() && to !== VAULT.toLowerCase()) return null;
+  const block = await client.getBlock({ blockNumber: receipt.blockNumber }).catch(() => null);
+  return {
+    hash,
+    status: receipt.status,
+    blockNumber: receipt.blockNumber.toString(),
+    time: block ? Number(block.timestamp) : null,
+    from: receipt.from,
+    to: receipt.to,
+    contract: to === REGISTRY.toLowerCase() ? "RobotRegistryV4" : "EscrowVaultV4",
+    gasUsed: receipt.gasUsed.toString(),
+    events: receipt.logs.length,
+    checkYourself: { rpc: RPC_URL, method: "eth_getTransactionReceipt", params: [hash] },
   };
 }

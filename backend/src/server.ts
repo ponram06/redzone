@@ -24,6 +24,8 @@ import {
   readPqcKey,
   readRobot,
   readRobots,
+  prizeFor,
+  readTxSummary,
   readRules,
   readSession,
   readTryPrice,
@@ -33,11 +35,13 @@ import { ChainLedger } from "./ledger.js";
 import { ChainRelayer } from "./relayer.js";
 import { Game } from "./game.js";
 import { DEFAULT_LLM_PROMPT } from "./prompt.js";
+import { lockDataDir } from "./lock.js";
 import { loadRefereeKey } from "./signer.js";
 import { Store } from "./store.js";
 
 const env = process.env;
 const dataDir = resolve(env.DATA_DIR ?? "./data");
+lockDataDir(dataDir);
 // The arena players see: the power plant (v2) by default; ARENA=facility-v1 brings back the small one.
 const ARENA = ARENAS[env.ARENA ?? PLANT.id];
 if (!ARENA) throw new Error(`unknown ARENA "${env.ARENA}" (use one of: ${Object.keys(ARENAS).join(", ")})`);
@@ -147,8 +151,12 @@ const app = await buildApp({
   explorerUrl: env.EXPLORER_URL?.trim() || null,
   readRobots,
   readRobot,
+  prizeFor,
+  readTxSummary,
   corsOrigin: env.CORS_ORIGIN || undefined,
   brainRateLimit: Number(env.BRAIN_RATE_LIMIT ?? 6),
+  sessionRateLimit: Number(env.SESSION_RATE_LIMIT ?? 30),
+  trustProxy: parseTrustProxy(env.TRUST_PROXY),
 });
 
 const port = Number(env.PORT ?? 8787);
@@ -159,3 +167,15 @@ console.log(`  llm: ${endpoint ? `${endpoint.baseUrl} (${models.length} model(s)
 console.log(`  relayer: ${relayer ? `${relayer.address} (${relayer.cosmosAddress})` : "none (players relay their own transactions)"}`);
 console.log(`  own AI keys: ${keys ? "on" : "off (set BRAIN_KEY_SECRET)"}`);
 console.log(`  fallbacks: ${fallbacks.length ? fallbacks.map((f) => `${f.model} at ${new URL(f.endpoint.baseUrl).host}`).join(" -> ") : "none"}`);
+
+/** TRUST_PROXY: unset/false = off, true = trust every hop, a number = that many hops, else a list of proxy IPs/CIDRs. */
+function parseTrustProxy(v: string | undefined): boolean | string | ((address: string, hop: number) => boolean) {
+  const t = v?.trim();
+  if (!t || t === "false" || t === "0") return false;
+  if (t === "true") return true;
+  if (/^\d+$/.test(t)) {
+    const hops = Number(t);
+    return (_address, hop) => hop < hops;
+  }
+  return t;
+}

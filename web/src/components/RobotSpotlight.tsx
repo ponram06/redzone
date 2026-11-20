@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { formatQor, nextPrizeWei, type Robot, type RobotRecord } from "../api";
+import { formatQor, type Robot, type RobotRecord } from "../api";
+import { prizeHeadline, usePlayerPrize } from "../prize";
 import { TIER_TEXT, safetyScore } from "../data";
 import { PlayerTag } from "../players";
 import { ago, brainText, loadRecord } from "./RobotPicker";
@@ -102,7 +103,9 @@ export function RobotSpotlight({
   // on a tie, the pool that pays every new winner is the one a newcomer can actually win
   const pool = [...robot.bounty.open].sort((x, y) => (eff(y) > eff(x) ? 1 : eff(y) < eff(x) ? -1 : Number(x.oncePerBrain) - Number(y.oncePerBrain)))[0];
   const hasBounty = robot.bounty.totalWei !== "0";
-  const perWin = hasBounty ? formatQor(nextPrizeWei(robot).toString()) : null;
+  const mine = usePlayerPrize(robot);
+  const { amount: perWin, note: prizeNote } = prizeHeadline(robot, mine);
+  const pools = robot.bounty.open.length;
   const job = rec?.profile?.job ?? robot.job;
   const diff = difficulty(rec);
   const blocked = robot.attacks ? Math.round((robot.defended / robot.attacks) * 100) : null;
@@ -178,14 +181,17 @@ export function RobotSpotlight({
             <div className={`spot-prize ${hasBounty ? "" : "none"}`}>
               <div>
                 <span className="record-label">{hasBounty ? "Win" : "Bounty"}</span>
-                <b>{perWin ?? "None left"}</b>
+                <b>{perWin ?? (hasBounty ? "Nothing now" : "None left")}</b>
               </div>
               {hasBounty && (
                 <div className="spot-prize-pool">
                   <span>
                     <b>{formatQor(robot.bounty.totalWei)}</b> locked in the vault
                   </span>
-                  <small>{terms}</small>
+                  <small>
+                    {prizeNote ?? terms}
+                    {!prizeNote && pools > 1 && ` It has ${pools} prize pools, and one win is paid by each of them.`}
+                  </small>
                 </div>
               )}
             </div>

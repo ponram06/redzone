@@ -11,12 +11,12 @@ const faq = ({ fee, perDay, minutes }: Facts): [string, string][] => [
   ["Do I need to know about crypto?", "No. You need the free QoreX wallet as your account. RedZone does the rest in the background."],
   [
     "Why pay to verify my account?",
-    `A tiny one-time payment (${fee}) makes fake accounts costly, and it pays the blockchain fees for your rounds. After that, playing is free.`,
+    `A tiny one-time payment (${fee}) makes fake accounts costly, and it pays the blockchain fees for your rounds. After that, your daily bounty rounds are free.`,
   ],
-  ["How many times can I play?", `Practice is unlimited. Bounty rounds: ${perDay} per day. Each round gives you ${minutes} to send one message.`],
+  ["How many times can I play?", `Practice is unlimited. Bounty rounds: ${perDay} free per day, and you can buy extra tries (0.1 QOR each) that never expire. Each round gives you ${minutes} to send one message.`],
   [
     "How do I get paid when I win?",
-    "Automatically. The bounty goes straight from the vault to your QoreX account. Nobody can stop or redirect it.",
+    "Automatically. The vault pays the round's player straight to their QoreX account: nobody can redirect it. If the admin pauses the vault in an emergency, wins made during the pause are paid when it ends. A robot can have several prize pools; one win is paid by each pool you haven't won yet.",
   ],
   [
     "Is it fair?",

@@ -169,13 +169,17 @@ export function Owners() {
       {mine.length > 0 && (
         <section className="panel step">
           <h2>Your robots</h2>
-          <div className="cards">
+          <div className="owner-robots">
             {mine.map((r) => (
-              <div key={r.id} className="stack">
-                <RobotCard robot={r} href={`#/robots/${r.id}`} />
-                <RobotPrize robotId={r.id} hasPrize={r.bounty.totalWei !== "0"} bounties={bounties} onChange={refreshMine} />
-                <RobotJob robot={r} onDone={reloadRobots} />
-                <ChangeBrain robotId={r.id} current={r.brainHash} saveBrain={saveBrain} onDone={reloadRobots} />
+              <div key={r.id} className="owner-robot">
+                <div className="stack">
+                  <RobotCard robot={r} href={`#/robots/${r.id}`} />
+                  <RobotPrize robotId={r.id} hasPrize={r.bounty.totalWei !== "0"} bounties={bounties} onChange={refreshMine} />
+                </div>
+                <div className="stack">
+                  <RobotJob robot={r} onDone={reloadRobots} />
+                  <ChangeBrain robotId={r.id} current={r.brainHash} saveBrain={saveBrain} onDone={reloadRobots} />
+                </div>
               </div>
             ))}
           </div>
@@ -187,7 +191,6 @@ export function Owners() {
 }
 
 
-/** The robot's public job: players see it when they hover the robot. Signed in QoreX, stored off chain. */
 /**
  * What the robot is and does, shown to players: its type (which sets its body in the arena),
  * its colour and a one-line job. One QoreX approval saves all three.
@@ -332,7 +335,7 @@ async function lockPrize(address: string, robotId: number, uqor: string, terms: 
     } catch (e) {
       const m = (e as Error).message;
       // Not visible on chain yet, or the lock step failed: both are safe to retry (no double payment).
-      if (i >= 8 || !/not found|try again/i.test(m)) throw e;
+      if (i >= 8 || !/not found|try again|too many requests/i.test(m)) throw e;
       await new Promise((r) => setTimeout(r, 4000));
     }
   }
@@ -383,7 +386,15 @@ function PrizeInput({ pool }: { pool: Pool }) {
           {pool.prizeUqor && !pool.uqor && amountOk && <p className="error-text">The prize can't be bigger than the pool.</p>}
           {pool.uqor && pool.prizeUqor && (
             <p className="note">
-              Pays up to <b>{pool.wins}</b> winners {qorAmount(pool.prizeUqor)} each. Each player can win once.
+              {pool.oncePerBrain ? (
+                <>
+                  Pays <b>one</b> winner {qorAmount(pool.prizeUqor)} now, and one more each time you update your robot, up to <b>{pool.wins}</b> in all.
+                </>
+              ) : (
+                <>
+                  Pays up to <b>{pool.wins}</b> winners {qorAmount(pool.prizeUqor)} each. Each player can win once.
+                </>
+              )}
             </p>
           )}
           <label className="check">
@@ -409,7 +420,9 @@ function AddRobot({ saveBrain, onAdded }: { saveBrain: () => Promise<string | nu
   const minUqor = BigInt(bounty?.minUqor ?? "1000000");
   const [name, setName] = useState("");
   const pool = usePool(minUqor);
-  const [done, setDone] = useState<{ id: number; bounty?: string; skills?: number; prizeError?: string } | null>(null);
+  const [done, setDone] = useState<{ id: number; bounty?: string; skills?: number; skillsPending?: boolean; skillsFailed?: boolean; prizeError?: string } | null>(
+    null,
+  );
   const s = useSigned();
   const clean = name.trim();
   const maxName = health?.rules?.maxNameLength;
@@ -425,17 +438,22 @@ function AddRobot({ saveBrain, onAdded }: { saveBrain: () => Promise<string | nu
       const pqSignature = await signPq(address, req.text);
       s.setBusy("Adding your robot…");
       const r = await api.registerRobot({ owner: address, name: clean, brainHash: hash, deadline: req.deadline, pqSignature });
-      setDone({ id: r.robotId });
       setName("");
+      // Step 2 runs before any "live" message: the robot only shows up for players once its bounty is locked.
+      let result: { id: number; bounty?: string; prizeError?: string };
       try {
+        s.setBusy(`Robot #${r.robotId} added. Now approve the bounty payment in QoreX…`);
         await lockPrize(address, r.robotId, uqor, pool.terms, bounty.payTo, s.setBusy);
-        setDone({ id: r.robotId, bounty: uqor });
+        result = { id: r.robotId, bounty: uqor };
       } catch (e) {
-        setDone({ id: r.robotId, prizeError: explainQorexError(e) });
+        result = { id: r.robotId, prizeError: explainQorexError(e) };
       }
-      s.setBusy("Running the everyday-tasks test…");
+      setDone(result);
+      await onAdded();
+      // The skills test takes about a minute (ten tasks, then a transaction): show it when it lands.
+      setDone((d) => (d ? { ...d, skillsPending: true } : d));
       const u = await api.utility(r.robotId).catch(() => null);
-      setDone((d) => (d ? { ...d, skills: u?.tasksPassed } : d));
+      setDone((d) => (d ? { ...d, skillsPending: false, skills: u?.tasksPassed, skillsFailed: !u } : d));
       await onAdded();
     });
 
@@ -447,6 +465,8 @@ function AddRobot({ saveBrain, onAdded }: { saveBrain: () => Promise<string | nu
           It's robot #{done.id}.{done.bounty && ` Its bounty of ${qorAmount(done.bounty)} is locked in the vault.`}
           {done.skills !== undefined && ` It passed ${done.skills} of ${health?.rules?.utilityTasks ?? "the"} everyday tasks.`}
         </p>
+        {done.skillsPending && <p className="note">Running its everyday-tasks test (about a minute)…</p>}
+        {done.skillsFailed && <p className="note">The everyday-tasks test is taking longer than usual. Reload this page in a minute to see its score.</p>}
         {done.prizeError && (
           <p className="error-text">
             The bounty wasn't added ({done.prizeError}). Players only see robots with a bounty: add it below in “Your robots”.
@@ -500,8 +520,10 @@ function RobotPrize({ robotId, hasPrize, bounties, onChange }: { robotId: number
       await onChange();
     });
 
+  const [confirmBack, setConfirmBack] = useState<number | null>(null);
   const takeBack = (bountyId: number) =>
     s.run(async (address) => {
+      setConfirmBack(null);
       const req = await api.bountyBackRequest(bountyId, address);
       const pqSignature = await signPq(address, req.text);
       s.setBusy("Asking the vault for your bounty back…");
@@ -543,13 +565,30 @@ function RobotPrize({ robotId, hasPrize, bounties, onChange }: { robotId: number
       )}
       {open.map((p) =>
         !p.withdraw ? (
-          <button key={p.bountyId} className="btn small" disabled={!!s.busy} onClick={() => takeBack(p.bountyId)}>
-            Take my {qorAmount(p.uqor)} bounty back
-          </button>
+          confirmBack === p.bountyId ? (
+            <div key={p.bountyId} className="stack">
+              <p className="note">
+                Take back {qorAmount(p.uqor)}? New rounds stop paying from it about 10 minutes after you ask, and you collect it 3 hours
+                later. Players won't see this robot once it has no bounty.
+              </p>
+              <div className="row">
+                <button className="btn primary small" disabled={!!s.busy} onClick={() => takeBack(p.bountyId)}>
+                  Yes, take it back
+                </button>
+                <button className="btn small" disabled={!!s.busy} onClick={() => setConfirmBack(null)}>
+                  Keep it
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button key={p.bountyId} className="btn small" disabled={!!s.busy} onClick={() => setConfirmBack(p.bountyId)}>
+              Take my {qorAmount(p.uqor)} bounty back
+            </button>
+          )
         ) : now < p.withdraw.unlocksAt ? (
           <p key={p.bountyId} className="note">
-            Your {qorAmount(p.uqor)} bounty unlocks at {new Date(p.withdraw.unlocksAt * 1000).toLocaleTimeString()}. Players can still win it
-            until then, so rounds already running stay fair.
+            Your {qorAmount(p.uqor)} bounty unlocks at {new Date(p.withdraw.unlocksAt * 1000).toLocaleString()}. Rounds that started within 10
+            minutes of your request can still win it; newer rounds aren't paid from it.
           </p>
         ) : (
           <button key={p.bountyId} className="btn small" disabled={!!s.busy} onClick={() => collect(p.bountyId)}>
@@ -575,7 +614,7 @@ function ChangeBrain({
   onDone: () => Promise<void>;
 }) {
   const [confirm, setConfirm] = useState(false);
-  const [ok, setOk] = useState(false);
+  const [ok, setOk] = useState<string | null>(null);
   const s = useSigned();
 
   const change = () =>
@@ -587,14 +626,15 @@ function ChangeBrain({
       const pqSignature = await signPq(address, req.text);
       s.setBusy("Updating…");
       await api.updateBrain({ robotId, owner: address, brainHash: hash, deadline: req.deadline, pqSignature });
-      s.setBusy("Running the everyday-tasks test…");
-      await api.utility(robotId).catch(() => {});
-      setOk(true);
+      setOk("Brain updated. Running its everyday-tasks test (about a minute)…");
       setConfirm(false);
+      await onDone();
+      const u = await api.utility(robotId).catch(() => null);
+      setOk(u ? `Brain updated. It passed ${u.tasksPassed} of its everyday tasks.` : "Brain updated. Its everyday-tasks test is taking longer than usual: reload in a minute to see the score.");
       await onDone();
     });
 
-  if (ok) return <p className="note">Brain updated.</p>;
+  if (ok) return <p className="note">{ok}</p>;
   if (!confirm) {
     return (
       <button className="btn small" onClick={() => setConfirm(true)}>

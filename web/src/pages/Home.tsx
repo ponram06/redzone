@@ -47,7 +47,7 @@ export function Home() {
           </div>
           <p className="hx-trust">Every result and payout is signed with ML-DSA-87, a post-quantum signature.</p>
         </div>
-        <div className="hx-ticker">
+        <div className="hx-ticker" style={robotsLoaded ? undefined : { visibility: "hidden" }}>
           <span>
             <b>{listed.length}</b> robots on guard
           </span>
@@ -63,29 +63,29 @@ export function Home() {
       <section className="stat-strip reveal">
         <div>
           <span className="stat-num">
-            <CountUp value={listed.length} />
+            {robotsLoaded ? <CountUp value={listed.length} /> : "–"}
           </span>
           <span className="stat-label">Robots with a bounty</span>
         </div>
         <div>
           <span className="stat-num">
-            <CountUp value={lockedQor} decimals={lockedQor % 1 ? 1 : 0} />
+            {robotsLoaded ? <CountUp value={lockedQor} decimals={lockedQor % 1 ? 1 : 0} /> : "–"}
             <small> QOR</small>
           </span>
           <span className="stat-label">Locked in the vault</span>
         </div>
         <div>
           <span className="stat-num">
-            <CountUp value={bestPrize} decimals={bestPrize % 1 ? 1 : 0} />
+            {robotsLoaded ? <CountUp value={bestPrize} decimals={bestPrize % 1 ? 1 : 0} /> : "–"}
             <small> QOR</small>
           </span>
           <span className="stat-label">Top prize per win</span>
         </div>
         <div>
           <span className="stat-num">
-            <CountUp value={rounds} />
+            {robotsLoaded ? <CountUp value={rounds} /> : "–"}
           </span>
-          <span className="stat-label">Attacks judged · {blocked} blocked</span>
+          <span className="stat-label">Attacks judged{robotsLoaded ? ` · ${blocked} blocked` : ""}</span>
         </div>
       </section>
 

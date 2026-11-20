@@ -1,12 +1,21 @@
 import { useAccount } from "../account";
 import { useEffect, useState } from "react";
-import { api, formatQor, type LeaderRow, type Robot } from "../api";
+import { api, formatQor, nextPrizeWei, takeBackStartedAt, type LeaderRow, type Robot } from "../api";
+import { RobotIcon } from "../components/RobotIcon";
+import { KIND_LABEL, lookOf } from "../robotLook";
 import { PlayerTag, toEvm } from "../players";
 import { TIER_TEXT, isListed, safetyScore, useData } from "../data";
 
-/** Highest safety score first; untested robots last; ties by attacks blocked. */
+/** Attacks a robot needs before its score is ranked with the well-tested ones (one lucky block isn't a record). */
+export const RANKED_AFTER = 5;
+
+/** Well-tested robots first, then by safety score; untested robots last; ties by attacks blocked. */
 export const byRank = (a: Robot, b: Robot) =>
-  b.ratingBps - a.ratingBps || b.defended - a.defended || Number(b.attacks > 0) - Number(a.attacks > 0) || a.id - b.id;
+  Number(b.attacks >= RANKED_AFTER) - Number(a.attacks >= RANKED_AFTER) ||
+  b.ratingBps - a.ratingBps ||
+  b.defended - a.defended ||
+  Number(b.attacks > 0) - Number(a.attacks > 0) ||
+  a.id - b.id;
 
 /** Leaderboard: safest robots and best players, as two tabs (#/robots and #/players). */
 export function Leaderboard({ tab }: { tab: "robots" | "players" }) {
@@ -38,14 +47,14 @@ function Players() {
 
   return (
     <>
-      <p className="lead">The players who tricked the most robots. Wins count only when the referee confirmed the robot entered a red zone.</p>
+      <p className="lead">The players with the most wins. A win counts only when the referee confirmed the robot entered a red zone.</p>
       {me && rows && (
         <div className="you-strip">
           {mine ? (
             <>
               <span className="you-chip">You</span>
               <span>
-                You're <b>#{mine.rank}</b> of {rows.length} · {mine.wins} {mine.wins === 1 ? "robot" : "robots"} tricked in {mine.attempts}{" "}
+                You're <b>#{mine.rank}</b> of {rows.length} · {mine.wins} {mine.wins === 1 ? "win" : "wins"} in {mine.attempts}{" "}
                 {mine.attempts === 1 ? "round" : "rounds"}
               </span>
               <a href="#/me">Your profile →</a>
@@ -76,7 +85,7 @@ function Players() {
               <tr>
                 <th>#</th>
                 <th>Player</th>
-                <th>Robots tricked</th>
+                <th>Wins</th>
                 <th>Rounds played</th>
                 <th>Bounties won</th>
               </tr>
@@ -197,15 +206,27 @@ export function RobotPage({ id }: { id: number }) {
   if (!r) return <p className="note">{robotsLoaded ? "We couldn't find that robot." : "Loading…"}</p>;
   const mine = !!acc.player && acc.player.evm.toLowerCase() === r.owner.toLowerCase();
   const blocked = r.attacks ? Math.round((r.defended / r.attacks) * 100) : null;
+  const look = lookOf(r);
+  const win = nextPrizeWei(r);
+  const backSince = takeBackStartedAt(r);
 
   return (
     <>
       <a href="#/robots" className="back">
         ← Leaderboard
       </a>
-      <h1 className="page-title">
-        {r.name} <span className={`badge tier-${r.tier.toLowerCase()}`}>{TIER_TEXT[r.tier]}</span>
-      </h1>
+      <div className="robot-head" style={{ ["--c" as string]: look.color }}>
+        <RobotIcon kind={look.kind} color={look.color} size={72} />
+        <div>
+          <h1 className="page-title">
+            {r.name} <span className={`badge tier-${r.tier.toLowerCase()}`}>{TIER_TEXT[r.tier]}</span>
+          </h1>
+          <p className="muted">
+            Robot #{r.id} · {KIND_LABEL[look.kind]}
+          </p>
+        </div>
+      </div>
+      <p>{r.job ?? "The owner hasn't said what this robot is used for yet."}</p>
       <div className="bigstats">
         <div>
           <span>{r.attacks ? safetyScore(r.ratingBps) : "–"}</span>Safety score
@@ -217,9 +238,18 @@ export function RobotPage({ id }: { id: number }) {
           <span>{r.utilityScore ? `${r.utilityScore}/${tasks}` : "–"}</span>Everyday tasks passed
         </div>
         <div>
-          <span>{r.bounty.totalWei !== "0" ? formatQor(r.bounty.totalWei) : "–"}</span>Bounty for beating it
+          <span>{r.bounty.totalWei !== "0" ? formatQor(r.bounty.totalWei) : "–"}</span>Locked in the vault
+        </div>
+        <div>
+          <span>{win > 0n ? formatQor(win.toString()) : "–"}</span>Paid for the next win
         </div>
       </div>
+      {backSince && (
+        <p className="note warn-text">
+          The owner asked for this bounty back on {new Date(backSince * 1000).toLocaleString()}. Rounds started after the first 10 minutes
+          aren't paid from it.
+        </p>
+      )}
       <p>
         {r.attacks === 0
           ? "Nobody has attacked this robot yet. Be the first."

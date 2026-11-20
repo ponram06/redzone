@@ -24,7 +24,8 @@ import { encodeAbiParameters, hexToBytes, keccak256, stringToBytes, toHex, type 
 const CHAIN_ID = BigInt(process.env.EVM_CHAIN_ID ?? "9800");
 const DEPLOY_TYPEHASH = keccak256(stringToBytes("RedZone.Deploy(bytes32 domainTag,uint256 chainId,address deployer)"));
 
-function account(): UnifiedAccount {
+// deriveUnifiedAccount is async since @qorechain/sdk 0.14.
+async function account(): Promise<UnifiedAccount> {
   const mnemonic = process.env.QORE_MNEMONIC?.trim();
   if (mnemonic) return deriveUnifiedAccount(mnemonic, 0);
   const key = process.env.PRIVATE_KEY?.trim();
@@ -51,7 +52,7 @@ function signChecked(secret: Uint8Array, pub: Uint8Array, digest: Hex, who: stri
   return toHex(sig);
 }
 
-const acc = account();
+const acc = await account();
 const deployer = acc.evm as Address;
 const ref = JSON.parse(readFileSync(".referee-key.json", "utf8")) as { algorithm?: string; publicKey: Hex; secretKey: Hex };
 if (ref.algorithm && ref.algorithm !== "ML-DSA-87") throw new Error(`referee key is ${ref.algorithm}`);

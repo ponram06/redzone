@@ -34,7 +34,8 @@ const CHAIN_ID = Number(process.env.EVM_CHAIN_ID ?? "9800");
 const TAG = "RedZone.EscrowVault.v4";
 const dryRun = process.argv.includes("--dry-run");
 
-function pqAccount(): UnifiedAccount {
+// deriveUnifiedAccount is async since @qorechain/sdk 0.14.
+async function pqAccount(): Promise<UnifiedAccount> {
   const mnemonic = process.env.QORE_MNEMONIC?.trim();
   if (mnemonic) return deriveUnifiedAccount(mnemonic, 0);
   const key = process.env.PRIVATE_KEY?.trim();
@@ -44,7 +45,7 @@ function pqAccount(): UnifiedAccount {
   return unifiedAccountFromSeed(Uint8Array.from(Buffer.from(key.slice(2), "hex")), { recoveryCode: code });
 }
 
-const acc = pqAccount();
+const acc = await pqAccount();
 const deployer = acc.evm as Address;
 const key = process.env.PRIVATE_KEY as Hex | undefined;
 if (!key) throw new Error("PRIVATE_KEY missing in .env");

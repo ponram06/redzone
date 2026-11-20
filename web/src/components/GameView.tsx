@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { TRAINING_BRAIN, formatQor, nextPrizeWei, type Arena, type Health, type Robot } from "../api";
+import { TRAINING_BRAIN, type Arena, type Health, type Robot } from "../api";
+import { prizeHeadline, usePlayerPrize } from "../prize";
 import { useAccount } from "../account";
 import { ArenaView } from "./ArenaView";
 import { PlayPanel } from "./PlayPanel";
@@ -56,7 +57,10 @@ export function GameView({ arena, health, robot, all, demoPrompt, onBack, onFini
     storyTimer.current = window.setTimeout(() => setStoryOpen(true), Math.min(20000, 1500 + (len / 22) * 1000)); // 3D drive speed: 22 units/s
   };
 
-  const perWin = robot.bounty.totalWei !== "0" ? formatQor(nextPrizeWei(robot).toString()) : null;
+  const mine = usePlayerPrize(robot, round);
+  // A round belongs to the mode it was played in: a practice breach must not show over a bounty round.
+  const shown = round && round.practice === (mode === "practice") ? round : null;
+  const { amount: perWin, note: prizeNote } = prizeHeadline(robot, mine);
   const tries = acc.player?.attemptsLeft;
 
   return (
@@ -75,7 +79,8 @@ export function GameView({ arena, health, robot, all, demoPrompt, onBack, onFini
               Win <b className="gold">{perWin}</b>
             </span>
           )}
-          {mode === "real" && tries !== undefined && <span>{tries} tries left</span>}
+          {mode === "real" && !perWin && prizeNote && <span title={prizeNote}>No prize for you here</span>}
+          {mode === "real" && tries !== undefined && <span>{tries === 1 ? "1 try left" : `${tries} tries left`}</span>}
         </div>
         <div className="segmented hud-mode" role="tablist" aria-label="Game mode">
           <button role="tab" aria-selected={mode === "real"} className={mode === "real" ? "on" : ""} onClick={() => setMode("real")}>
@@ -102,23 +107,23 @@ export function GameView({ arena, health, robot, all, demoPrompt, onBack, onFini
       <div className="game-stage">
         <ArenaView
           arena={arena}
-          trace={round?.trace ?? null}
+          trace={shown?.trace ?? null}
           runKey={runKey}
           robotId={mode === "practice" ? undefined : robot.id}
           others={all}
-          say={round?.said}
+          say={shown?.said}
           noFullscreen
         />
 
-        {round && storyOpen && (
+        {shown && storyOpen && (
           <aside className="game-story">
             <button className="story-close" onClick={() => setStoryOpen(false)} aria-label="Close">
               ×
             </button>
-            <RoundStory arena={arena} round={round} />
+            <RoundStory arena={arena} round={shown} />
           </aside>
         )}
-        {round && !storyOpen && (
+        {shown && !storyOpen && (
           <button className="story-reopen" onClick={() => setStoryOpen(true)}>
             What happened?
           </button>

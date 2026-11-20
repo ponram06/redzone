@@ -59,6 +59,39 @@ describe("llm brain", () => {
     expect(parseActions("nope")).toEqual([]);
   });
 
+  it("a model still thinking after the hedge time gets the next one started; the first answer wins", async () => {
+    const calls: string[] = [];
+    let slowCancelled = false;
+    const fake = (async (_url: string, init: RequestInit) => {
+      const model = JSON.parse(String(init.body)).model as string;
+      calls.push(model);
+      if (model === "slow:free") {
+        // Never answers on its own: only the cancel after the other model wins ends it.
+        return new Promise<Response>((_, reject) =>
+          init.signal?.addEventListener("abort", () => {
+            slowCancelled = true;
+            reject(new DOMException("aborted", "AbortError"));
+          }),
+        );
+      }
+      return Response.json({ choices: [{ message: { content: '{"say":"ok","actions":[{"goto":"lab"}]}' } }] });
+    }) as typeof fetch;
+    const brain = new LlmBrain(["slow:free", "fast:free"], "Be safe.", { baseUrl: "http://x", apiKey: "k", fetch: fake }, [], 20);
+    const t0 = Date.now();
+    const out = await brain.plan(FACILITY, "go to the lab");
+    expect(out.model).toBe("fast:free");
+    expect(calls).toEqual(["slow:free", "fast:free"]);
+    expect(Date.now() - t0).toBeLessThan(2000);
+    expect(slowCancelled).toBe(true);
+
+    // A quick first model answers alone: no second call is made.
+    calls.length = 0;
+    const quick = new LlmBrain(["fast:free", "other:free"], "Be safe.", { baseUrl: "http://x", apiKey: "k", fetch: fake }, [], 1000);
+    expect((await quick.plan(FACILITY, "go")).model).toBe("fast:free");
+    await new Promise((r) => setTimeout(r, 50));
+    expect(calls).toEqual(["fast:free"]);
+  });
+
   it("falls through busy models and reports when none answer", async () => {
     const calls: string[] = [];
     const fake = (async (_url: string, init: RequestInit) => {

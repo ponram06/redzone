@@ -39,3 +39,5 @@ while (hi - lo > 50) {
   else hi = mid;
 }
 console.log("largest code that fits in one eth_call:", lo);
+
+export {}; // a module, so top-level await is allowed

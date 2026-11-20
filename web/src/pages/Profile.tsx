@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useAccount } from "../account";
 import { API_URL, api, formatQor, type PlayerProfile } from "../api";
 import { AccountGate } from "../components/AccountGate";
+import { TxLink } from "../components/TxLink";
 import { useData } from "../data";
 import { qorAmount, shortHash } from "../format";
 import { Avatar, PICTURES, generatedName, shortAddr, toEvm, usePlayerNames } from "../players";
@@ -50,15 +51,7 @@ function Copy({ text, label }: { text: string; label: string }) {
   );
 }
 
-function TxLink({ hash, explorer, evm }: { hash: string; explorer: string | null; evm?: boolean }) {
-  const h = evm ? hash : hash.startsWith("0x") ? hash : hash;
-  if (!explorer) return <code title={hash}>{shortHash(h)}</code>;
-  return (
-    <a href={`${explorer}/tx/${h}`} target="_blank" rel="noreferrer" title={hash}>
-      {shortHash(h)} ↗
-    </a>
-  );
-}
+
 
 /** One entry in the activity list: a wallet transfer or a prize paid by the vault. */
 type Entry = {
@@ -119,7 +112,7 @@ export function Profile({ address: raw, own = false }: { address: string; own?: 
         amount: qorAmount(t.uqor),
         sign: inbound ? "+" : "−",
         details: [
-          ["Transaction", <TxLink key="t" hash={t.txHash} explorer={explorer} />],
+          ["Transaction", <TxLink key="t" hash={t.txHash} explorer={explorer} evm={false} />],
           ["Block", `#${t.height.toLocaleString()}`],
           [inbound ? "From" : "To", <code key="c">{t.counterparty}</code>],
           ...(t.memo ? ([["Note", t.memo]] as [string, React.ReactNode][]) : []),

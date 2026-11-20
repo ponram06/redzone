@@ -1,5 +1,5 @@
 /** The signed-in QoreX account, shared by every page. */
-import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { api, type PlayerStatus } from "./api";
 import { connect, explainQorexError, hasQorex, payNative } from "./qorex";
 
@@ -20,8 +20,30 @@ type Account = {
 const Ctx = createContext<Account | null>(null);
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+/**
+ * The signed-in address survives a page reload. It is public (the same address shows on every
+ * result), so keeping it is harmless; anything that moves money or signs still asks QoreX.
+ */
+const SIGNED_IN = "redzone.signedIn";
+const remembered = (): string | null => {
+  try {
+    const a = localStorage.getItem(SIGNED_IN);
+    return a && /^qor1[0-9a-z]{38,58}$/.test(a) ? a : null;
+  } catch {
+    return null;
+  }
+};
+const remember = (a: string | null) => {
+  try {
+    if (a) localStorage.setItem(SIGNED_IN, a);
+    else localStorage.removeItem(SIGNED_IN);
+  } catch {
+    // private window or blocked storage: the player just signs in again after a reload
+  }
+};
+
 export function AccountProvider({ children }: { children: ReactNode }) {
-  const [address, setAddress] = useState<string | null>(null);
+  const [address, setAddress] = useState<string | null>(remembered);
   const [player, setPlayer] = useState<PlayerStatus | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -46,10 +68,17 @@ export function AccountProvider({ children }: { children: ReactNode }) {
         if (!hasQorex()) throw new Error("Install the QoreX wallet extension first.");
         const a = await connect();
         setAddress(a);
+        remember(a);
         await load(a);
       }),
     [run, load],
   );
+
+  // After a reload: load the remembered account's status (tries, sign-up) without asking QoreX.
+  useEffect(() => {
+    const a = remembered();
+    if (a) load(a).catch(() => {});
+  }, [load]);
 
   const refresh = useCallback(async () => {
     if (address) await run("Checking…", () => load(address));
@@ -84,6 +113,7 @@ export function AccountProvider({ children }: { children: ReactNode }) {
       ready: !!(address && player?.pqKeyRegistered && player.signedUp),
       signIn,
       signOut: () => {
+        remember(null);
         setAddress(null);
         setPlayer(null);
         setError(null);

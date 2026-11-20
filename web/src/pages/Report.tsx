@@ -33,7 +33,7 @@ const SIGNERS = [
 
 const PROGRESS = [
   { name: "Smart contracts v4", note: "Live on testnet · prize pools · 348 tests passing", done: true },
-  { name: "Server & referee", note: "84 unit tests + live contract checks", done: true },
+  { name: "Server & referee", note: "101 unit tests + live contract checks", done: true },
   { name: "Website", note: "Play pass, paid tries, dark arena look", done: true },
   { name: "Security reviews", note: "Six reviews across v3 and v4", done: true },
   { name: "Q-Day Drill", note: "18 Nov · no funds taken", done: true },
@@ -69,7 +69,7 @@ export function Report() {
           <Shield />
           <div>
             <strong>QUANTUM-SAFE</strong>
-            <span>QCAI · verified on testnet</span>
+            <span>QCAI · registry verified · vault audit pending</span>
           </div>
         </div>
       </section>
@@ -96,8 +96,8 @@ export function Report() {
               <SectionHead n="01" label="The arena" />
               <h2 className="rp-h2">Safety has to survive contact.</h2>
               <p className="rp-p">
-                Robot makers lock a bounty. Players get one message to trick the robot into a forbidden red zone. The first confirmed breach
-                wins, and every defence raises the robot's public safety score.
+                Robot makers lock a bounty. Players get one message to trick the robot into a forbidden red zone. A confirmed breach is
+                paid from the robot's prize pools, and every defence raises the robot's public safety score.
               </p>
               <div className="rp-callout">Every move that touches money is verified with a post-quantum signature.</div>
               <button className="link" onClick={() => setTab("security")}>
@@ -159,7 +159,7 @@ export function Report() {
           <div className="rp-grid4">
             <Point n="01" title="Single-use signatures" text="Every signature includes a nonce and a deadline. Once used, its digest can't be replayed." />
             <Point n="02" title="Relayer can't change outcomes" text="The relayer sends transactions but can't forge signatures. Its EVM window allows only the two RedZone contracts." />
-            <Point n="03" title="Payouts follow the record" text="The vault pays the earliest recorded breach to that round's player. Nobody, not even the admin, picks who is paid." />
+            <Point n="03" title="Payouts follow the record" text="Each prize pool pays the robot's breaches in the order they were recorded, always to that round's player. Nobody, not even the admin, picks who is paid." />
             <Point n="04" title="Vault protections" text="Payouts are guarded against reentrancy, and plain transfers are refused so every QOR belongs to a tracked bounty." />
           </div>
           <h3 className="rp-h3">Who signs what</h3>
@@ -194,7 +194,7 @@ export function Report() {
           <div className="rp-stats">
             <Stat label="Security reviews" value="6" />
             <Stat label="Top QCAI score" value="87" unit="/100" />
-            <Stat label="Tests + live checks" value="341" />
+            <Stat label="Tests + live checks" value="455" />
             <div className="rp-stat rp-stat-safe">
               <Shield /> QUANTUM-SAFE
             </div>
@@ -238,7 +238,7 @@ export function Report() {
             </table>
           </div>
           <p className="rp-counts">
-            <b>348</b> Foundry contract tests <b>84</b> backend unit tests <b>6</b> live v4 tests
+            <b>348</b> Foundry contract tests <b>101</b> backend unit tests <b>6</b> live v4 tests
           </p>
         </>
       )}
@@ -345,7 +345,7 @@ function Sides() {
       name: "Players",
       title: "Take on the arena.",
       text: "Try a training robot for free, then risk one message against a live bounty. A verified breach pays out automatically.",
-      steps: ["Practise free", "Verify once · 0.1 QOR", "5 free tries a day, more at 0.1 QOR", "Win the earliest breach bounty"],
+      steps: ["Practise free", "Verify once · 0.1 QOR", "5 free tries a day, more at 0.1 QOR", "Breach it, get paid automatically"],
       href: "#/play",
     },
     {

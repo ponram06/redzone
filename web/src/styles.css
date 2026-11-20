@@ -263,6 +263,11 @@ p {
   font-size: 14px;
 }
 
+/* A caution that is not an error, e.g. "this robot can't pay you right now". */
+.note.warn-text {
+  color: var(--gold);
+}
+
 .back {
   display: inline-block;
   margin-bottom: 12px;
@@ -6244,4 +6249,56 @@ a.ptag:hover .ptag-name {
   .look-grid {
     grid-template-columns: 1fr;
   }
+}
+
+/* Build a robot > Your robots: one row per robot, card and bounty left, its look and brain right. */
+.owner-robots {
+  display: grid;
+  gap: 28px;
+}
+
+.owner-robot {
+  display: grid;
+  grid-template-columns: minmax(240px, 320px) minmax(0, 1fr);
+  gap: 20px;
+  align-items: start;
+}
+
+.owner-robot + .owner-robot {
+  padding-top: 28px;
+  border-top: 1px solid var(--border);
+}
+
+@media (max-width: 760px) {
+  .owner-robot {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Robot page header: its body drawing next to its name. */
+.robot-head {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.robot-head .robot-icon {
+  filter: drop-shadow(0 6px 14px color-mix(in srgb, var(--c) 45%, transparent));
+}
+
+.robot-head .page-title {
+  margin-bottom: 2px;
+}
+
+/* A transaction hash with copy and check links (no block explorer on the testnet yet). */
+.txlink {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.txlink .linkish,
+.txlink a {
+  font-size: 12px;
 }

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { Component, useEffect, useState, type ErrorInfo, type ReactNode } from "react";
 import { AccountProvider, useAccount } from "./account";
 import { Backdrop, LiveTicker, useCursorGlow } from "./components/Backdrop";
 import { Icon, TopBar } from "./components/TopBar";
@@ -58,7 +58,8 @@ function Shell() {
   else if (page === "report") content = <Report />;
   else if (page === "me") content = <MyProfile />;
   else if (page === "player" && arg) content = <Profile address={arg} />;
-  else content = <Home />;
+  else if (!page) content = <Home />;
+  else content = <NotFound />;
 
   return (
     <>
@@ -71,7 +72,7 @@ function Shell() {
             <p>{error}</p>
           </div>
         ) : (
-          content
+          <ErrorBoundary key={`${page ?? ""}/${arg ?? ""}`}>{content}</ErrorBoundary>
         )}
       </main>
       <footer className="footer">
@@ -131,10 +132,14 @@ function AccountChip() {
             <Avatar address={id} size={40} />
             <div>
               <b>{nameOf(id)}</b>
-              <span className="muted">{balance ? qorAmount(balance) : "…"} in QoreX</span>
+              <span className="muted">{balance ? `${qorAmount(balance)} in QoreX` : "Loading balance…"}</span>
             </div>
           </div>
-          {acc.player?.signedUp && <p className="pmenu-tries">{plural(acc.player.attemptsLeft, "try", "tries")} left today</p>}
+          {acc.player?.signedUp && (
+            <p className="pmenu-tries">
+              {plural(acc.player.attemptsLeft, "try", "tries")} left{acc.player.extraTries ? ` (${acc.player.extraTries} bought)` : " today"}
+            </p>
+          )}
           <a role="menuitem" href="#/me">
             My profile &amp; activity
           </a>
@@ -148,4 +153,52 @@ function AccountChip() {
       )}
     </div>
   );
+}
+
+function NotFound() {
+  return (
+    <div className="panel">
+      <h2>Page not found</h2>
+      <p>This link doesn't lead anywhere in RedZone.</p>
+      <p>
+        <a className="btn" href="#/">
+          Go home
+        </a>{" "}
+        <a className="btn primary" href="#/play">
+          Play now
+        </a>
+      </p>
+    </div>
+  );
+}
+
+/**
+ * Keeps one broken component (a 3D scene, a bad API answer) from blanking the whole site:
+ * the page shows a short message and the header still works. Reset on every route change (keyed).
+ */
+class ErrorBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
+  state = { failed: false };
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error("RedZone page error", error, info.componentStack);
+  }
+  render() {
+    if (!this.state.failed) return this.props.children;
+    return (
+      <div className="panel">
+        <h2>This page hit a problem</h2>
+        <p>Your account and any prizes are safe: they live on chain, not in this page.</p>
+        <p>
+          <button className="btn primary" onClick={() => location.reload()}>
+            Reload
+          </button>{" "}
+          <a className="btn" href="#/">
+            Go home
+          </a>
+        </p>
+      </div>
+    );
+  }
 }

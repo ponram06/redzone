@@ -32,7 +32,7 @@ export function RobotCard({ robot, href, active, onClick }: { robot: Robot; href
         {robot.bounty.totalWei !== "0" && nextPrizeWei(robot).toString() !== robot.bounty.totalWei && (
           <div>
             <dt>Per win</dt>
-            <dd className="bounty">{formatQor(nextPrizeWei(robot).toString())}</dd>
+            <dd className="bounty">{nextPrizeWei(robot) > 0n ? formatQor(nextPrizeWei(robot).toString()) : "Nothing now"}</dd>
           </div>
         )}
       </dl>

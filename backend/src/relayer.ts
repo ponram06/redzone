@@ -25,7 +25,7 @@ import {
 import { pqcSign } from "@qorechain/sdk";
 import { bytesToHex, createWalletClient, hexToBytes, http, type Address, type Hex, type Log } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import { client, qorechain } from "./chain.js";
+import { client, qorechain, refreshBounties } from "./chain.js";
 
 export type RelayReceipt = { hash: Hex; status: "success" | "reverted"; logs: Log[] };
 
@@ -95,6 +95,8 @@ export class ChainRelayer implements Relayer {
     const hash = await wallet.sendTransaction({ to, data, gas, gasPrice, value: valueWei, type: "legacy" });
     onSent?.(hash);
     const receipt = await client.waitForTransactionReceipt({ hash, timeout: 90_000 });
+    // Every relayed call can deposit, pay or take back a bounty: the next read must see it.
+    refreshBounties();
     return { hash, status: receipt.status, logs: receipt.logs };
   }
 

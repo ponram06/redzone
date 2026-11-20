@@ -55,52 +55,98 @@ export function parseModelReply(text: string): Pick<BrainOutput, "say" | "action
  */
 export type LlmFallback = { endpoint: LlmEndpoint; model: string };
 
+/**
+ * How long a model may think before the next one starts alongside it (free models can sit in a
+ * queue for a minute). The first valid answer wins and the others are cancelled.
+ */
+export const DEFAULT_HEDGE_MS = Number(process.env.BRAIN_HEDGE_MS) > 0 ? Number(process.env.BRAIN_HEDGE_MS) : 8_000;
+
+type Attempt = { endpoint: LlmEndpoint; model: string };
+
 export class LlmBrain implements Brain {
   constructor(
     private readonly models: string[],
     private readonly systemPrompt: string,
     private readonly endpoint: LlmEndpoint,
     private readonly fallbacks: LlmFallback[] = [],
+    private readonly hedgeMs = DEFAULT_HEDGE_MS,
   ) {}
 
-  async plan(arena: Arena, instruction: string): Promise<BrainOutput> {
-    const attempts: { endpoint: LlmEndpoint; model: string }[] = this.models.map((model) => ({ endpoint: this.endpoint, model }));
+  /**
+   * Models are asked in order. A model that fails hands over at once; one that is still thinking
+   * after hedgeMs gets the next model started next to it. The first usable reply is the answer.
+   */
+  plan(arena: Arena, instruction: string): Promise<BrainOutput> {
+    const attempts: Attempt[] = this.models.map((model) => ({ endpoint: this.endpoint, model }));
     attempts.push(...this.fallbacks);
     const errors: string[] = [];
-    for (const { endpoint, model } of attempts) {
-      const doFetch = endpoint.fetch ?? fetch;
-      try {
-        const res = await doFetch(`${endpoint.baseUrl.replace(/\/$/, "")}/chat/completions`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            ...(endpoint.apiKey ? { Authorization: `Bearer ${endpoint.apiKey}` } : {}),
-            "X-Title": "RedZone",
+    const controllers: AbortController[] = [];
+    return new Promise<BrainOutput>((resolve, reject) => {
+      let next = 0;
+      let running = 0;
+      let done = false;
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const finish = () => {
+        done = true;
+        clearTimeout(timer);
+        for (const c of controllers) c.abort();
+      };
+      const launch = () => {
+        if (done) return;
+        clearTimeout(timer);
+        if (next >= attempts.length) {
+          if (running === 0) {
+            finish();
+            reject(new BrainUnavailableError(`No model answered (${errors.join("; ")})`));
+          }
+          return;
+        }
+        const attempt = attempts[next++]!;
+        const ctl = new AbortController();
+        controllers.push(ctl);
+        running++;
+        this.ask(attempt, arena, instruction, ctl.signal).then(
+          (out) => {
+            running--;
+            if (done) return;
+            finish();
+            resolve(out);
           },
-          body: JSON.stringify({
-            model,
-            messages: buildMessages(arena, this.systemPrompt, instruction),
-            temperature: 0,
-            max_tokens: 2000,
-            ...endpoint.extraBody,
-          }),
-          signal: AbortSignal.timeout(endpoint.timeoutMs ?? 60_000),
-        });
-        if (!res.ok) {
-          errors.push(`${model}: HTTP ${res.status}`);
-          continue;
-        }
-        const body = (await res.json()) as { choices?: { message?: { content?: string | null } }[] };
-        const raw = body.choices?.[0]?.message?.content;
-        if (typeof raw !== "string" || !raw.trim()) {
-          errors.push(`${model}: empty reply`);
-          continue;
-        }
-        return { ...parseModelReply(raw), raw: raw.slice(0, 4000), model };
-      } catch (e) {
-        errors.push(`${model}: ${(e as Error).name === "TimeoutError" ? "timeout" : (e as Error).message}`);
-      }
-    }
-    throw new BrainUnavailableError(`No model answered (${errors.join("; ")})`);
+          (e: unknown) => {
+            running--;
+            if (done) return;
+            errors.push(`${attempt.model}: ${(e as Error).name === "TimeoutError" ? "timeout" : (e as Error).message}`);
+            launch();
+          },
+        );
+        if (next < attempts.length) timer = setTimeout(launch, this.hedgeMs);
+      };
+      launch();
+    });
+  }
+
+  private async ask({ endpoint, model }: Attempt, arena: Arena, instruction: string, cancel: AbortSignal): Promise<BrainOutput> {
+    const doFetch = endpoint.fetch ?? fetch;
+    const res = await doFetch(`${endpoint.baseUrl.replace(/\/$/, "")}/chat/completions`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(endpoint.apiKey ? { Authorization: `Bearer ${endpoint.apiKey}` } : {}),
+        "X-Title": "RedZone",
+      },
+      body: JSON.stringify({
+        model,
+        messages: buildMessages(arena, this.systemPrompt, instruction),
+        temperature: 0,
+        max_tokens: 2000,
+        ...endpoint.extraBody,
+      }),
+      signal: AbortSignal.any([cancel, AbortSignal.timeout(endpoint.timeoutMs ?? 60_000)]),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const body = (await res.json()) as { choices?: { message?: { content?: string | null } }[] };
+    const raw = body.choices?.[0]?.message?.content;
+    if (typeof raw !== "string" || !raw.trim()) throw new Error("empty reply");
+    return { ...parseModelReply(raw), raw: raw.slice(0, 4000), model };
   }
 }

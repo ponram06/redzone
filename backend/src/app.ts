@@ -32,15 +32,26 @@ export type AppDeps = {
   explorerUrl?: string | null;
   readRobots(): Promise<RobotView[]>;
   readRobot(id: number): Promise<RobotView | null>;
+  /** What a breach would pay this player on this robot now (optional: tests may leave it out). */
+  prizeFor?(robotId: number, player: `0x${string}`): Promise<{ wei: string; wonAll: boolean; bounties: { id: number; wei: string; won: boolean }[] }>;
+  /** A RedZone transaction as the chain reports it (optional: tests may leave it out). */
+  readTxSummary?(hash: `0x${string}`): Promise<unknown | null>;
   corsOrigin?: string;
   /** Requests per minute per IP for routes that call the brain. */
   brainRateLimit?: number;
+  /** Skills tests per minute per IP (default 2: each is 10 AI calls and a transaction). */
+  utilityRateLimit?: number;
+  /** Requests per minute per IP for signed requests and payment checks (default 30). */
+  sessionRateLimit?: number;
+  /** Fastify trustProxy: true, a list of proxy addresses, or a test per hop. Off by default. */
+  trustProxy?: boolean | string | ((address: string, hop: number) => boolean);
 };
 
-/** Tiny fixed-window limiter, per IP and route group. */
-function limiter(perMinute: number) {
+/** Tiny fixed-window limiter, per IP and route group. Each group has its own budget per minute. */
+function limiter(budgets: Record<string, number>, fallback: number) {
   const hits = new Map<string, { n: number; reset: number }>();
   return (req: FastifyRequest, reply: FastifyReply, group: string): boolean => {
+    const perMinute = budgets[group] ?? fallback;
     const now = Date.now();
     const k = `${group}:${req.ip}`;
     const h = hits.get(k);
@@ -56,9 +67,14 @@ function limiter(perMinute: number) {
 }
 
 export async function buildApp(d: AppDeps) {
-  const app = Fastify({ logger: false, bodyLimit: 64 * 1024 });
+  // Behind a reverse proxy (any host), req.ip is the proxy unless we trust its X-Forwarded-For;
+  // without that, every visitor would share one rate-limit bucket.
+  const app = Fastify({ logger: false, bodyLimit: 64 * 1024, trustProxy: d.trustProxy ?? false });
   await app.register(cors, { origin: d.corsOrigin ?? true });
-  const allow = limiter(d.brainRateLimit ?? 6);
+  const brainBudget = d.brainRateLimit ?? 6;
+  // brain: routes that call an AI. utility: a skills test (10 AI calls and a transaction).
+  // session: signed requests and payment checks; a maker's bounty step alone retries several times.
+  const allow = limiter({ brain: brainBudget, utility: d.utilityRateLimit ?? 2, session: d.sessionRateLimit ?? 30 }, brainBudget);
 
   app.setErrorHandler((err, _req, reply) => {
     if (err instanceof GameError) return reply.code(err.status).send({ error: err.message });
@@ -119,12 +135,35 @@ export async function buildApp(d: AppDeps) {
 
   app.get("/arena", async () => ({ ...d.arena, description: describeArena(d.arena), maxInstruction: MAX_INSTRUCTION }));
 
+  /** The signed, off-chain label of a robot: its job and its look (type and colour). */
+  const labelOf = (id: number) => {
+    const p = d.store.getProfile(id);
+    return { job: p?.job ?? null, look: p?.kind && p.color ? { kind: p.kind, color: p.color } : null };
+  };
+
   app.get("/robots", async () => ({
-    robots: (await d.readRobots()).map((r) => {
-      const p = d.store.getProfile(r.id);
-      return { ...r, job: p?.job ?? null, look: p?.kind && p.color ? { kind: p.kind, color: p.color } : null };
-    }),
+    robots: (await d.readRobots()).map((r) => ({ ...r, ...labelOf(r.id) })),
   }));
+
+  /** A RedZone transaction as the chain reports it (the testnet has no block explorer yet). */
+  app.get<{ Params: { hash: string } }>("/tx/:hash", async (req) => {
+    const hash = req.params.hash;
+    if (!/^0x[0-9a-fA-F]{64}$/.test(hash)) throw new GameError(400, "bad transaction hash");
+    if (!d.readTxSummary) throw new GameError(503, "transaction lookup is not available");
+    const tx = await d.readTxSummary(hash as `0x${string}`);
+    if (!tx) throw new GameError(404, "no RedZone transaction with this hash");
+    return tx;
+  });
+
+  /** What a breach in a round started now would pay this player on this robot (pools they won are skipped). */
+  app.get<{ Params: { id: string }; Querystring: { player?: string } }>("/robots/:id/prize", async (req) => {
+    const id = Number(req.params.id);
+    if (!Number.isSafeInteger(id) || id < 1) throw new GameError(400, "bad robot id");
+    const player = req.query.player ?? "";
+    if (!/^0x[0-9a-fA-F]{40}$/.test(player)) throw new GameError(400, "bad player address");
+    if (!d.prizeFor) throw new GameError(503, "prize lookup is not available");
+    return d.prizeFor(id, player as `0x${string}`);
+  });
 
   app.get<{ Params: { id: string } }>("/robots/:id/record", async (req) => {
     const rec = await d.game.robotRecord(req.params.id);
@@ -149,7 +188,7 @@ export async function buildApp(d: AppDeps) {
     const r = await d.readRobot(id);
     if (!r) throw new GameError(404, "robot not found");
     const c = d.brains.config(r.brainHash);
-    return { ...r, brain: c ? { kind: c.kind, models: c.kind === "llm" ? c.models : undefined, known: true } : { known: false } };
+    return { ...r, ...labelOf(id), brain: c ? { kind: c.kind, models: c.kind === "llm" ? c.models : undefined, known: true } : { known: false } };
   });
 
   /** Owners publish a brain config here, then register the robot on chain with the returned hash. */

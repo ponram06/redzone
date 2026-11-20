@@ -33,8 +33,17 @@ export type Robot = {
   utilityScore: number;
   ratingBps: number;
   tier: "Rookie" | "Guard" | "Sentinel";
-  /** Open prize pools: what is left, the prize per win, and whether it pays once per brain version. */
-  bounty: { open: { id: number; amountWei: string; prizeWei: string; oncePerBrain: boolean }[]; totalWei: string };
+  brainVersion?: number;
+  /**
+   * Open prize pools: what is left, the prize per win, whether it pays once per brain version, the
+   * oldest brain version it still pays for, and when the owner asked for it back (0 = not asked).
+   */
+  bounty: {
+    open: { id: number; amountWei: string; prizeWei: string; oncePerBrain: boolean; minBrainVersion?: number; withdrawRequestedAt?: number }[];
+    totalWei: string;
+  };
+  /** What one breach in a round started now pays a new player: every open pool pays it. */
+  nextWinWei?: string;
   /** What the owner says the robot is used for (off chain, signed by the owner). */
   job?: string | null;
   /** The body and colour the owner chose (off chain, signed with the job); null = the default. */
@@ -189,12 +198,23 @@ export const poolMemo = (robotId: number, t: PoolTerms) =>
     ? bountyMemo(robotId)
     : `${bountyMemo(robotId)} prize ${(Number(t.prizeUqor) / 1e6).toFixed(6).replace(/\.?0+$/, "")}${t.oncePerBrain ? "" : " open"}`;
 
-/** The biggest prize one win can pay right now on this robot (wei), or 0. */
-export const nextPrizeWei = (r: Robot) =>
-  r.bounty.open.reduce((max, b) => {
-    const p = BigInt(b.prizeWei) < BigInt(b.amountWei) ? BigInt(b.prizeWei) : BigInt(b.amountWei);
-    return p > max ? p : max;
-  }, 0n);
+/**
+ * What one win pays a new player on this robot right now (wei), or 0. A breach is paid by every open
+ * pool on the robot, so this is the sum (the server works it out from the vault's rules).
+ */
+export const nextPrizeWei = (r: Robot): bigint => {
+  if (r.nextWinWei !== undefined) return BigInt(r.nextWinWei);
+  return r.bounty.open.reduce((sum, b) => sum + (BigInt(b.prizeWei) < BigInt(b.amountWei) ? BigInt(b.prizeWei) : BigInt(b.amountWei)), 0n);
+};
+
+/** When the owner asked for a bounty back, if any pool on the robot is being taken back (unix seconds). */
+export const takeBackStartedAt = (r: Robot): number | null => {
+  const t = r.bounty.open.map((b) => b.withdrawRequestedAt ?? 0).filter((x) => x > 0);
+  return t.length ? Math.min(...t) : null;
+};
+
+/** What a breach would pay this player on this robot now; pools they already won are skipped. */
+export type PlayerPrize = { wei: string; wonAll: boolean; bounties: { id: number; wei: string; won: boolean }[] };
 export type SignRequest = { deadline: number; digest: string; text: string };
 export type BrainConfig = { kind: "rule"; version: 1 } | { kind: "llm"; version: 1; models: string[]; systemPrompt: string };
 export type UtilityResult = { robotId: number; tasksPassed: number; relay?: { tx?: string; error?: string } };
@@ -217,6 +237,7 @@ export const api = {
   leaderboard: () => call<{ players: LeaderRow[] }>("/leaderboard").then((r) => r.players),
   activity: () => call<{ rounds: ActivityRow[] }>("/activity").then((r) => r.rounds),
   robotRecord: (id: number) => call<RobotRecord>(`/robots/${id}/record`),
+  prizeFor: (id: number, player: string) => call<PlayerPrize>(`/robots/${id}/prize?player=${encodeURIComponent(player)}`),
   playerProfile: (address: string) => call<PlayerProfile>(`/player/${encodeURIComponent(address)}/profile`),
   /** Every player's chosen name and picture, by lower-case 0x address. */
   playerNames: () =>

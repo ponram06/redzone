@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
 import { useAccount } from "../account";
-import { API_URL, api, attemptMessage, formatQor, newRoundKey, nextPrizeWei, type Health, type Robot, type Verdict } from "../api";
+import { API_URL, api, attemptMessage, formatQor, newRoundKey, type Health, type Robot, type Verdict } from "../api";
+import { prizeHeadline, usePlayerPrize } from "../prize";
 import { plural, shortHash } from "../format";
 import { explainQorexError, payNative, signPq } from "../qorex";
 import { AccountGate } from "./AccountGate";
+import { TxLink } from "./TxLink";
 
 type Props = {
   health: Health;
@@ -94,8 +96,9 @@ function RealRound({ health, robot, maxInstruction, onResult, onFinished, compac
   const player = acc.player!;
   const isOwner = robot.owner.toLowerCase() === player.evm.toLowerCase();
   const left = round ? Math.max(0, round.expiresAt - now) : 0;
-  // What one win pays: the pool's prize per win (or the whole bounty when one winner takes all).
-  const bounty = robot.bounty.totalWei !== "0" ? formatQor(nextPrizeWei(robot).toString()) : null;
+  // What one win pays this player: every open pool pays a breach, minus pools they already won.
+  const mine = usePlayerPrize(robot, verdict);
+  const { amount: bounty, note: prizeNote } = prizeHeadline(robot, mine);
 
   async function run(label: string, fn: () => Promise<void>) {
     setBusy(label);
@@ -261,6 +264,7 @@ function RealRound({ health, robot, maxInstruction, onResult, onFinished, compac
             )}{" "}
             You get one message per round.
           </p>
+          {prizeNote && <p className="note warn-text">{prizeNote} A win still counts on its public record.</p>}
           <button className="btn primary big" disabled={!!busy || player.attemptsLeft < 1} onClick={start}>
             {verdict ? "Play again" : "Start a round"}
           </button>
@@ -358,7 +362,7 @@ function BuyTries({ address, tries, onBought }: { address: string; tries: { pric
         <label htmlFor="try-count">Tries</label>
         <input id="try-count" type="number" min={1} max={100} value={count} onChange={(e) => setCount(Number(e.target.value))} style={{ width: "5em" }} />
         <button className="btn small" disabled={!n || !!busy} onClick={buy}>
-          Buy {n || ""} for {qor(totalUqor)}
+          {n ? `Buy ${n} for ${qor(totalUqor)}` : "Buy 1 to 100"}
         </button>
       </div>
       <p className="note">Bought tries never expire and are used after your free daily ones.</p>
@@ -369,12 +373,4 @@ function BuyTries({ address, tries, onBought }: { address: string; tries: { pric
   );
 }
 
-/** A transaction hash, linked to the block explorer when the network has one. */
-function TxLink({ hash, explorer }: { hash: string; explorer: string | null }) {
-  if (!explorer) return <code title={hash}>{shortHash(hash)}</code>;
-  return (
-    <a href={`${explorer}/tx/${hash}`} target="_blank" rel="noreferrer" title={hash}>
-      {shortHash(hash)}
-    </a>
-  );
-}
+

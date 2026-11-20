@@ -50,7 +50,7 @@ export function RobotRecordCard({ robot }: { robot: Robot }) {
   }, [robot.id]);
 
   const pool = robot.bounty.open[0];
-  const perWin = robot.bounty.totalWei !== "0" ? formatQor(nextPrizeWei(robot).toString()) : null;
+  const perWin = nextPrizeWei(robot) > 0n ? formatQor(nextPrizeWei(robot).toString()) : null;
   const job = rec?.profile?.job ?? robot.job;
 
   return (
@@ -160,7 +160,7 @@ export function RobotPicker({
   return (
     <div className={`picker ${phase}`}>
       {robots.map((r, i) => {
-        const perWin = r.bounty.totalWei !== "0" ? formatQor(nextPrizeWei(r).toString()) : null;
+        const perWin = nextPrizeWei(r) > 0n ? formatQor(nextPrizeWei(r).toString()) : null;
         const open = hover?.id === r.id;
         return (
           <div
@@ -186,7 +186,7 @@ export function RobotPicker({
                 <span>
                   {r.defended}/{r.attacks} blocked
                 </span>
-                {perWin ? <span className="gold">Win {perWin}</span> : <span className="muted">No bounty</span>}
+                {perWin ? <span className="gold">Win {perWin}</span> : <span className="muted">{r.bounty.totalWei !== "0" ? "Nothing to win now" : "No bounty"}</span>}
               </span>
             </button>
             {open &&

@@ -24,6 +24,8 @@ export const START_TTL = 8 * 60;
 
 export const MAX_INSTRUCTION = 500;
 export const UTILITY_WINDOW = 24 * 3600;
+/** Parts of a nickname reserved for the site itself (compared without spaces or punctuation). */
+const RESERVED_NAMES = ["admin", "redzone", "qorechain", "qorex", "moderator", "official", "support", "referee", "relayer"];
 /** Most vault calls made to settle one bounty (skips of unpayable breaches plus the claim). */
 const MAX_SETTLE_STEPS = 10;
 /** brainHash value for free practice against the training robot (no safety rules). */
@@ -1054,6 +1056,9 @@ export class Game {
     if (typeof raw !== "string") throw new GameError(400, "name must be text");
     const name = raw.replace(/\s+/g, " ").trim();
     if (!/^[\p{L}\p{N} ._-]{3,20}$/u.test(name)) throw new GameError(400, "use 3 to 20 letters, numbers, spaces, dots, dashes or underscores");
+    // Names that would let a player pass as the site's staff in feeds and leaderboards.
+    const plain = name.toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
+    if (RESERVED_NAMES.some((r) => plain.includes(r))) throw new GameError(400, "that name is reserved, try another");
     return name;
   }
 
@@ -1412,6 +1417,13 @@ export class Game {
     if (!Number.isSafeInteger(robotId) || robotId < 1) throw new GameError(400, "bad robotId");
     const robot = await this.d.chain.readRobot(robotId);
     if (!robot) throw new GameError(404, "robot not found");
+    // Once per brain version: anyone may ask for the skills test, but each run costs AI calls and a
+    // relayed transaction, and recording a score unlocks the next nonce. A new run needs a new brain,
+    // which only the owner can set (ML-DSA signed updateBrain).
+    const doneKey = `utility-done-${robotId}-v${robot.brainVersion}`;
+    const done = this.d.store.getVerdict<UtilityVerdict>(doneKey);
+    if (done) return done;
+    if (robot.utilityScore > 0) throw new GameError(409, "this robot's skills are already tested for its current brain");
     const key = `utility-${robotId}-${robot.utilityNonce}-${robot.brainHash.slice(2, 18)}`;
 
     return this.once(key, async () => {
@@ -1470,6 +1482,11 @@ export class Game {
         }),
       );
       relay = r.status === "success" ? { tx: r.hash } : { error: `recordUtility reverted (${r.hash})` };
+      if (r.status === "success") {
+        const robot = await this.d.chain.readRobot(v.robotId).catch(() => null);
+        // Brain version at the time of the score (the score is reset by updateBrain, so it is this one).
+        if (robot) this.d.store.saveVerdict(`utility-done-${v.robotId}-v${robot.brainVersion}`, { ...v, relay: { tx: r.hash } });
+      }
     } catch (e) {
       relay = { error: (e as Error).message.slice(0, 300) };
     }

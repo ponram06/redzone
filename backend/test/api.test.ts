@@ -43,6 +43,7 @@ type FakeBounty = {
   withdrawTo: Address;
   prizePerWinWei: bigint;
   oncePerBrain: boolean;
+  minBrainVersion: number;
   tx: Hex;
   indexed: boolean;
 };
@@ -117,6 +118,7 @@ class FakeRelayer implements Relayer {
         withdrawTo: ZERO,
         prizePerWinWei: prize,
         oncePerBrain: once,
+        minBrainVersion: 0,
         tx,
         indexed: !lost,
       });
@@ -201,7 +203,8 @@ const robot: RobotView = {
   brainVersion: 0,
   ratingBps: 0,
   tier: "Rookie",
-  bounty: { open: [{ id: 1, amountWei: "1000000000000000000", prizeWei: "1000000000000000000", oncePerBrain: true }], totalWei: "1000000000000000000" },
+  bounty: { open: [{ id: 1, amountWei: "1000000000000000000", prizeWei: "1000000000000000000", oncePerBrain: true, minBrainVersion: 0, withdrawRequestedAt: 0 }], totalWei: "1000000000000000000" },
+  nextWinWei: "1000000000000000000",
 };
 
 let sessions: Record<number, SessionView>;
@@ -259,6 +262,7 @@ beforeEach(async () => {
         withdrawTo: ZERO,
         prizePerWinWei: 0n,
         oncePerBrain: true,
+        minBrainVersion: 0,
       },
     readNextBreach: async (id: number) => {
       const b = vault.bounties.get(id);
@@ -314,6 +318,7 @@ beforeEach(async () => {
           withdrawTo: ZERO,
           prizePerWinWei: 10n ** 18n,
           oncePerBrain: true,
+          minBrainVersion: 0,
           tx: ("0x" + "01".repeat(32)) as Hex,
           indexed: true,
         },
@@ -361,6 +366,8 @@ beforeEach(async () => {
     readRobots: async () => [robot],
     readRobot: chain.readRobot,
     brainRateLimit: 100,
+    utilityRateLimit: 100,
+    sessionRateLimit: 100,
   });
 });
 
@@ -433,6 +440,41 @@ describe("other routes", () => {
     const n = relayer.sent.length;
     await app.inject({ method: "POST", url: "/utility/1" });
     expect(relayer.sent.length).toBe(n);
+  });
+
+  it("utility: once per brain version, even after recording moves the chain to the next nonce", async () => {
+    await app.inject({ method: "POST", url: "/utility/1" });
+    const n = relayer.sent.length;
+    // recordUtility bumps the nonce on chain: without the once-per-brain rule this would start a
+    // fresh paid run (10 AI calls and a relayed transaction) for anyone who asks.
+    const before = robot.utilityNonce;
+    robot.utilityNonce = before + 1;
+    try {
+      const again = await app.inject({ method: "POST", url: "/utility/1" });
+      expect(again.statusCode).toBe(200);
+      expect(relayer.sent.length).toBe(n);
+      // A new brain version may be tested again.
+      robot.brainVersion += 1;
+      await app.inject({ method: "POST", url: "/utility/1" });
+      expect(relayer.sent.at(-1)?.fn).toBe("recordUtility");
+      expect(relayer.sent.length).toBe(n + 1);
+    } finally {
+      robot.utilityNonce = before;
+      robot.brainVersion -= 1;
+    }
+  });
+
+  it("utility: a robot that already has a score for its brain is not re-tested", async () => {
+    const before = robot.utilityScore;
+    robot.utilityScore = 7;
+    robot.brainVersion += 5; // no stored record for this version on this server
+    try {
+      const r = await app.inject({ method: "POST", url: "/utility/1" });
+      expect(r.statusCode).toBe(409);
+    } finally {
+      robot.utilityScore = before;
+      robot.brainVersion -= 5;
+    }
   });
 
   it("a failed utility relay is retried on the next request", async () => {
