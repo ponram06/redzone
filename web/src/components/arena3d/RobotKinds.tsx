@@ -10,18 +10,12 @@ import * as THREE from "three";
  *   hauler  - a warehouse transport robot (low chassis, lift deck with a crate, lidar mast)
  *   titan   - a tracked industrial service robot with two arms (the biggest)
  *   courier - a six-wheeled delivery robot (cargo box, antenna flag)
+ *   dog     - a four-legged inspection robot (legs trot while it moves)
+ *   waiter  - a hotel service robot (round base, trays with cups, a face screen)
+ * The owner picks the kind and colour (see robotLook.ts).
  */
-export type RobotKind = "guard" | "hauler" | "titan" | "courier";
+export type { RobotKind } from "../../robotLook";
 export type RState = "idle" | "moving" | "breached" | "defended";
-
-const KINDS: RobotKind[] = ["guard", "hauler", "titan", "courier"];
-export const robotKind = (id: number): RobotKind => KINDS[(id - 1) % KINDS.length]!;
-export const KIND_LABEL: Record<RobotKind, string> = {
-  guard: "Security patrol pod",
-  hauler: "Warehouse transport robot",
-  titan: "Tracked industrial robot",
-  courier: "Six-wheel courier robot",
-};
 
 /** Status light colour: blue while working, red on a breach, green when it held. */
 export function statusColor(state: RState): THREE.Color {
@@ -271,6 +265,187 @@ export function CourierBot({ color, state, lamp }: { color: string; state: RStat
         <meshStandardMaterial color={color} side={THREE.DoubleSide} emissive={color} emissiveIntensity={0.4} />
       </mesh>
       {lamp && <Headlamp y={1.8} state={state} />}
+    </group>
+  );
+}
+
+// ------------------------------------------------------------------ robot dog
+
+/** A four-legged inspection robot: legs walk while it moves, it crouches on a breach. */
+export function DogBot({ color, state, lamp }: { color: string; state: RState; lamp?: boolean }) {
+  const root = useRef<THREE.Group>(null);
+  const legs = useRef<(THREE.Group | null)[]>([]);
+  const head = useRef<THREE.Group>(null);
+  const eye = statusColor(state);
+  useFrame(({ clock }) => {
+    const t = clock.elapsedTime;
+    const walk = state === "moving";
+    legs.current.forEach((leg, i) => {
+      if (!leg) return;
+      // diagonal pairs move together, like a trot
+      const phase = i === 0 || i === 3 ? 0 : Math.PI;
+      leg.rotation.z = walk ? Math.sin(t * 11 + phase) * 0.45 : 0;
+    });
+    if (root.current) {
+      const crouch = state === "breached" ? -0.7 : 0;
+      root.current.position.y += (crouch + (walk ? Math.abs(Math.sin(t * 11)) * 0.12 : Math.sin(t * 2) * 0.04) - root.current.position.y) * 0.2;
+      root.current.rotation.x = state === "breached" ? Math.sin(t * 35) * 0.05 : 0;
+    }
+    if (head.current) head.current.rotation.y = state === "idle" ? Math.sin(t * 0.8) * 0.5 : 0;
+  });
+  const paint = <meshPhysicalMaterial color={color} metalness={0.35} roughness={0.35} clearcoat={0.8} />;
+  const joint = <meshStandardMaterial color="#1c1f24" metalness={0.6} roughness={0.4} />;
+  const corners: [number, number][] = [
+    [1.35, 0.75],
+    [1.35, -0.75],
+    [-1.35, 0.75],
+    [-1.35, -0.75],
+  ];
+  return (
+    <group ref={root}>
+      {/* legs: hip joint, upper leg, knee, lower leg, foot */}
+      {corners.map(([x, z], i) => (
+        <group key={i} ref={(g) => void (legs.current[i] = g)} position={[x, 2.15, z]}>
+          <mesh>
+            <sphereGeometry args={[0.32, 14, 12]} />
+            {joint}
+          </mesh>
+          <mesh position={[0.18, -0.55, 0]} rotation-z={0.35}>
+            <boxGeometry args={[0.32, 1.1, 0.3]} />
+            {paint}
+          </mesh>
+          <mesh position={[0.36, -1.1, 0]}>
+            <sphereGeometry args={[0.2, 12, 10]} />
+            {joint}
+          </mesh>
+          <mesh position={[0.18, -1.6, 0]} rotation-z={-0.35}>
+            <boxGeometry args={[0.2, 1.05, 0.2]} />
+            {joint}
+          </mesh>
+          <mesh position={[0.02, -2.08, 0]}>
+            <sphereGeometry args={[0.17, 12, 10]} />
+            {rubber}
+          </mesh>
+        </group>
+      ))}
+      {/* body */}
+      <RoundedBox args={[3.4, 0.85, 1.55]} radius={0.3} smoothness={4} position-y={2.45} castShadow>
+        {paint}
+      </RoundedBox>
+      <RoundedBox args={[2.4, 0.3, 1.2]} radius={0.12} position-y={2.98} castShadow>
+        <meshStandardMaterial color="#23262d" metalness={0.5} roughness={0.5} />
+      </RoundedBox>
+      {/* sensor head at the front */}
+      <group ref={head} position={[1.85, 2.5, 0]}>
+        <RoundedBox args={[0.55, 0.6, 1.2]} radius={0.15}>
+          {white}
+        </RoundedBox>
+        <mesh position={[0.29, 0.02, 0]}>
+          <boxGeometry args={[0.04, 0.3, 0.9]} />
+          {glass}
+        </mesh>
+        {[-0.25, 0.25].map((z) => (
+          <mesh key={z} position={[0.32, 0.03, z]}>
+            <boxGeometry args={[0.02, 0.08, 0.18]} />
+            <meshBasicMaterial color={eye} toneMapped={false} />
+          </mesh>
+        ))}
+      </group>
+      {/* status light on the back */}
+      <mesh position={[-1.2, 3.2, 0]}>
+        <sphereGeometry args={[0.12, 10, 10]} />
+        <meshBasicMaterial color={eye} toneMapped={false} />
+      </mesh>
+      {lamp && <Headlamp y={2.6} state={state} />}
+    </group>
+  );
+}
+
+// ------------------------------------------------------------------ hotel service robot
+
+/** A tray-carrying service robot (hotels, restaurants): round base, trays, a face on a screen. */
+export function WaiterBot({ color, state, lamp }: { color: string; state: RState; lamp?: boolean }) {
+  const { body } = useBody(state);
+  const face = useRef<THREE.Group>(null);
+  const cups = useRef<THREE.Group>(null);
+  const eye = statusColor(state);
+  useFrame(({ clock }) => {
+    const t = clock.elapsedTime;
+    if (face.current) face.current.rotation.y = state === "idle" ? Math.sin(t * 0.7) * 0.4 : 0;
+    // the cups slide off the tray when it is tricked
+    if (cups.current) {
+      const want = state === "breached" ? 0.9 : 0;
+      cups.current.position.z += (want - cups.current.position.z) * 0.08;
+      cups.current.rotation.x += ((state === "breached" ? 0.9 : 0) - cups.current.rotation.x) * 0.08;
+    }
+  });
+  const paint = <meshPhysicalMaterial color={color} metalness={0.3} roughness={0.35} clearcoat={0.9} />;
+  const tray = (y: number) => (
+    <mesh position-y={y} castShadow>
+      <cylinderGeometry args={[1.15, 1.15, 0.12, 28]} />
+      <meshStandardMaterial color="#d9dee6" metalness={0.4} roughness={0.35} />
+    </mesh>
+  );
+  return (
+    <group ref={body}>
+      {/* round base with a coloured bumper */}
+      <mesh position-y={0.45} castShadow>
+        <cylinderGeometry args={[1.3, 1.4, 0.9, 32]} />
+        {white}
+      </mesh>
+      <mesh position-y={0.2}>
+        <torusGeometry args={[1.38, 0.12, 10, 36]} />
+        {paint}
+      </mesh>
+      {/* slim column between the trays */}
+      <mesh position-y={2.3} castShadow>
+        <cylinderGeometry args={[0.32, 0.4, 3.4, 16]} />
+        {paint}
+      </mesh>
+      {tray(1.4)}
+      {tray(2.6)}
+      {/* a cup, a plate and a bottle on the top tray */}
+      <group ref={cups} position-y={2.66}>
+        <mesh position={[0.5, 0.28, 0.4]}>
+          <cylinderGeometry args={[0.2, 0.16, 0.45, 12]} />
+          <meshStandardMaterial color="#f4f1ea" roughness={0.3} />
+        </mesh>
+        <mesh position={[-0.4, 0.05, -0.3]}>
+          <cylinderGeometry args={[0.45, 0.45, 0.06, 20]} />
+          <meshStandardMaterial color="#f4f1ea" roughness={0.3} />
+        </mesh>
+        <mesh position={[0.1, 0.4, -0.55]}>
+          <cylinderGeometry args={[0.13, 0.15, 0.75, 10]} />
+          <meshStandardMaterial color="#2f7a4a" roughness={0.2} metalness={0.2} transparent opacity={0.85} />
+        </mesh>
+      </group>
+      {/* head with a face screen */}
+      <group ref={face} position-y={4.35}>
+        <RoundedBox args={[1.1, 0.95, 1.3]} radius={0.35} smoothness={5} castShadow>
+          {white}
+        </RoundedBox>
+        <RoundedBox args={[0.1, 0.62, 0.95]} radius={0.08} position={[0.52, 0, 0]}>
+          {glass}
+        </RoundedBox>
+        {[-0.22, 0.22].map((z) => (
+          <mesh key={z} position={[0.58, 0.08, z]}>
+            <boxGeometry args={[0.02, 0.16, 0.16]} />
+            <meshBasicMaterial color={eye} toneMapped={false} />
+          </mesh>
+        ))}
+        <mesh position={[0.58, -0.14, 0]}>
+          <boxGeometry args={[0.02, 0.04, 0.26]} />
+          <meshBasicMaterial color={eye} toneMapped={false} />
+        </mesh>
+        {/* little ears */}
+        {[-0.45, 0.45].map((z) => (
+          <mesh key={z} position={[0, 0.55, z]} rotation-x={z > 0 ? -0.3 : 0.3}>
+            <coneGeometry args={[0.18, 0.35, 12]} />
+            {paint}
+          </mesh>
+        ))}
+      </group>
+      {lamp && <Headlamp y={4.3} state={state} />}
     </group>
   );
 }

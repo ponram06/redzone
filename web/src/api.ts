@@ -37,6 +37,8 @@ export type Robot = {
   bounty: { open: { id: number; amountWei: string; prizeWei: string; oncePerBrain: boolean }[]; totalWei: string };
   /** What the owner says the robot is used for (off chain, signed by the owner). */
   job?: string | null;
+  /** The body and colour the owner chose (off chain, signed with the job); null = the default. */
+  look?: { kind: string; color: string } | null;
 };
 
 /** Everything on a player's profile page (all of it public chain data). */
@@ -225,9 +227,11 @@ export const api = {
     ),
   saveName: (b: { player: string; name: string; avatar: string; deadline: number; pqSignature: string }) =>
     call<{ name: string; avatar: string }>("/player/name", { method: "POST", body: JSON.stringify(b) }),
-  profileRequest: (robotId: number, owner: string, job: string) =>
-    call<{ deadline: number; text: string; job: string }>(`/owner/profile/request?robotId=${robotId}&owner=${encodeURIComponent(owner)}&job=${encodeURIComponent(job)}`),
-  saveProfile: (b: { robotId: number; owner: string; job: string; deadline: number; pqSignature: string }) =>
+  profileRequest: (robotId: number, owner: string, job: string, kind: string, color: string) =>
+    call<{ deadline: number; text: string; job: string }>(
+      `/owner/profile/request?robotId=${robotId}&owner=${encodeURIComponent(owner)}&job=${encodeURIComponent(job)}&kind=${encodeURIComponent(kind)}&color=${encodeURIComponent(color)}`,
+    ),
+  saveProfile: (b: { robotId: number; owner: string; job: string; kind: string; color: string; deadline: number; pqSignature: string }) =>
     call<{ job: string }>("/owner/profile", { method: "POST", body: JSON.stringify(b) }),
   publishBrain: (config: BrainConfig) => call<{ brainHash: string }>("/brains", { method: "POST", body: JSON.stringify({ config }) }),
   brain: (hash: string) => call<{ brainHash: string; config: BrainConfig }>(`/brains/${hash}`),

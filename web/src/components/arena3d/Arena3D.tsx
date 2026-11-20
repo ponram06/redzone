@@ -1,6 +1,7 @@
 import { Environment, Html, Lightformer, Line, MeshReflectorMaterial, OrbitControls, PerformanceMonitor, RoundedBox, Sparkles } from "@react-three/drei";
 import { PlantDetails } from "./PlantDetails";
-import { CourierBot, GuardBot, HaulerBot, robotKind, type RState } from "./RobotKinds";
+import { CourierBot, DogBot, GuardBot, HaulerBot, WaiterBot, type RState } from "./RobotKinds";
+import { lookOf, type RobotKind } from "../../robotLook";
 import { Canvas, useFrame, useThree, type ThreeElements } from "@react-three/fiber";
 import { Bloom, EffectComposer, Noise, SMAA, ToneMapping, Vignette } from "@react-three/postprocessing";
 import { ToneMappingMode } from "postprocessing";
@@ -1096,8 +1097,9 @@ type Run = { p: Point; heading: number; done: boolean; driven: Point[] };
 type Target = { p: Point; heading: number; done: boolean };
 
 /** The right body for a robot: each robot has its own shape (see RobotKinds). */
-function RobotBody({ id, color, state, lamp = false }: { id: number; color: string; state: RState; lamp?: boolean }) {
-  const kind = robotKind(id);
+function RobotBody({ kind, color, state, lamp = false }: { kind: RobotKind; color: string; state: RState; lamp?: boolean }) {
+  if (kind === "dog") return <DogBot color={color} state={state} lamp={lamp} />;
+  if (kind === "waiter") return <WaiterBot color={color} state={state} lamp={lamp} />;
   if (kind === "guard") return <GuardBot color={color} state={state} lamp={lamp} />;
   if (kind === "hauler") return <HaulerBot color={color} state={state} lamp={lamp} />;
   if (kind === "courier") return <CourierBot color={color} state={state} lamp={lamp} />;
@@ -1108,7 +1110,7 @@ function RobotBody({ id, color, state, lamp = false }: { id: number; color: stri
   );
 }
 
-function ActiveRobot({ path, trace, runKey, robotId, color, say, quiet, onMove }: { path: Point[]; trace: Trace | null; runKey: number; robotId: number; color: string; say?: string; quiet?: boolean; onMove: (r: Run) => void }) {
+function ActiveRobot({ path, trace, runKey, kind, color, say, quiet, onMove }: { path: Point[]; trace: Trace | null; runKey: number; kind: RobotKind; color: string; say?: string; quiet?: boolean; onMove: (r: Run) => void }) {
   const g = useRef<THREE.Group>(null);
   const total = useMemo(() => pathLength(path), [path]);
   const start = useRef(0);
@@ -1149,7 +1151,7 @@ function ActiveRobot({ path, trace, runKey, robotId, color, say, quiet, onMove }
   return (
     <group ref={g}>
       <group scale={1.5}>
-        <RobotBody id={robotId} color={color} state={state} lamp />
+        <RobotBody kind={kind} color={color} state={state} lamp />
       </group>
       {/* glow ring under the active robot */}
       <mesh position-y={0.08} rotation-x={-Math.PI / 2}>
@@ -1199,7 +1201,7 @@ const ParkedRobots = memo(function ParkedRobots({ robots, labels }: { robots: Ro
             <meshBasicMaterial color={[2.2, 1.8, 0.2]} toneMapped={false} />
           </mesh>
           <group rotation-y={wide ? 0 : Math.PI / 2} scale={0.8}>
-            <RobotBody id={r.id} color={robotColor(r.id)} state="idle" />
+            <RobotBody {...lookOf(r)} state="idle" />
           </group>
           {labels && (
             <Html position={[0, 6.5, 0]} center distanceFactor={95} zIndexRange={[10, 0]}>
@@ -1701,6 +1703,7 @@ export default function Arena3D({
   const [quality, setQuality] = useState<Quality>(() => (lowEnd() ? 0 : 2));
   const low = quality === 0;
   const parked = useMemo(() => others.filter((r) => r.id !== robotId), [others, robotId]);
+  const activeLook = lookOf(others.find((r) => r.id === robotId) ?? { id: robotId ?? 1 });
   const hotZone = useMemo(() => {
     if (!trace?.breached || !run.done) return null;
     return arena.redZones.find((z) => z.name === trace.zone || z.id === trace.zone)?.id ?? arena.redZones[0]?.id ?? null;
@@ -1775,7 +1778,7 @@ export default function Arena3D({
 
         {trace && <Line points={path.map((p) => to3(p, 0.15))} color="#5b6375" lineWidth={1.2} dashed dashSize={1} gapSize={1} />}
         {run.driven.length > 1 && <Line points={run.driven.map((p) => to3(p, 0.2))} color={breachAt ? new THREE.Color(2.6, 0.3, 0.3) : new THREE.Color(1.5, 1.05, 0.15)} lineWidth={3} toneMapped={false} />}
-        <ActiveRobot path={path} trace={trace} runKey={runKey} robotId={robotId ?? 1} color={robotColor(robotId ?? 1)} say={say} quiet={showcase} onMove={onMove} />
+        <ActiveRobot path={path} trace={trace} runKey={runKey} {...activeLook} say={say} quiet={showcase} onMove={onMove} />
         {gap && (
           <group key={`gap-${runKey}`}>
             <Line points={[to3(gap.from, 0.35), to3(gap.to, 0.35)]} color={new THREE.Color(3, 0.5, 0.5)} lineWidth={2.5} dashed dashSize={0.8} gapSize={0.6} toneMapped={false} />

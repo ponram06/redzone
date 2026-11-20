@@ -88,6 +88,10 @@ export function parseBountyMemo(memo: string, robotId: number): { prizeUqor: big
 }
 
 /** Smallest prize per win the vault accepts (EscrowVaultV4.MIN_PRIZE, 0.1 QOR). */
+/** Robot bodies an owner can choose (same ids as web/src/robotLook.ts; never rename one). */
+export const ROBOT_KINDS = ["hauler", "dog", "waiter", "guard", "courier", "titan"];
+export type RobotLook = { kind: string; color: string };
+
 export const MIN_PRIZE_UQOR = 100_000n;
 /** Memo of a QoreX payment for extra tries (paid to the relayer, which buys them on chain). */
 export const TRIES_MEMO = "RedZone tries";
@@ -987,9 +991,18 @@ export class Game {
     return { robotId, rounds, totalRounds: mine.length, breaches: mine.filter((r) => r.breached).length, paidWei: paidWei.toString(), profile: this.d.store.getProfile(robotId) };
   }
 
-  /** What the owner signs to set the robot's public job description. */
-  private profileText(robotId: number, owner: Address, job: string, deadline: number) {
-    return `RedZone robot profile\nrobot: ${robotId}\nowner: ${owner.toLowerCase()}\njob: ${job}\ndeadline: ${deadline}`;
+  /** What the owner signs to set the robot's public profile (job, and its look when chosen). */
+  private profileText(robotId: number, owner: Address, job: string, deadline: number, look: RobotLook | null) {
+    const lookLines = look ? `\nbody: ${look.kind}\ncolor: ${look.color}` : "";
+    return `RedZone robot profile\nrobot: ${robotId}\nowner: ${owner.toLowerCase()}\njob: ${job}${lookLines}\ndeadline: ${deadline}`;
+  }
+
+  /** The robot's body and colour: both or neither (older clients send neither). */
+  private cleanLook(kind: unknown, color: unknown): RobotLook | null {
+    if ((kind === undefined || kind === "") && (color === undefined || color === "")) return null;
+    if (typeof kind !== "string" || !ROBOT_KINDS.includes(kind)) throw new GameError(400, `body must be one of: ${ROBOT_KINDS.join(", ")}`);
+    if (typeof color !== "string" || !/^#[0-9a-f]{6}$/i.test(color)) throw new GameError(400, "color must look like #36c5ff");
+    return { kind, color: color.toLowerCase() };
   }
 
   private cleanJob(raw: unknown): string {
@@ -999,24 +1012,26 @@ export class Game {
     return job;
   }
 
-  async profileRequest(input: { robotId: unknown; owner: unknown; job: unknown }) {
+  async profileRequest(input: { robotId: unknown; owner: unknown; job: unknown; kind?: unknown; color?: unknown }) {
     const robotId = Number(input.robotId);
     if (!Number.isSafeInteger(robotId) || robotId < 1) throw new GameError(400, "bad robot id");
     const job = this.cleanJob(input.job);
+    const look = this.cleanLook(input.kind, input.color);
     const owner = toEvmAddress(input.owner);
     if (!owner) throw new GameError(400, "bad owner address");
     const robot = await this.d.chain.readRobot(robotId);
     if (!robot) throw new GameError(404, "robot not found");
     if (robot.owner.toLowerCase() !== owner.toLowerCase()) throw new GameError(403, "only the robot's owner can describe it");
     const deadline = this.now() + REQUEST_TTL;
-    return { robotId, owner, job, deadline, text: this.profileText(robotId, owner, job, deadline) };
+    return { robotId, owner, job, ...look, deadline, text: this.profileText(robotId, owner, job, deadline, look) };
   }
 
   /** Save a QoreX-signed job description (off chain: it is a label, not part of the game). */
-  async saveProfile(input: { robotId?: unknown; owner?: unknown; job?: unknown; deadline?: unknown; pqSignature?: unknown }) {
+  async saveProfile(input: { robotId?: unknown; owner?: unknown; job?: unknown; kind?: unknown; color?: unknown; deadline?: unknown; pqSignature?: unknown }) {
     const robotId = Number(input.robotId);
     if (!Number.isSafeInteger(robotId) || robotId < 1) throw new GameError(400, "bad robot id");
     const job = this.cleanJob(input.job);
+    const look = this.cleanLook(input.kind, input.color);
     const deadline = this.checkDeadline(input.deadline);
     const sig = decodePqSignature(input.pqSignature);
     if (!sig) throw new GameError(400, "pqSignature missing or malformed");
@@ -1026,10 +1041,10 @@ export class Game {
     if (!robot) throw new GameError(404, "robot not found");
     if (robot.owner.toLowerCase() !== owner.toLowerCase()) throw new GameError(403, "only the robot's owner can describe it");
     const key = await this.d.chain.readPqcKey(owner);
-    if (!key.registered || !verifyWalletSignature(key.pubkey, this.profileText(robotId, owner, job, deadline), sig)) {
+    if (!key.registered || !verifyWalletSignature(key.pubkey, this.profileText(robotId, owner, job, deadline, look), sig)) {
       throw new GameError(401, "signature does not match this request");
     }
-    const profile = { job, owner: owner.toLowerCase(), updatedAt: this.now() };
+    const profile = { job, ...look, owner: owner.toLowerCase(), updatedAt: this.now() };
     this.d.store.saveProfile(robotId, profile);
     return profile;
   }

@@ -923,3 +923,37 @@ describe("QoreX players and the relayer", () => {
     });
   });
 });
+
+describe("robot profile: job, body and colour", () => {
+  const ask = (q: string) => app.inject({ url: `/owner/profile/request?robotId=2&owner=${player.address}&${q}` });
+
+  it("the owner signs the job with the body and colour, and /robots shows the look", async () => {
+    const req = (await ask("job=Room%20service%20in%20a%20hotel&kind=waiter&color=%23FF7AB6")).json();
+    expect(req.text).toContain("body: waiter\ncolor: #ff7ab6");
+    const res = await app.inject({
+      method: "POST",
+      url: "/owner/profile",
+      payload: { robotId: 2, owner: player.address, job: req.job, kind: "waiter", color: "#ff7ab6", deadline: req.deadline, pqSignature: qorexSign(playerPq.secretKey, req.text) },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ kind: "waiter", color: "#ff7ab6" });
+  });
+
+  it("a signature for one look can't save another", async () => {
+    const req = (await ask("job=Inspection%20rounds&kind=dog&color=%2336c5ff")).json();
+    const res = await app.inject({
+      method: "POST",
+      url: "/owner/profile",
+      payload: { robotId: 2, owner: player.address, job: req.job, kind: "titan", color: "#36c5ff", deadline: req.deadline, pqSignature: qorexSign(playerPq.secretKey, req.text) },
+    });
+    expect(res.statusCode).toBe(401);
+  });
+
+  it("refuses unknown bodies and bad colours; a job without a look still works", async () => {
+    expect((await ask("job=Something&kind=tank&color=%2336c5ff")).statusCode).toBe(400);
+    expect((await ask("job=Something&kind=dog&color=blue")).statusCode).toBe(400);
+    expect((await ask("job=Something&kind=dog")).statusCode).toBe(400);
+    const plain = (await ask("job=Something")).json();
+    expect(plain.text).not.toContain("body:");
+  });
+});

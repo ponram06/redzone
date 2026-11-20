@@ -1,14 +1,14 @@
 import { formatQor, nextPrizeWei, type Robot } from "../api";
 import { TIER_TEXT, safetyScore } from "../data";
 import { RobotIcon } from "./RobotIcon";
-import { robotHue } from "./RobotPicker";
+import { lookOf } from "../robotLook";
 
 /** A robot at a glance: name, badge, safety score, attacks blocked, bounty. */
 export function RobotCard({ robot, href, active, onClick }: { robot: Robot; href?: string; active?: boolean; onClick?: () => void }) {
   const body = (
     <>
       <div className="card-top">
-        <RobotIcon id={robot.id} color={robotHue(robot.id)} size={44} className="card-robot" />
+        <RobotIcon {...lookOf(robot)} size={44} className="card-robot" />
         <div>
           <div className="card-name">{robot.name}</div>
           <span className={`badge tier-${robot.tier.toLowerCase()}`}>{TIER_TEXT[robot.tier] ?? robot.tier}</span>

@@ -6,7 +6,8 @@ import { canonicalJson, hashJson } from "./canonical.js";
 
 const HASH = /^0x[0-9a-f]{64}$/;
 
-export type RobotProfile = { job: string; updatedAt: number; owner: string };
+/** kind and color: the body and colour players see (web/src/robotLook.ts); optional for older profiles. */
+export type RobotProfile = { job: string; updatedAt: number; owner: string; kind?: string; color?: string };
 
 export class Store {
   private readonly replays: string;

@@ -2,9 +2,9 @@ import { useEffect, useState } from "react";
 import { formatQor, nextPrizeWei, type Robot, type RobotRecord } from "../api";
 import { TIER_TEXT, safetyScore } from "../data";
 import { PlayerTag } from "../players";
-import { ago, brainText, loadRecord, robotHue } from "./RobotPicker";
+import { ago, brainText, loadRecord } from "./RobotPicker";
 import { RobotIcon } from "./RobotIcon";
-import { KIND_LABEL, robotKind } from "./arena3d/RobotKinds";
+import { KIND_LABEL, lookOf } from "../robotLook";
 
 /** The rule-based robot's known weak spot: a straight drive that crosses the reactor. */
 export const DEMO_PROMPT = "Move 80 units east";
@@ -95,7 +95,8 @@ export function RobotSpotlight({
     return () => window.removeEventListener("keydown", key);
   });
 
-  const hue = robotHue(robot.id);
+  const look = lookOf(robot);
+  const hue = look.color;
   // The bounty that pays the most to the next winner decides the headline.
   const eff = (b: Robot["bounty"]["open"][number]) => (BigInt(b.prizeWei) < BigInt(b.amountWei) ? BigInt(b.prizeWei) : BigInt(b.amountWei));
   // on a tie, the pool that pays every new winner is the one a newcomer can actually win
@@ -145,14 +146,14 @@ export function RobotSpotlight({
               <span className="spot-ring r2" />
               <span className="spot-scan" />
               <span className="spot-bot">
-                <RobotIcon id={robot.id} color={hue} size={120} />
+                <RobotIcon {...look} size={120} />
               </span>
               <span className="spot-pad" />
             </div>
             <h2 className="spot-name">{robot.name}</h2>
             <div className="spot-tags">
               <span className="muted">Robot #{robot.id}</span>
-              <span className="spot-kind">{KIND_LABEL[robotKind(robot.id)]}</span>
+              <span className="spot-kind">{KIND_LABEL[look.kind]}</span>
               <span className={`badge tier-${robot.tier.toLowerCase()}`}>{TIER_TEXT[robot.tier] ?? robot.tier}</span>
             </div>
             <div className="spot-diff">

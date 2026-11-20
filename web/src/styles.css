@@ -6146,3 +6146,102 @@ a.ptag:hover .ptag-name {
     height: 96px;
   }
 }
+
+/* ---------- robot type, colour and job (Build a robot) ---------- */
+
+.look-grid {
+  display: grid;
+  grid-template-columns: 180px 1fr;
+  gap: 18px;
+  margin-top: 12px;
+}
+
+.look-preview {
+  align-self: start;
+  display: grid;
+  justify-items: center;
+  align-content: start;
+  gap: 6px;
+  padding: 16px 10px;
+  border-radius: 14px;
+  text-align: center;
+  background: radial-gradient(120px 90px at 50% 35%, color-mix(in srgb, var(--c) 25%, transparent), transparent 75%), rgba(255, 255, 255, 0.03);
+  border: 1px solid color-mix(in srgb, var(--c) 40%, transparent);
+}
+
+.look-preview .robot-icon {
+  animation: spot-float 3.2s ease-in-out infinite;
+  filter: drop-shadow(0 6px 14px color-mix(in srgb, var(--c) 45%, transparent));
+}
+
+.look-preview span {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.look-fields {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.look-kinds {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 8px;
+}
+
+.look-kind {
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  padding: 10px 6px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, transform 0.15s;
+}
+
+.look-kind:hover {
+  transform: translateY(-1px);
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+.look-kind.on {
+  border-color: var(--accent);
+  background: rgba(255, 59, 59, 0.08);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.look-colors {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.look-color {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 2px solid rgba(0, 0, 0, 0.4);
+  cursor: pointer;
+  transition: transform 0.15s;
+}
+
+.look-color:hover {
+  transform: scale(1.1);
+}
+
+.look-color.on {
+  box-shadow: 0 0 0 3px var(--bg, #0a0b0f), 0 0 0 5px #fff;
+}
+
+@media (max-width: 600px) {
+  .look-grid {
+    grid-template-columns: 1fr;
+  }
+}

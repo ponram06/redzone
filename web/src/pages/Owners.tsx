@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { useAccount } from "../account";
-import { api, poolMemo, type OwnerBounty, type PoolTerms } from "../api";
+import { api, poolMemo, type OwnerBounty, type PoolTerms, type Robot } from "../api";
+import { RobotIcon } from "../components/RobotIcon";
+import { ROBOT_COLORS, ROBOT_KINDS, lookOf, type RobotKind } from "../robotLook";
 import { AccountGate } from "../components/AccountGate";
 import { RobotCard } from "../components/RobotCard";
 import { useData } from "../data";
@@ -172,7 +174,7 @@ export function Owners() {
               <div key={r.id} className="stack">
                 <RobotCard robot={r} href={`#/robots/${r.id}`} />
                 <RobotPrize robotId={r.id} hasPrize={r.bounty.totalWei !== "0"} bounties={bounties} onChange={refreshMine} />
-                <RobotJob robotId={r.id} current={r.job ?? ""} onDone={reloadRobots} />
+                <RobotJob robot={r} onDone={reloadRobots} />
                 <ChangeBrain robotId={r.id} current={r.brainHash} saveBrain={saveBrain} onDone={reloadRobots} />
               </div>
             ))}
@@ -186,40 +188,104 @@ export function Owners() {
 
 
 /** The robot's public job: players see it when they hover the robot. Signed in QoreX, stored off chain. */
-function RobotJob({ robotId, current, onDone }: { robotId: number; current: string; onDone: () => Promise<void> | void }) {
+/**
+ * What the robot is and does, shown to players: its type (which sets its body in the arena),
+ * its colour and a one-line job. One QoreX approval saves all three.
+ */
+function RobotJob({ robot, onDone }: { robot: Robot; onDone: () => Promise<void> | void }) {
+  const start = lookOf(robot);
+  const current = robot.job ?? "";
   const [job, setJob] = useState(current);
+  const [kind, setKind] = useState<RobotKind>(start.kind);
+  const [color, setColor] = useState(start.color);
   const [saved, setSaved] = useState(false);
   const { busy, setBusy, error, run } = useSigned();
+  const changed = job.trim() !== current || kind !== start.kind || color !== start.color || !robot.look;
   const save = () =>
     run(async (address) => {
-      const req = await api.profileRequest(robotId, address, job.trim());
+      const req = await api.profileRequest(robot.id, address, job.trim(), kind, color);
       const pqSignature = await signPq(address, req.text);
       setBusy("Saving…");
-      await api.saveProfile({ robotId, owner: address, job: req.job, deadline: req.deadline, pqSignature });
+      await api.saveProfile({ robotId: robot.id, owner: address, job: req.job, kind, color, deadline: req.deadline, pqSignature });
       setSaved(true);
       await onDone();
     });
+  const edit = () => setSaved(false);
+  const kindInfo = ROBOT_KINDS.find((k) => k.id === kind)!;
   return (
-    <details className="advanced" open={!current}>
-      <summary>{current ? "What it does (shown to players)" : "Tell players what this robot does"}</summary>
-      <textarea
-        aria-label="What your robot does"
-        value={job}
-        maxLength={280}
-        placeholder="e.g. Warehouse robot that moves boxes between storage and the loading bay."
-        onChange={(e) => {
-          setJob(e.target.value);
-          setSaved(false);
-        }}
-      />
-      <div className="row">
-        <button className="btn small" disabled={!!busy || job.trim().length < 3 || job.trim() === current} onClick={save}>
-          Save
-        </button>
-        {saved && <span className="note">Saved ✓</span>}
+    <details className="advanced look-editor" open={!current || !robot.look}>
+      <summary>{current ? "Type, colour and job (shown to players)" : "Tell players what this robot is and does"}</summary>
+
+      <div className="look-grid">
+        <div className="look-preview" style={{ ["--c" as string]: color }}>
+          <RobotIcon kind={kind} color={color} size={110} />
+          <b>{robot.name}</b>
+          <span>{kindInfo.label}</span>
+        </div>
+
+        <div className="look-fields">
+          <span className="record-label">What kind of robot is it?</span>
+          <div className="look-kinds" role="radiogroup" aria-label="Robot type">
+            {ROBOT_KINDS.map((k) => (
+              <button
+                key={k.id}
+                type="button"
+                role="radio"
+                aria-checked={kind === k.id}
+                className={`look-kind ${kind === k.id ? "on" : ""}`}
+                onClick={() => {
+                  setKind(k.id);
+                  edit();
+                }}
+                title={k.hint}
+              >
+                <RobotIcon kind={k.id} color={kind === k.id ? color : "#8d95a8"} size={40} />
+                <span>{k.label}</span>
+              </button>
+            ))}
+          </div>
+          <p className="note">{kindInfo.hint}. This is the body players see in the 3D arena.</p>
+
+          <span className="record-label">Colour</span>
+          <div className="look-colors" role="radiogroup" aria-label="Robot colour">
+            {ROBOT_COLORS.map((c) => (
+              <button
+                key={c}
+                type="button"
+                role="radio"
+                aria-checked={color === c}
+                aria-label={c}
+                className={`look-color ${color === c ? "on" : ""}`}
+                style={{ background: c }}
+                onClick={() => {
+                  setColor(c);
+                  edit();
+                }}
+              />
+            ))}
+          </div>
+
+          <span className="record-label">Its job</span>
+          <textarea
+            aria-label="What your robot does"
+            value={job}
+            maxLength={280}
+            placeholder={`e.g. ${kindInfo.hint}.`}
+            onChange={(e) => {
+              setJob(e.target.value);
+              edit();
+            }}
+          />
+          <div className="row">
+            <button className="btn small" disabled={!!busy || job.trim().length < 3 || !changed} onClick={save}>
+              Save (one QoreX approval)
+            </button>
+            {saved && <span className="note">Saved ✓</span>}
+          </div>
+          {busy && <p className="note">{busy}</p>}
+          {error && <p className="error-text">{error}</p>}
+        </div>
       </div>
-      {busy && <p className="note">{busy}</p>}
-      {error && <p className="error-text">{error}</p>}
     </details>
   );
 }

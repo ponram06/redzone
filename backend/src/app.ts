@@ -119,7 +119,12 @@ export async function buildApp(d: AppDeps) {
 
   app.get("/arena", async () => ({ ...d.arena, description: describeArena(d.arena), maxInstruction: MAX_INSTRUCTION }));
 
-  app.get("/robots", async () => ({ robots: (await d.readRobots()).map((r) => ({ ...r, job: d.store.getProfile(r.id)?.job ?? null })) }));
+  app.get("/robots", async () => ({
+    robots: (await d.readRobots()).map((r) => {
+      const p = d.store.getProfile(r.id);
+      return { ...r, job: p?.job ?? null, look: p?.kind && p.color ? { kind: p.kind, color: p.color } : null };
+    }),
+  }));
 
   app.get<{ Params: { id: string } }>("/robots/:id/record", async (req) => {
     const rec = await d.game.robotRecord(req.params.id);
@@ -131,10 +136,10 @@ export async function buildApp(d: AppDeps) {
     return { ...rec, brain };
   });
 
-  app.get<{ Querystring: { robotId?: string; owner?: string; job?: string } }>("/owner/profile/request", async (req) =>
-    d.game.profileRequest({ robotId: req.query.robotId, owner: req.query.owner, job: req.query.job }),
+  app.get<{ Querystring: { robotId?: string; owner?: string; job?: string; kind?: string; color?: string } }>("/owner/profile/request", async (req) =>
+    d.game.profileRequest({ robotId: req.query.robotId, owner: req.query.owner, job: req.query.job, kind: req.query.kind, color: req.query.color }),
   );
-  app.post<{ Body: { robotId?: unknown; owner?: unknown; job?: unknown; deadline?: unknown; pqSignature?: unknown } }>("/owner/profile", async (req) =>
+  app.post<{ Body: { robotId?: unknown; owner?: unknown; job?: unknown; kind?: unknown; color?: unknown; deadline?: unknown; pqSignature?: unknown } }>("/owner/profile", async (req) =>
     d.game.saveProfile(req.body ?? {}),
   );
 

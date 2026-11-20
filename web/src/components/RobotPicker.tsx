@@ -4,6 +4,7 @@ import { api, formatQor, nextPrizeWei, type Robot, type RobotRecord } from "../a
 import { PlayerTag } from "../players";
 import { TIER_TEXT, safetyScore } from "../data";
 import { RobotIcon } from "./RobotIcon";
+import { lookOf } from "../robotLook";
 
 const records = new Map<number, Promise<RobotRecord>>();
 /** One fetch per robot per page visit; the picker shows it on hover. */
@@ -175,8 +176,8 @@ export function RobotPicker({
                 setHover(null);
                 onChoose(r.id, e.currentTarget.getBoundingClientRect());
               }}>
-              <span className="pick-avatar" style={{ ["--c" as string]: robotHue(r.id) }} aria-hidden="true">
-                <RobotIcon id={r.id} color={robotHue(r.id)} size={44} />
+              <span className="pick-avatar" style={{ ["--c" as string]: lookOf(r).color }} aria-hidden="true">
+                <RobotIcon {...lookOf(r)} size={44} />
               </span>
               <span className="pick-name">{r.name}</span>
               <span className={`badge tier-${r.tier.toLowerCase()}`}>{TIER_TEXT[r.tier] ?? r.tier}</span>
