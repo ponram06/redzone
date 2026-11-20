@@ -6,7 +6,7 @@ import { TIER_TEXT, safetyScore } from "../data";
 
 const records = new Map<number, Promise<RobotRecord>>();
 /** One fetch per robot per page visit; the picker shows it on hover. */
-function loadRecord(id: number): Promise<RobotRecord> {
+export function loadRecord(id: number): Promise<RobotRecord> {
   let p = records.get(id);
   if (!p) {
     p = api.robotRecord(id);
@@ -16,7 +16,7 @@ function loadRecord(id: number): Promise<RobotRecord> {
   return p;
 }
 
-function ago(at: number | null): string {
+export function ago(at: number | null): string {
   if (!at) return "";
   const s = Math.max(0, Math.floor(Date.now() / 1000) - at);
   if (s < 3600) return `${Math.max(1, Math.round(s / 60))} min ago`;
@@ -25,7 +25,7 @@ function ago(at: number | null): string {
 }
 
 
-function brainText(b: RobotRecord["brain"]): string {
+export function brainText(b: RobotRecord["brain"]): string {
   if (!b) return "Unknown";
   if (b.kind !== "llm") return "Rule-based guard (no AI)";
   const m = (b.models?.[0] ?? "AI model").split("/").pop()!.replace(/:free$/, "");
@@ -114,8 +114,22 @@ export function RobotRecordCard({ robot }: { robot: Robot }) {
   );
 }
 
-/** Pick an opponent. Hover (or focus) a robot to see its record; click to select it. */
-export function RobotPicker({ robots, chosen, onChoose }: { robots: Robot[]; chosen?: number; onChoose: (id: number) => void }) {
+/**
+ * Pick an opponent. Hover (or focus) a robot to see its record; click to select it.
+ * `phase`: "out" flies the other cards away (the chosen one is about to take centre stage),
+ * "in" brings the line-up back.
+ */
+export function RobotPicker({
+  robots,
+  chosen,
+  onChoose,
+  phase = "",
+}: {
+  robots: Robot[];
+  chosen?: number;
+  onChoose: (id: number, card: DOMRect) => void;
+  phase?: "" | "out" | "in";
+}) {
   const [hover, setHover] = useState<{ id: number; left: number; top: number } | null>(null);
   const timer = useRef(0);
   // Fixed to the window beside the card (right of it, or left when there's no room), kept on screen.
@@ -142,20 +156,24 @@ export function RobotPicker({ robots, chosen, onChoose }: { robots: Robot[]; cho
   };
 
   return (
-    <div className="picker">
-      {robots.map((r) => {
+    <div className={`picker ${phase}`}>
+      {robots.map((r, i) => {
         const perWin = r.bounty.totalWei !== "0" ? formatQor(nextPrizeWei(r).toString()) : null;
         const open = hover?.id === r.id;
         return (
           <div
             key={r.id}
             className={`pick ${chosen === r.id ? "on" : ""}`}
-            onMouseEnter={(e) => show(r.id, e.currentTarget)}
+            style={{ ["--i" as string]: i }}
+            onMouseEnter={(e) => !phase && show(r.id, e.currentTarget)}
             onMouseLeave={hide}
-            onFocus={(e) => show(r.id, e.currentTarget)}
+            onFocus={(e) => !phase && show(r.id, e.currentTarget)}
             onBlur={hide}
           >
-            <button className="pick-card" aria-pressed={chosen === r.id} onClick={() => onChoose(r.id)}>
+            <button className="pick-card" aria-pressed={chosen === r.id} onClick={(e) => {
+                setHover(null);
+                onChoose(r.id, e.currentTarget.getBoundingClientRect());
+              }}>
               <span className="pick-avatar" style={{ ["--c" as string]: robotHue(r.id) }} aria-hidden="true">
                 🤖
               </span>

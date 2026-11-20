@@ -1,8 +1,9 @@
-import { useState } from "react";
-import { formatQor, nextPrizeWei } from "../api";
+import { useEffect, useRef, useState } from "react";
+import { formatQor } from "../api";
 import { AccountGate } from "../components/AccountGate";
 import { GameView } from "../components/GameView";
 import { RobotPicker } from "../components/RobotPicker";
+import { RobotSpotlight, type Rect } from "../components/RobotSpotlight";
 import { isListed, useData } from "../data";
 
 /** Start → sign in → choose a robot → the arena opens full size with the message box at the bottom. */
@@ -56,24 +57,65 @@ function Choose({ robotId }: { robotId?: number }) {
   // Robots with a bounty, plus robots that have been played. Bounty robots first.
   const robots = all.filter(isListed).sort((a, b) => Number(b.bounty.totalWei !== "0") - Number(a.bounty.totalWei !== "0"));
   const [chosen, setChosen] = useState<number | undefined>(robotId);
+  // grid → (click) out → spot → (back) leaving → in → grid
+  const [phase, setPhase] = useState<"grid" | "out" | "spot" | "leaving" | "in">(robotId !== undefined ? "spot" : "grid");
+  const [from, setFrom] = useState<Rect | null>(null);
   const [inArena, setInArena] = useState(false);
   const robot = robots.find((r) => r.id === chosen);
+  const timer = useRef(0);
+  useEffect(() => () => window.clearTimeout(timer.current), []);
+  const later = (ms: number, fn: () => void) => {
+    window.clearTimeout(timer.current);
+    timer.current = window.setTimeout(fn, ms);
+  };
+  const reduced = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-  const choose = (id: number) => {
+  const choose = (id: number, card: DOMRect) => {
+    setChosen(id);
+    setFrom({ left: card.left, top: card.top, width: card.width, height: card.height });
+    history.replaceState(null, "", `#/play/${id}`);
+    setPhase("out");
+    later(reduced() ? 0 : 380, () => {
+      setPhase("spot");
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    });
+  };
+  const switchTo = (id: number) => {
     setChosen(id);
     history.replaceState(null, "", `#/play/${id}`);
+  };
+  const back = () => {
+    setPhase("leaving");
+    later(reduced() ? 0 : 260, () => {
+      setPhase("in");
+      history.replaceState(null, "", "#/play");
+      later(900, () => setPhase("grid"));
+    });
   };
 
   if (inArena && robot && arena && health) {
     return <GameView arena={arena} health={health} robot={robot} all={all} onBack={() => setInArena(false)} onFinished={reloadRobots} />;
   }
 
-  const perWin = robot && robot.bounty.totalWei !== "0" ? formatQor(nextPrizeWei(robot).toString()) : null;
+  if ((phase === "spot" || phase === "leaving") && robot) {
+    return (
+      <RobotSpotlight
+        robots={robots}
+        robot={robot}
+        from={from}
+        leaving={phase === "leaving"}
+        canEnter={!!arena && !!health}
+        onSwitch={switchTo}
+        onBack={back}
+        onEnter={() => setInArena(true)}
+      />
+    );
+  }
 
   return (
     <>
       <h1 className="page-title">Choose your opponent</h1>
-      <p className="lead">Hover over a robot to see its record: what it's used for, who attacked it, and what it pays.</p>
+      <p className="lead">Hover over a robot for a quick look, or click it to see its full record and enter the arena.</p>
 
       {!robotsLoaded && <p className="note">Loading robots…</p>}
       {robotsLoaded && robots.length === 0 && (
@@ -86,23 +128,7 @@ function Choose({ robotId }: { robotId?: number }) {
           )}
         </div>
       )}
-      <RobotPicker robots={robots} chosen={chosen} onChoose={choose} />
-
-      <div className={`confirm-bar ${robot ? "show" : ""}`} aria-live="polite">
-        {robot ? (
-          <>
-            <div>
-              <strong>{robot.name}</strong>
-              <span className="muted">{perWin ? ` · win ${perWin}` : " · no bounty left"}</span>
-            </div>
-            <button className="btn primary" onClick={() => setInArena(true)} disabled={!arena || !health}>
-              Enter the arena →
-            </button>
-          </>
-        ) : (
-          <span className="muted">Pick a robot to continue</span>
-        )}
-      </div>
+      <RobotPicker robots={robots} chosen={chosen} onChoose={choose} phase={phase === "out" ? "out" : phase === "in" ? "in" : ""} />
     </>
   );
 }

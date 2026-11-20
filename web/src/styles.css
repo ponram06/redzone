@@ -5276,3 +5276,677 @@ a.ptag:hover .ptag-name {
     animation: none;
   }
 }
+
+/* ---------- robot line-up: fly out / fly back in ---------- */
+
+.picker.out .pick {
+  pointer-events: none;
+  animation: pick-out 0.36s cubic-bezier(0.5, 0, 0.75, 0) both;
+  animation-delay: calc(var(--i) * 35ms);
+}
+
+.picker.out .pick.on {
+  animation: pick-lift 0.36s ease-out both;
+}
+
+.picker.in .pick {
+  animation: pick-in 0.5s cubic-bezier(0.2, 0.85, 0.25, 1) both;
+  animation-delay: calc(var(--i) * 70ms);
+}
+
+@keyframes pick-out {
+  to {
+    opacity: 0;
+    transform: translateY(40px) scale(0.86) rotate(-2deg);
+    filter: blur(4px);
+  }
+}
+
+@keyframes pick-lift {
+  to {
+    transform: scale(1.04);
+    opacity: 0.9;
+  }
+}
+
+@keyframes pick-in {
+  from {
+    opacity: 0;
+    transform: translateY(34px) scale(0.9);
+    filter: blur(4px);
+  }
+}
+
+/* ---------- robot spotlight ---------- */
+
+.spot {
+  --c: #ff3b3b;
+  max-width: 1180px;
+  margin: 0 auto 60px;
+  animation: page-in 0.3s both;
+}
+
+.spot.leaving {
+  animation: spot-leave 0.26s ease-in both;
+}
+
+@keyframes spot-leave {
+  to {
+    opacity: 0;
+    transform: scale(0.95) translateY(16px);
+    filter: blur(3px);
+  }
+}
+
+@keyframes spot-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.spot-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.spot-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 16px 0 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.04);
+  color: #eef0f5;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, transform 0.15s;
+}
+
+.spot-back:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.25);
+  transform: translateX(-2px);
+}
+
+.spot-nav {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--mono);
+  font-size: 13px;
+  color: #8d95a8;
+}
+
+.spot-nav button {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.04);
+  color: #eef0f5;
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.spot-nav button:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--c) 70%, transparent);
+  background: color-mix(in srgb, var(--c) 14%, transparent);
+}
+
+.spot-nav button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.spot-panel {
+  position: relative;
+  overflow: hidden;
+  border-radius: 22px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  background:
+    radial-gradient(700px 420px at 18% 30%, color-mix(in srgb, var(--c) 16%, transparent), transparent 70%),
+    linear-gradient(180deg, rgba(20, 22, 30, 0.96), rgba(11, 12, 17, 0.96));
+  box-shadow: 0 40px 90px -30px rgba(0, 0, 0, 0.9), 0 0 0 1px rgba(0, 0, 0, 0.4);
+}
+
+.spot-body {
+  display: grid;
+  grid-template-columns: minmax(280px, 400px) 1fr;
+}
+
+.spot-body.next {
+  animation: spot-from-right 0.4s cubic-bezier(0.2, 0.85, 0.25, 1) both;
+}
+
+.spot-body.prev {
+  animation: spot-from-left 0.4s cubic-bezier(0.2, 0.85, 0.25, 1) both;
+}
+
+@keyframes spot-from-right {
+  from {
+    opacity: 0;
+    transform: translateX(50px);
+  }
+}
+
+@keyframes spot-from-left {
+  from {
+    opacity: 0;
+    transform: translateX(-50px);
+  }
+}
+
+/* left: the robot on its pad */
+.spot-bay {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 12px;
+  padding: 34px 28px 30px;
+  border-right: 1px solid rgba(255, 255, 255, 0.06);
+  background:
+    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.025) 0 1px, transparent 1px 22px),
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.025) 0 1px, transparent 1px 22px);
+}
+
+.spot-holo {
+  position: relative;
+  width: 220px;
+  height: 220px;
+  display: grid;
+  place-items: center;
+  margin-bottom: 4px;
+}
+
+.spot-ring {
+  position: absolute;
+  border-radius: 50%;
+  border: 2px dashed color-mix(in srgb, var(--c) 70%, transparent);
+}
+
+.spot-ring.r1 {
+  inset: 8px;
+  animation: spot-spin 18s linear infinite;
+}
+
+.spot-ring.r2 {
+  inset: 34px;
+  border-style: solid;
+  border-color: color-mix(in srgb, var(--c) 30%, transparent);
+  border-top-color: var(--c);
+  animation: spot-spin 3.5s linear infinite reverse;
+}
+
+.spot-scan {
+  position: absolute;
+  inset: 34px;
+  border-radius: 50%;
+  overflow: hidden;
+}
+
+.spot-scan::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 30%;
+  background: linear-gradient(180deg, transparent, color-mix(in srgb, var(--c) 35%, transparent), transparent);
+  animation: spot-scan 2.6s ease-in-out infinite;
+}
+
+@keyframes spot-scan {
+  0%,
+  100% {
+    transform: translateY(-100%);
+  }
+  50% {
+    transform: translateY(340%);
+  }
+}
+
+.spot-bot {
+  position: relative;
+  font-size: 84px;
+  line-height: 1;
+  filter: drop-shadow(0 0 22px color-mix(in srgb, var(--c) 70%, transparent));
+  animation: spot-float 3.2s ease-in-out infinite;
+}
+
+@keyframes spot-float {
+  50% {
+    transform: translateY(-8px);
+  }
+}
+
+.spot-pad {
+  position: absolute;
+  bottom: 6px;
+  width: 150px;
+  height: 22px;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, color-mix(in srgb, var(--c) 60%, transparent), transparent);
+  animation: spot-pad 3.2s ease-in-out infinite;
+}
+
+@keyframes spot-pad {
+  50% {
+    transform: scaleX(0.82);
+    opacity: 0.6;
+  }
+}
+
+.spot-name {
+  margin: 0;
+  font-family: var(--display);
+  font-size: clamp(30px, 4vw, 42px);
+  letter-spacing: -0.02em;
+  line-height: 1;
+}
+
+.spot-tags {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--mono);
+  font-size: 13px;
+}
+
+.spot-diff,
+.spot-brain {
+  width: 100%;
+  display: grid;
+  gap: 6px;
+  justify-items: center;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.spot-meter {
+  display: flex;
+  gap: 5px;
+}
+
+.spot-meter i {
+  width: 30px;
+  height: 8px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.spot-meter i.on {
+  background: linear-gradient(90deg, #ffb020, #ff3b3b);
+  box-shadow: 0 0 10px -2px rgba(255, 80, 40, 0.8);
+  animation: spot-grow 0.4s both;
+}
+
+@keyframes spot-grow {
+  from {
+    transform: scaleX(0);
+    opacity: 0;
+  }
+}
+
+.spot-diff-text,
+.spot-brain > span:last-child {
+  font-size: 14px;
+  color: #dfe4ee;
+}
+
+/* right: the record */
+.spot-info {
+  display: grid;
+  align-content: start;
+  gap: 18px;
+  padding: 30px 32px;
+  min-width: 0;
+}
+
+.spot-info > * {
+  animation: page-in 0.45s both;
+}
+
+.spot-info > :nth-child(2) {
+  animation-delay: 60ms;
+}
+.spot-info > :nth-child(3) {
+  animation-delay: 120ms;
+}
+.spot-info > :nth-child(4) {
+  animation-delay: 180ms;
+}
+.spot-info > :nth-child(5) {
+  animation-delay: 240ms;
+}
+
+.spot-job {
+  margin: 0;
+  font-size: 18px;
+  line-height: 1.5;
+  color: #e6e9f0;
+}
+
+.spot-prize {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  padding: 16px 20px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 196, 64, 0.3);
+  background: linear-gradient(100deg, rgba(255, 196, 64, 0.14), rgba(255, 196, 64, 0.03));
+  position: relative;
+  overflow: hidden;
+}
+
+.spot-prize::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -40%;
+  width: 30%;
+  background: linear-gradient(100deg, transparent, rgba(255, 220, 120, 0.18), transparent);
+  transform: skewX(-20deg);
+  animation: btn-sheen 5s ease-in-out infinite;
+  pointer-events: none;
+}
+
+.spot-prize > div:first-child {
+  display: grid;
+  gap: 2px;
+}
+
+.spot-prize > div:first-child b {
+  font-family: var(--display);
+  font-size: 34px;
+  line-height: 1;
+  color: #ffc440;
+  text-shadow: 0 0 24px rgba(255, 196, 64, 0.45);
+  white-space: nowrap;
+}
+
+.spot-prize.none {
+  border-color: rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.spot-prize.none > div:first-child b {
+  color: #8d95a8;
+  text-shadow: none;
+  font-size: 24px;
+}
+
+.spot-prize-pool {
+  display: grid;
+  gap: 4px;
+  padding-left: 20px;
+  border-left: 1px solid rgba(255, 196, 64, 0.25);
+  color: #dfe4ee;
+  font-size: 15px;
+}
+
+.spot-prize-pool b {
+  color: #ffc440;
+}
+
+.spot-prize-pool small {
+  color: #a7afc0;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.spot-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  margin: 0;
+}
+
+.spot-stats > div {
+  padding: 14px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  min-width: 0;
+}
+
+.spot-stats dt {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #8d95a8;
+}
+
+.spot-stats dd {
+  margin: 6px 0 0;
+  font-family: var(--display);
+  font-size: 26px;
+  font-weight: 700;
+  color: #f4f6fb;
+  white-space: nowrap;
+}
+
+.spot-stats dd small {
+  font-size: 14px;
+  color: #8d95a8;
+  font-weight: 500;
+}
+
+.spot-bar-fill {
+  display: block;
+  height: 4px;
+  margin-top: 8px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.spot-bar-fill i {
+  display: block;
+  height: 100%;
+  background: #3ee08f;
+  transform-origin: left;
+  animation: spot-grow 0.8s 0.2s both;
+}
+
+.spot-history ul {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.spot-history li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.025);
+  font-size: 14px;
+  animation: page-in 0.35s both;
+}
+
+.spot-history .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: none;
+}
+
+.spot-history .dot.good {
+  background: #3ee08f;
+  box-shadow: 0 0 8px #3ee08f;
+}
+
+.spot-history .dot.bad {
+  background: #ff3b3b;
+  box-shadow: 0 0 8px #ff3b3b;
+}
+
+.spot-history .good-text,
+.spot-history .bad-text {
+  font-weight: 600;
+  min-width: 70px;
+}
+
+.spot-history .good-text {
+  color: #3ee08f;
+}
+
+.spot-history .bad-text {
+  color: #ff5a5a;
+}
+
+.spot-history li > .muted {
+  margin-left: auto;
+}
+
+.spot-history .note {
+  margin: 8px 0 0;
+}
+
+.spot-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px 18px;
+  padding-top: 4px;
+}
+
+.spot-enter {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  height: 54px;
+  padding: 0 28px;
+  border: 0;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #ff4d4d, #e42424);
+  color: #fff;
+  font: inherit;
+  font-size: 17px;
+  font-weight: 700;
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 14px 34px -10px rgba(255, 59, 59, 0.95), inset 0 1px 0 rgba(255, 255, 255, 0.3);
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+
+.spot-enter::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -60%;
+  width: 40%;
+  background: linear-gradient(100deg, transparent, rgba(255, 255, 255, 0.4), transparent);
+  transform: skewX(-20deg);
+  animation: btn-sheen 3.5s ease-in-out infinite;
+}
+
+.spot-enter:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 18px 40px -10px rgba(255, 59, 59, 1), inset 0 1px 0 rgba(255, 255, 255, 0.3);
+}
+
+.spot-enter span {
+  transition: transform 0.15s;
+}
+
+.spot-enter:hover span {
+  transform: translateX(4px);
+}
+
+.spot-enter:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+
+.spot-keys {
+  font-size: 13px;
+  color: #7f889b;
+}
+
+.spot-keys kbd {
+  display: inline-grid;
+  place-items: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 5px;
+  margin: 0 2px;
+  border-radius: 5px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-bottom-width: 2px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: #c6ccd8;
+}
+
+@media (max-width: 900px) {
+  .spot-body {
+    grid-template-columns: 1fr;
+  }
+  .spot-bay {
+    border-right: 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    padding: 22px 18px;
+  }
+  .spot-holo {
+    width: 170px;
+    height: 170px;
+  }
+  .spot-bot {
+    font-size: 64px;
+  }
+  .spot-stats {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .spot-info {
+    padding: 22px 18px;
+  }
+  .spot-keys {
+    display: none;
+  }
+  .spot-enter {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
+@media (max-width: 520px) {
+  .spot-prize {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+  .spot-prize-pool {
+    padding-left: 0;
+    border-left: 0;
+  }
+  .spot-job {
+    font-size: 16px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spot-ring,
+  .spot-scan::before,
+  .spot-bot,
+  .spot-pad,
+  .spot-prize::after,
+  .spot-enter::before {
+    animation: none;
+  }
+}
