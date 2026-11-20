@@ -1,4 +1,6 @@
 import { Environment, Html, Lightformer, Line, MeshReflectorMaterial, OrbitControls, PerformanceMonitor, RoundedBox, Sparkles } from "@react-three/drei";
+import { PlantDetails } from "./PlantDetails";
+import { CourierBot, GuardBot, HaulerBot, robotKind, type RState } from "./RobotKinds";
 import { Canvas, useFrame, useThree, type ThreeElements } from "@react-three/fiber";
 import { Bloom, EffectComposer, Noise, SMAA, ToneMapping, Vignette } from "@react-three/postprocessing";
 import { ToneMappingMode } from "postprocessing";
@@ -103,64 +105,81 @@ function speckle(x: CanvasRenderingContext2D, s: number, n: number, light: strin
   }
 }
 
-/** Industrial floor plates: 2 x 2 panels per tile with seams, bolts and wear. */
+/** Polished concrete: mottled grey, saw-cut joints, oil stains and tyre marks. */
 const floorTex = () =>
   canvasTexture(
     512,
     (x, s) => {
-      x.fillStyle = "#1a1e26";
+      x.fillStyle = "#6f747b";
       x.fillRect(0, 0, s, s);
-      speckle(x, s, 9000, "rgba(255,255,255,0.035)", "rgba(0,0,0,0.25)");
-      const h = s / 2;
-      for (const [px, py] of [
-        [0, 0],
-        [h, 0],
-        [0, h],
-        [h, h],
-      ]) {
-        const g = x.createLinearGradient(px!, py!, px! + h, py! + h);
-        g.addColorStop(0, "rgba(255,255,255,0.04)");
-        g.addColorStop(1, "rgba(0,0,0,0.12)");
+      // soft mottling
+      for (let i = 0; i < 260; i++) {
+        const r = 10 + Math.random() * 60;
+        const g = x.createRadialGradient(0, 0, 0, 0, 0, r);
+        const light = Math.random() > 0.5;
+        g.addColorStop(0, light ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.07)");
+        g.addColorStop(1, "rgba(0,0,0,0)");
+        x.save();
+        x.translate(Math.random() * s, Math.random() * s);
         x.fillStyle = g;
-        x.fillRect(px! + 3, py! + 3, h - 6, h - 6);
-        x.fillStyle = "#3a4150";
-        for (const [bx, by] of [
-          [14, 14],
-          [h - 14, 14],
-          [14, h - 14],
-          [h - 14, h - 14],
-        ])
-          x.beginPath(), x.arc(px! + bx!, py! + by!, 3, 0, 7), x.fill();
+        x.fillRect(-r, -r, r * 2, r * 2);
+        x.restore();
       }
-      x.strokeStyle = "#07080b";
-      x.lineWidth = 5;
+      speckle(x, s, 14000, "rgba(255,255,255,0.06)", "rgba(0,0,0,0.12)");
+      // oil stains
+      for (let i = 0; i < 3; i++) {
+        const r = 14 + Math.random() * 26;
+        const g = x.createRadialGradient(0, 0, 0, 0, 0, r);
+        g.addColorStop(0, "rgba(20,18,15,0.32)");
+        g.addColorStop(1, "rgba(20,18,15,0)");
+        x.save();
+        x.translate(Math.random() * s, Math.random() * s);
+        x.scale(1, 0.6 + Math.random() * 0.6);
+        x.fillStyle = g;
+        x.fillRect(-r, -r, r * 2, r * 2);
+        x.restore();
+      }
+      // faint tyre marks
+      x.strokeStyle = "rgba(15,15,15,0.07)";
+      x.lineWidth = 7;
+      for (let i = 0; i < 2; i++) {
+        const y0 = Math.random() * s;
+        x.beginPath();
+        x.moveTo(0, y0);
+        x.bezierCurveTo(s * 0.3, y0 + 40, s * 0.6, y0 - 40, s, y0 + 10);
+        x.stroke();
+      }
+      // saw-cut joints
+      x.strokeStyle = "rgba(25,27,30,0.75)";
+      x.lineWidth = 2;
       x.strokeRect(0, 0, s, s);
-      x.beginPath();
-      x.moveTo(h, 0);
-      x.lineTo(h, s);
-      x.moveTo(0, h);
-      x.lineTo(s, h);
-      x.stroke();
     },
     [10, 10],
   );
 
-/** Concrete wall panels with vertical seams. */
+/** Insulated steel wall panels: light grey with vertical ribs and a dark kick strip. */
 const wallTex = () =>
   canvasTexture(
     256,
     (x, s) => {
-      x.fillStyle = "#4a5160";
+      x.fillStyle = "#a9b2bd";
       x.fillRect(0, 0, s, s);
-      speckle(x, s, 6000, "rgba(255,255,255,0.05)", "rgba(0,0,0,0.18)");
-      const g = x.createLinearGradient(0, 0, 0, s);
+      speckle(x, s, 3000, "rgba(255,255,255,0.05)", "rgba(0,0,0,0.06)");
+      for (let i = 0; i < s; i += 32) {
+        x.fillStyle = "rgba(255,255,255,0.18)";
+        x.fillRect(i + 2, 0, 3, s);
+        x.fillStyle = "rgba(0,0,0,0.16)";
+        x.fillRect(i + 5, 0, 2, s);
+      }
+      x.fillStyle = "rgba(40,45,52,0.9)";
+      x.fillRect(0, 0, 3, s);
+      const g = x.createLinearGradient(0, s * 0.6, 0, s);
       g.addColorStop(0, "rgba(0,0,0,0)");
-      g.addColorStop(1, "rgba(0,0,0,0.35)");
+      g.addColorStop(1, "rgba(0,0,0,0.25)");
       x.fillStyle = g;
-      x.fillRect(0, 0, s, s);
-      x.fillStyle = "#262b35";
-      x.fillRect(0, 0, 4, s);
-      x.fillRect(0, s * 0.82, s, 6);
+      x.fillRect(0, s * 0.6, s, s * 0.4);
+      x.fillStyle = "#3d434c";
+      x.fillRect(0, s * 0.86, s, s * 0.14);
     },
     [1, 1],
   );
@@ -215,12 +234,11 @@ function Wall({ cx, cz, w, d, h, tex }: { cx: number; cz: number; w: number; d: 
     c.needsUpdate = true;
     return c;
   }, [tex, len]);
-  const along = w >= d;
   return (
     <group position={[cx, 0, cz]}>
       <mesh position-y={h / 2} castShadow receiveShadow>
         <boxGeometry args={[w, h, d]} />
-        <meshStandardMaterial map={t} roughness={0.75} metalness={0.15} />
+        <meshStandardMaterial map={t} roughness={0.6} metalness={0.35} />
       </mesh>
       {/* steel base trim */}
       <mesh position-y={0.35}>
@@ -232,13 +250,6 @@ function Wall({ cx, cz, w, d, h, tex }: { cx: number; cz: number; w: number; d: 
         <boxGeometry args={[w + 0.35, 0.24, d + 0.35]} />
         <meshStandardMaterial color="#2c323e" metalness={0.85} roughness={0.3} />
       </mesh>
-      {/* LED strips on both faces */}
-      {[-1, 1].map((s) => (
-        <mesh key={s} position={along ? [0, h - 0.7, (s * (d + 0.06)) / 2] : [(s * (w + 0.06)) / 2, h - 0.7, 0]}>
-          <boxGeometry args={along ? [w - 0.6, 0.12, 0.04] : [0.04, 0.12, d - 0.6]} />
-          <meshBasicMaterial color={[0.4, 1.6, 2.4]} toneMapped={false} />
-        </mesh>
-      ))}
     </group>
   );
 }
@@ -249,24 +260,24 @@ const Facility = memo(function Facility({ arena, hotZone, labels, quality }: { a
 
   return (
     <group>
-      {/* floor: polished steel plates with live reflections */}
+      {/* floor: polished concrete with a soft reflection */}
       <mesh rotation-x={-Math.PI / 2} receiveShadow position-y={-0.01}>
         <planeGeometry args={[OX * 2, OZ * 2]} />
         {quality < 2 ? (
-          <meshStandardMaterial map={tex.floor} roughness={0.55} metalness={0.5} />
+          <meshStandardMaterial map={tex.floor} roughness={0.7} metalness={0.05} />
         ) : (
           <MeshReflectorMaterial
             map={tex.floor}
             blur={[300, 90]}
             resolution={512}
             mixBlur={1}
-            mixStrength={5}
+            mixStrength={1.6}
             mixContrast={1.1}
-            roughness={0.65}
+            roughness={0.75}
             depthScale={1.1}
             minDepthThreshold={0.4}
             maxDepthThreshold={1.3}
-            metalness={0.55}
+            metalness={0.05}
             mirror={0}
           />
         )}
@@ -304,6 +315,7 @@ const Facility = memo(function Facility({ arena, hotZone, labels, quality }: { a
 
       {/* painted walkway lanes and the main corridor */}
       <FloorMarkings arena={arena} />
+      <PlantDetails arena={arena} />
 
       {/* inner walls */}
       {arena.walls.map((w, i) => {
@@ -859,7 +871,6 @@ function ExitDoor() {
 
 // -------------------------------------------------------------------- robots
 
-type RState = "idle" | "moving" | "breached" | "defended";
 
 /** A tracked service robot: treads, torso with chest light, two arms, head with a scanning visor. */
 function RobotModel({ color, state, lamp = false }: { color: string; state: RState; lamp?: boolean }) {
@@ -1084,7 +1095,20 @@ function AlarmLight({ at }: { at: THREE.Vector3 }) {
 type Run = { p: Point; heading: number; done: boolean; driven: Point[] };
 type Target = { p: Point; heading: number; done: boolean };
 
-function ActiveRobot({ path, trace, runKey, color, say, quiet, onMove }: { path: Point[]; trace: Trace | null; runKey: number; color: string; say?: string; quiet?: boolean; onMove: (r: Run) => void }) {
+/** The right body for a robot: each robot has its own shape (see RobotKinds). */
+function RobotBody({ id, color, state, lamp = false }: { id: number; color: string; state: RState; lamp?: boolean }) {
+  const kind = robotKind(id);
+  if (kind === "guard") return <GuardBot color={color} state={state} lamp={lamp} />;
+  if (kind === "hauler") return <HaulerBot color={color} state={state} lamp={lamp} />;
+  if (kind === "courier") return <CourierBot color={color} state={state} lamp={lamp} />;
+  return (
+    <group scale={1.12}>
+      <RobotModel color={color} state={state} lamp={lamp} />
+    </group>
+  );
+}
+
+function ActiveRobot({ path, trace, runKey, robotId, color, say, quiet, onMove }: { path: Point[]; trace: Trace | null; runKey: number; robotId: number; color: string; say?: string; quiet?: boolean; onMove: (r: Run) => void }) {
   const g = useRef<THREE.Group>(null);
   const total = useMemo(() => pathLength(path), [path]);
   const start = useRef(0);
@@ -1125,7 +1149,7 @@ function ActiveRobot({ path, trace, runKey, color, say, quiet, onMove }: { path:
   return (
     <group ref={g}>
       <group scale={1.5}>
-        <RobotModel color={color} state={state} lamp />
+        <RobotBody id={robotId} color={color} state={state} lamp />
       </group>
       {/* glow ring under the active robot */}
       <mesh position-y={0.08} rotation-x={-Math.PI / 2}>
@@ -1175,7 +1199,7 @@ const ParkedRobots = memo(function ParkedRobots({ robots, labels }: { robots: Ro
             <meshBasicMaterial color={[2.2, 1.8, 0.2]} toneMapped={false} />
           </mesh>
           <group rotation-y={wide ? 0 : Math.PI / 2} scale={0.8}>
-            <RobotModel color={robotColor(r.id)} state="idle" />
+            <RobotBody id={r.id} color={robotColor(r.id)} state="idle" />
           </group>
           {labels && (
             <Html position={[0, 6.5, 0]} center distanceFactor={95} zIndexRange={[10, 0]}>
@@ -1205,7 +1229,7 @@ function FloorMarkings({ arena }: { arena: Arena }) {
       {[-5, 5].map((d) => (
         <mesh key={d} rotation-x={-Math.PI / 2} position={[0, 0.015, y + d - OZ]}>
           <planeGeometry args={[arena.width - 4, 0.35]} />
-          <meshStandardMaterial color="#d9a400" roughness={0.6} emissive="#3a2a00" />
+          <meshStandardMaterial color="#e6b400" roughness={0.55} />
         </mesh>
       ))}
       {dashes.map((x) => (
@@ -1223,7 +1247,7 @@ function FloorMarkings({ arena }: { arena: Arena }) {
       ].map(([x, z, w, d], i) => (
         <mesh key={i} rotation-x={-Math.PI / 2} position={[x!, 0.014, z!]}>
           <planeGeometry args={[w!, d!]} />
-          <meshStandardMaterial color="#3d7a4a" roughness={0.7} emissive="#0b2412" />
+          <meshStandardMaterial color="#3f8a52" roughness={0.6} />
         </mesh>
       ))}
     </group>
@@ -1717,14 +1741,14 @@ export default function Arena3D({
           onFallback={() => setQuality(0)}
         />
         <Q.Provider value={quality}>
-        <color attach="background" args={["#050609"]} />
-        <fog attach="fog" args={["#050609", 120 * (OX / 50), 320 * (OX / 50)]} />
-        <hemisphereLight args={["#8fa6ff", "#08090d", 0.35]} />
-        <ambientLight intensity={0.12} />
+        <color attach="background" args={["#0a0c10"]} />
+        <fog attach="fog" args={["#0a0c10", 140 * (OX / 50), 340 * (OX / 50)]} />
+        <hemisphereLight args={["#eef3fb", "#4a4f57", 1.05]} />
+        <ambientLight intensity={0.22} />
         <directionalLight
           position={[40, 90, 30]}
-          intensity={1.1}
-          color="#cfd8ff"
+          intensity={1.9}
+          color="#fff3e2"
           castShadow={!low}
           shadow-mapSize={[1024, 1024]}
           shadow-bias={-0.0004}
@@ -1736,19 +1760,22 @@ export default function Arena3D({
         />
         {/* soft studio reflections for the metal, built locally (no downloads) */}
         <Environment resolution={256} frames={1}>
-          <Lightformer intensity={2} position={[0, 30, 0]} rotation-x={Math.PI / 2} scale={[80, 80, 1]} color="#9fb2ff" />
-          <Lightformer intensity={3} position={[-40, 10, 0]} rotation-y={Math.PI / 2} scale={[60, 6, 1]} color="#36c5ff" />
-          <Lightformer intensity={3} position={[40, 10, 0]} rotation-y={-Math.PI / 2} scale={[60, 6, 1]} color="#ff5a3a" />
-          <Lightformer intensity={1.5} position={[0, 10, 40]} scale={[60, 8, 1]} color="#ffffff" />
+          {/* rows of high-bay lights in the roof, and daylight from the side windows */}
+          {[-30, 0, 30].map((x) => (
+            <Lightformer key={x} intensity={2.4} position={[x, 30, 0]} rotation-x={Math.PI / 2} scale={[8, 70, 1]} color="#fff6e8" />
+          ))}
+          <Lightformer intensity={1.6} position={[-40, 12, 0]} rotation-y={Math.PI / 2} scale={[60, 8, 1]} color="#dce8ff" />
+          <Lightformer intensity={1.6} position={[40, 12, 0]} rotation-y={-Math.PI / 2} scale={[60, 8, 1]} color="#dce8ff" />
+          <Lightformer intensity={1.2} position={[0, 10, 40]} scale={[60, 8, 1]} color="#ffffff" />
         </Environment>
 
         <Facility arena={arena} hotZone={hotZone} labels={!showcase && mode !== "follow"} quality={quality} />
         <ParkedRobots robots={parked} labels={!showcase && mode !== "follow"} />
-        {quality === 2 && <Sparkles count={Math.round(90 * (OX / 50))} scale={[OX * 2, 18, OZ * 2]} position-y={9} size={2.2} speed={0.25} opacity={0.35} color="#b8c8ff" />}
+        {quality === 2 && <Sparkles count={Math.round(90 * (OX / 50))} scale={[OX * 2, 18, OZ * 2]} position-y={9} size={1.6} speed={0.15} opacity={0.18} color="#fff4dc" />}
 
         {trace && <Line points={path.map((p) => to3(p, 0.15))} color="#5b6375" lineWidth={1.2} dashed dashSize={1} gapSize={1} />}
-        {run.driven.length > 1 && <Line points={run.driven.map((p) => to3(p, 0.2))} color={breachAt ? new THREE.Color(4, 0.4, 0.4) : new THREE.Color(3, 2.2, 0.4)} lineWidth={4} toneMapped={false} />}
-        <ActiveRobot path={path} trace={trace} runKey={runKey} color={robotColor(robotId ?? 1)} say={say} quiet={showcase} onMove={onMove} />
+        {run.driven.length > 1 && <Line points={run.driven.map((p) => to3(p, 0.2))} color={breachAt ? new THREE.Color(2.6, 0.3, 0.3) : new THREE.Color(1.5, 1.05, 0.15)} lineWidth={3} toneMapped={false} />}
+        <ActiveRobot path={path} trace={trace} runKey={runKey} robotId={robotId ?? 1} color={robotColor(robotId ?? 1)} say={say} quiet={showcase} onMove={onMove} />
         {gap && (
           <group key={`gap-${runKey}`}>
             <Line points={[to3(gap.from, 0.35), to3(gap.to, 0.35)]} color={new THREE.Color(3, 0.5, 0.5)} lineWidth={2.5} dashed dashSize={0.8} gapSize={0.6} toneMapped={false} />
@@ -1792,16 +1819,16 @@ export default function Arena3D({
           // (two fixed lists: the composer wants real effects as children, not empty slots)
           quality === 2 ? (
             <EffectComposer key="hq" multisampling={0}>
-              <Bloom mipmapBlur intensity={1.1} luminanceThreshold={1} luminanceSmoothing={0.2} radius={0.75} />
-              <Vignette offset={0.25} darkness={0.75} />
+              <Bloom mipmapBlur intensity={0.75} luminanceThreshold={1.2} luminanceSmoothing={0.2} radius={0.6} />
+              <Vignette offset={0.3} darkness={0.55} />
               <Noise opacity={0.025} />
               <ToneMapping mode={ToneMappingMode.ACES_FILMIC} />
               <SMAA />
             </EffectComposer>
           ) : (
             <EffectComposer key="mq" multisampling={0}>
-              <Bloom mipmapBlur intensity={0.9} luminanceThreshold={1} luminanceSmoothing={0.2} radius={0.6} />
-              <Vignette offset={0.25} darkness={0.75} />
+              <Bloom mipmapBlur intensity={0.6} luminanceThreshold={1.2} luminanceSmoothing={0.2} radius={0.5} />
+              <Vignette offset={0.3} darkness={0.55} />
               <ToneMapping mode={ToneMappingMode.ACES_FILMIC} />
             </EffectComposer>
           )
