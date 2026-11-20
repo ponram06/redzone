@@ -1,7 +1,7 @@
 import { useAccount } from "../account";
 import { useEffect, useState } from "react";
 import { api, formatQor, type LeaderRow, type Robot } from "../api";
-import { PlayerTag } from "../players";
+import { PlayerTag, toEvm } from "../players";
 import { TIER_TEXT, isListed, safetyScore, useData } from "../data";
 
 /** Highest safety score first; untested robots last; ties by attacks blocked. */
@@ -33,11 +33,32 @@ function Players() {
   useEffect(() => {
     api.leaderboard().then(setRows, () => setError(true));
   }, []);
-  const me = acc.player?.evm.toLowerCase();
+  const me = acc.address ? toEvm(acc.player?.evm ?? acc.address) : null;
+  const mine = rows?.find((r) => toEvm(r.player) === me);
 
   return (
     <>
       <p className="lead">The players who tricked the most robots. Wins count only when the referee confirmed the robot entered a red zone.</p>
+      {me && rows && (
+        <div className="you-strip">
+          {mine ? (
+            <>
+              <span className="you-chip">You</span>
+              <span>
+                You're <b>#{mine.rank}</b> of {rows.length} · {mine.wins} {mine.wins === 1 ? "robot" : "robots"} tricked in {mine.attempts}{" "}
+                {mine.attempts === 1 ? "round" : "rounds"}
+              </span>
+              <a href="#/me">Your profile →</a>
+            </>
+          ) : (
+            <>
+              <span className="you-chip">You</span>
+              <span>You're not on the board yet. Play one round to get a rank.</span>
+              <a href="#/play">Play now →</a>
+            </>
+          )}
+        </div>
+      )}
       {error && <p className="error-text">We couldn't load the leaderboard. Please try again later.</p>}
       {!rows && !error && <p className="note">Loading…</p>}
       {rows && rows.length === 0 && (
@@ -62,11 +83,13 @@ function Players() {
             </thead>
             <tbody>
               {rows.map((r) => (
-                <tr key={r.player} className={r.player.toLowerCase() === me ? "me" : ""}>
+                <tr key={r.player} className={toEvm(r.player) === me ? "me" : ""}>
                   <td>{r.rank <= 3 ? ["🥇", "🥈", "🥉"][r.rank - 1] : r.rank}</td>
                   <td>
-                    <PlayerTag address={r.player} />
-                    {r.player.toLowerCase() === me && <span className="badge"> you</span>}
+                    <span className="who">
+                      <PlayerTag address={r.player} />
+                      {toEvm(r.player) === me && <span className="you-chip">You</span>}
+                    </span>
                   </td>
                   <td>{r.wins}</td>
                   <td>{r.attempts}</td>
@@ -82,6 +105,8 @@ function Players() {
 }
 
 function Rankings() {
+  const meAcc = useAccount();
+  const meEvm = meAcc.address ? toEvm(meAcc.player?.evm ?? meAcc.address) : null;
   const { robots, robotsLoaded, health } = useData();
   const tasks = health?.rules?.utilityTasks ?? "?";
   const sorted = robots.filter(isListed).sort(byRank);
@@ -109,11 +134,12 @@ function Rankings() {
             </thead>
             <tbody>
               {sorted.map((r, i) => (
-                <tr key={r.id} onClick={() => (location.hash = `#/robots/${r.id}`)}>
+                <tr key={r.id} className={toEvm(r.owner) === meEvm ? "me" : ""} onClick={() => (location.hash = `#/robots/${r.id}`)}>
                   <td>{i + 1}</td>
                   <td>
                     <a href={`#/robots/${r.id}`}>{r.name}</a>{" "}
                     <span className={`badge tier-${r.tier.toLowerCase()}`}>{TIER_TEXT[r.tier]}</span>
+                    {toEvm(r.owner) === meEvm && <span className="you-chip">Your robot</span>}
                   </td>
                   <td>
                     <Score robot={r} />
