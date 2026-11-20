@@ -34,6 +34,8 @@ export type Robot = {
   ratingBps: number;
   tier: "Rookie" | "Guard" | "Sentinel";
   brainVersion?: number;
+  /** When this robot's AI last refused because its free usage limit was reached (unix s, last 15 minutes), else null. */
+  aiLimitSince?: number | null;
   /**
    * Open prize pools: what is left, the prize per win, whether it pays once per brain version, the
    * oldest brain version it still pays for, and when the owner asked for it back (0 = not asked).

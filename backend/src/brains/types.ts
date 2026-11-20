@@ -35,9 +35,16 @@ export type BrainConfig =
       keyId?: string;
     };
 
-/** The brain could not answer (all models busy, network down). The attempt is not used up. */
+/**
+ * The brain could not answer (all models busy, network down). The attempt is not used up.
+ * `limit` is true when the AI providers refused because a free usage limit is reached (HTTP 429 or
+ * 402, or a quota message), so the site can say so plainly instead of "busy".
+ */
 export class BrainUnavailableError extends Error {
-  constructor(message: string) {
+  constructor(
+    message: string,
+    readonly limit = false,
+  ) {
     super(message);
     this.name = "BrainUnavailableError";
   }

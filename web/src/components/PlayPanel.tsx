@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useAccount } from "../account";
 import { API_URL, api, attemptMessage, formatQor, newRoundKey, type Health, type Robot, type Verdict } from "../api";
 import { prizeHeadline, usePlayerPrize } from "../prize";
+import { AiLimitNotice } from "./AiLimitNotice";
 import { plural, shortHash } from "../format";
 import { explainQorexError, payNative, signPq } from "../qorex";
 import { AccountGate } from "./AccountGate";
@@ -238,6 +239,7 @@ function RealRound({ health, robot, maxInstruction, onResult, onFinished, compac
         </div>
       )}
 
+      {!round && <AiLimitNotice robot={robot} />}
       {!round ? (
         compact ? (
           <>

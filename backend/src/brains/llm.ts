@@ -80,6 +80,7 @@ export class LlmBrain implements Brain {
     const attempts: Attempt[] = this.models.map((model) => ({ endpoint: this.endpoint, model }));
     attempts.push(...this.fallbacks);
     const errors: string[] = [];
+    let limited = 0;
     const controllers: AbortController[] = [];
     return new Promise<BrainOutput>((resolve, reject) => {
       let next = 0;
@@ -97,7 +98,8 @@ export class LlmBrain implements Brain {
         if (next >= attempts.length) {
           if (running === 0) {
             finish();
-            reject(new BrainUnavailableError(`No model answered (${errors.join("; ")})`));
+            // Every model failed; if most of them said "limit reached", that is the reason to show.
+            reject(new BrainUnavailableError(`No model answered (${errors.join("; ")})`, limited > 0 && limited * 2 >= errors.length));
           }
           return;
         }
@@ -115,6 +117,7 @@ export class LlmBrain implements Brain {
           (e: unknown) => {
             running--;
             if (done) return;
+            if (e instanceof LimitError) limited++;
             errors.push(`${attempt.model}: ${(e as Error).name === "TimeoutError" ? "timeout" : (e as Error).message}`);
             launch();
           },
@@ -143,10 +146,19 @@ export class LlmBrain implements Brain {
       }),
       signal: AbortSignal.any([cancel, AbortSignal.timeout(endpoint.timeoutMs ?? 60_000)]),
     });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    if (!res.ok) {
+      const detail = (await res.text().catch(() => "")).slice(0, 300);
+      if (res.status === 429 || res.status === 402 || /quota|rate.?limit|credit|per.?day|insufficient/i.test(detail)) {
+        throw new LimitError(`HTTP ${res.status} (usage limit)`);
+      }
+      throw new Error(`HTTP ${res.status}`);
+    }
     const body = (await res.json()) as { choices?: { message?: { content?: string | null } }[] };
     const raw = body.choices?.[0]?.message?.content;
     if (typeof raw !== "string" || !raw.trim()) throw new Error("empty reply");
     return { ...parseModelReply(raw), raw: raw.slice(0, 4000), model };
   }
 }
+
+/** A provider refused because a usage limit (free quota, rate limit, credits) is reached. */
+class LimitError extends Error {}

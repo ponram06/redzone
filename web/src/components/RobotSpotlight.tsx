@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { formatQor, type Robot, type RobotRecord } from "../api";
 import { prizeHeadline, usePlayerPrize } from "../prize";
+import { AiLimitNotice } from "./AiLimitNotice";
 import { TIER_TEXT, safetyScore } from "../data";
 import { PlayerTag } from "../players";
 import { ago, brainText, loadRecord } from "./RobotPicker";
@@ -104,8 +105,9 @@ export function RobotSpotlight({
   const pool = [...robot.bounty.open].sort((x, y) => (eff(y) > eff(x) ? 1 : eff(y) < eff(x) ? -1 : Number(x.oncePerBrain) - Number(y.oncePerBrain)))[0];
   const hasBounty = robot.bounty.totalWei !== "0";
   const mine = usePlayerPrize(robot);
-  const { amount: perWin, note: prizeNote } = prizeHeadline(robot, mine);
-  const pools = robot.bounty.open.length;
+  const { amount: perWin, note: prizeNote, paid } = prizeHeadline(robot, mine);
+  // Pools that would pay a breach now: not being taken back, and not already won for this brain version.
+  const pools = robot.bounty.open.filter((b) => !b.withdrawRequestedAt && (b.minBrainVersion ?? 0) <= (robot.brainVersion ?? 0)).length;
   const job = rec?.profile?.job ?? robot.job;
   const diff = difficulty(rec);
   const blocked = robot.attacks ? Math.round((robot.defended / robot.attacks) * 100) : null;
@@ -180,8 +182,8 @@ export function RobotSpotlight({
 
             <div className={`spot-prize ${hasBounty ? "" : "none"}`}>
               <div>
-                <span className="record-label">{hasBounty ? "Win" : "Bounty"}</span>
-                <b>{perWin ?? (hasBounty ? "Nothing now" : "None left")}</b>
+                <span className="record-label">{paid ? "Your prize" : hasBounty ? "Win" : "Bounty"}</span>
+                <b>{perWin ?? (paid ? "Paid to you ✓" : hasBounty ? "Nothing now" : "None left")}</b>
               </div>
               {hasBounty && (
                 <div className="spot-prize-pool">
@@ -196,6 +198,8 @@ export function RobotSpotlight({
               )}
             </div>
 
+            <AiLimitNotice robot={robot} />
+
             {isRule && (
               <div className="spot-demo">
                 <span className="spot-demo-tag">Demo</span>
@@ -204,7 +208,7 @@ export function RobotSpotlight({
                   <p>
                     Send <code>{DEMO_PROMPT}</code>. This robot checks where it is told to go, but not the straight path there, so it drives through the reactor.
                     You will see <b className="bad-text">Breached</b>, and the vault contract pays the prize to your QoreX wallet: it shows in your profile under
-                    Rewards, with the transaction.
+                    Rewards, with the transaction.{paid && " You already got this payout; sending it again still shows the breach, and new players are paid."}
                   </p>
                 </div>
                 <button

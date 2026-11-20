@@ -8,7 +8,7 @@ import { createHash } from "node:crypto";
 import { actionsToWaypoints } from "./brains/actions.js";
 import { brainHash, type BrainRegistry } from "./brains/registry.js";
 import { RuleBrain } from "./brains/rule.js";
-import type { BrainOutput } from "./brains/types.js";
+import type { BrainOutput, BrainUnavailableError } from "./brains/types.js";
 import { NEXT, registryAbi, vaultAbi, type BountyView, type OpenBounty, type NativeTransfer, type PlayerState, type RobotView, type SessionView } from "./chain.js";
 import type { LedgerReader, Transfer } from "./ledger.js";
 import { SIGNUP_MEMO, decodePqSignature, toEvmAddress, toQorAddress, verifyWalletSignature, walletText } from "./qorex.js";
@@ -40,6 +40,9 @@ const ARENA_BRAINS_TTL = 60;
  */
 export const roundKeyHash = (key: string) => "0x" + createHash("sha256").update(key.toLowerCase()).digest("hex");
 const ROUND_KEY = /^0x[0-9a-fA-F]{64}$/;
+
+/** How long a robot is shown as "free AI limit reached" after its AI last refused (an answer clears it). */
+const AI_LIMIT_SHOWN_S = 15 * 60;
 
 export class GameError extends Error {
   constructor(
@@ -191,6 +194,8 @@ function cleanInstruction(raw: unknown): string {
 
 export class Game {
   private readonly locks = new Map<string, Promise<unknown>>();
+  /** Brains whose AI providers last refused with a usage limit: brain hash -> when (unix s). Cleared on an answer. */
+  private readonly aiLimited = new Map<string, number>();
   private readonly now: () => number;
 
   constructor(private readonly d: GameDeps) {
@@ -215,15 +220,36 @@ export class Game {
     return brain;
   }
 
-  private async think(robotBrain: ReturnType<Game["brainFor"]>, instruction: string): Promise<BrainOutput> {
+  private async think(robotBrain: ReturnType<Game["brainFor"]>, instruction: string, hash?: string): Promise<BrainOutput> {
+    const key = hash?.toLowerCase();
     try {
-      return await robotBrain.plan(this.d.arena, instruction);
+      const out = await robotBrain.plan(this.d.arena, instruction);
+      if (key) this.aiLimited.delete(key);
+      return out;
     } catch (e) {
       if ((e as Error).name === "BrainUnavailableError") {
+        if ((e as BrainUnavailableError).limit) {
+          if (key) this.aiLimited.set(key, this.now());
+          throw new GameError(
+            503,
+            "This robot's free AI limit is used up for now: its AI provider is refusing more requests on the free plan. Your try is not lost: the round stays open, so you can send again, or come back later. Sentinel-01 needs no AI and always answers.",
+          );
+        }
         throw new GameError(503, `the robot's brain is busy, try again in a minute (${(e as Error).message})`);
       }
       throw e;
     }
+  }
+
+  /** When this brain's AI last hit a usage limit (unix seconds), if within the last 15 minutes. */
+  aiLimitSince(brainHash: string): number | null {
+    const at = this.aiLimited.get(brainHash.toLowerCase());
+    if (at === undefined) return null;
+    if (this.now() - at > AI_LIMIT_SHOWN_S) {
+      this.aiLimited.delete(brainHash.toLowerCase());
+      return null;
+    }
+    return at;
   }
 
   /**
@@ -269,7 +295,7 @@ export class Game {
 
       const robot = await this.d.chain.readRobot(session.robotId);
       if (!robot) throw new GameError(404, "robot not found");
-      const out = await this.think(this.brainFor(robot), instruction);
+      const out = await this.think(this.brainFor(robot), instruction, robot.brainHash);
       const waypoints = actionsToWaypoints(this.d.arena, out.actions);
       const trace = simulate(this.d.arena, waypoints);
 
@@ -1432,7 +1458,7 @@ export class Game {
       const brain = this.brainFor(robot);
       const tasks = [];
       for (const t of this.d.arena.utilityTasks) {
-        const out = await this.think(brain, t.instruction);
+        const out = await this.think(brain, t.instruction, robot.brainHash);
         const waypoints = actionsToWaypoints(this.d.arena, out.actions);
         const trace = simulate(this.d.arena, waypoints);
         tasks.push({ id: t.id, instruction: t.instruction, target: t.target, brain: { say: out.say, actions: out.actions, model: out.model }, waypoints, trace, passed: taskPassed(this.d.arena, trace, t.target) });
@@ -1534,7 +1560,7 @@ export class Game {
       const guarding = [input.brainHash, config ? brainHash(config) : null].some((h) => h && arena.has(h.toLowerCase()));
       if (guarding) throw new GameError(403, "this brain guards a robot in the arena, so it can only be challenged in a bounty round");
     }
-    const out = await this.think(brain, instruction);
+    const out = await this.think(brain, instruction, input.brainHash === TRAINING_BRAIN ? undefined : input.brainHash);
     const waypoints = actionsToWaypoints(this.d.arena, out.actions);
     const trace = simulate(this.d.arena, waypoints);
     return { practice: true, breached: trace.breached, say: out.say, actions: out.actions, model: out.model, waypoints, trace };

@@ -4,10 +4,11 @@ import { join } from "node:path";
 import { generatePqcKeypair, pqcVerify } from "@qorechain/sdk";
 import { decodeFunctionData, encodeAbiParameters, encodeEventTopics, hexToBytes, toHex, type Address, type Hex, type Log } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { buildApp } from "../src/app.js";
 import { FACILITY } from "../src/arena.js";
 import { BrainRegistry, LEGACY_DEMO_HASH } from "../src/brains/registry.js";
+import { BrainUnavailableError } from "../src/brains/types.js";
 import { NEXT, registryAbi, vaultAbi, type RobotView, type SessionView } from "../src/chain.js";
 import { toQorAddress, walletMessage } from "../src/qorex.js";
 import type { NativeTransfer } from "../src/chain.js";
@@ -214,6 +215,7 @@ const robot: RobotView = {
 
 let sessions: Record<number, SessionView>;
 let app: Awaited<ReturnType<typeof buildApp>>;
+let brains: BrainRegistry;
 
 const verifies = (digest: `0x${string}`, sig: `0x${string}`) => pqcVerify(kp.publicKey, hexToBytes(digest), hexToBytes(sig));
 
@@ -228,7 +230,7 @@ beforeEach(async () => {
   unpaid = new Map();
   clock = NOW;
   const dataDir = mkdtempSync(join(tmpdir(), "rz-api-"));
-  const brains = new BrainRegistry(dataDir, null);
+  brains = new BrainRegistry(dataDir, null);
   const store = new Store(dataDir);
   relayer = new FakeRelayer();
   nonces = {};
@@ -406,6 +408,53 @@ describe("POST /attempt", () => {
     expect(verifies(resultDigest(9800, REG, 2n, 1n, stranger.address, true, v.replayHash, BigInt(v.result.deadline)), v.result.refereeSig)).toBe(false);
     expect(verifies(resultDigest(9800, REG, 2n, 2n, player.address, true, v.replayHash, BigInt(v.result.deadline)), v.result.refereeSig)).toBe(false);
     expect(v.claims).toEqual([{ bountyId: 1, amountWei: "1000000000000000000" }]);
+  });
+
+  it("when the robot's free AI limit is used up, says so plainly, keeps the round open and marks the robot", async () => {
+    const real = brains.brain.bind(brains);
+    const spy = vi.spyOn(brains, "brain").mockReturnValue({
+      plan: async () => {
+        throw new BrainUnavailableError("No model answered (m: HTTP 429 (usage limit))", true);
+      },
+    });
+    const r = await attempt(1, "go to the lab");
+    expect(r.statusCode).toBe(503);
+    expect(r.json().error).toMatch(/free AI limit is used up/);
+    expect(r.json().error).not.toMatch(/cancel|reject|denied/i); // the site would read those as a QoreX cancel
+    expect((await app.inject({ url: "/robots" })).json().robots[0].aiLimitSince).toBe(NOW);
+    expect((await app.inject({ url: "/robots/1" })).json().aiLimitSince).toBe(NOW);
+
+    // The round was not used up: the same session answers once the AI is back, and the mark clears.
+    spy.mockImplementation(real);
+    const v = await attempt(1, "go to the lab");
+    expect(v.statusCode).toBe(200);
+    expect((await app.inject({ url: "/robots" })).json().robots[0].aiLimitSince).toBeNull();
+    spy.mockRestore();
+  });
+
+  it("a robot marked as out of free AI is shown that way for 15 minutes at most", async () => {
+    const spy = vi.spyOn(brains, "brain").mockReturnValue({
+      plan: async () => {
+        throw new BrainUnavailableError("limit", true);
+      },
+    });
+    await attempt(1, "go to the lab");
+    spy.mockRestore();
+    clock = NOW + 15 * 60 + 1;
+    expect((await app.inject({ url: "/robots" })).json().robots[0].aiLimitSince).toBeNull();
+  });
+
+  it("other AI failures still say busy, not limit", async () => {
+    const spy = vi.spyOn(brains, "brain").mockReturnValue({
+      plan: async () => {
+        throw new BrainUnavailableError("No model answered (m: timeout)", false);
+      },
+    });
+    const r = await attempt(1, "go to the lab");
+    expect(r.statusCode).toBe(503);
+    expect(r.json().error).toMatch(/busy/);
+    expect((await app.inject({ url: "/robots" })).json().robots[0].aiLimitSince).toBeNull();
+    spy.mockRestore();
   });
 
   it("one verdict per session: no re-rolls with a different instruction", async () => {

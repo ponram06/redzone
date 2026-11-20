@@ -155,8 +155,9 @@ export async function buildApp(d: AppDeps) {
     return { job: p?.job ?? null, look: p?.kind && p.color ? { kind: p.kind, color: p.color } : null };
   };
 
+  // aiLimitSince: when this robot's AI last refused because its free usage limit is reached (unix s, last 15 min), else null.
   app.get("/robots", async () => ({
-    robots: (await d.readRobots()).map((r) => ({ ...r, ...labelOf(r.id) })),
+    robots: (await d.readRobots()).map((r) => ({ ...r, ...labelOf(r.id), aiLimitSince: d.game.aiLimitSince(r.brainHash) })),
   }));
 
   /** A RedZone transaction as the chain reports it (the testnet has no block explorer yet). */
@@ -202,7 +203,7 @@ export async function buildApp(d: AppDeps) {
     const r = await d.readRobot(id);
     if (!r) throw new GameError(404, "robot not found");
     const c = d.brains.config(r.brainHash);
-    return { ...r, ...labelOf(id), brain: c ? { kind: c.kind, models: c.kind === "llm" ? c.models : undefined, known: true } : { known: false } };
+    return { ...r, ...labelOf(id), aiLimitSince: d.game.aiLimitSince(r.brainHash), brain: c ? { kind: c.kind, models: c.kind === "llm" ? c.models : undefined, known: true } : { known: false } };
   });
 
   /** Owners publish a brain config here, then register the robot on chain with the returned hash. */

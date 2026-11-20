@@ -29,19 +29,43 @@ export function usePlayerPrize(robot: Robot | null, refresh?: unknown): PlayerPr
   return prize;
 }
 
+/** How many more players an open pool (one prize per player) can still pay, across the robot's pools. */
+export function winsLeft(robot: Robot): number {
+  let n = 0;
+  for (const b of robot.bounty.open) {
+    if (b.oncePerBrain || b.withdrawRequestedAt) continue;
+    const prize = BigInt(b.prizeWei);
+    if (prize > 0n) n += Number(BigInt(b.amountWei) / prize);
+  }
+  return n;
+}
+
 /**
  * The headline for a robot's prize. `amount` is what one win pays (null when nothing can be won
- * right now) and `note` says why, in plain words, when the robot has money locked but it can't pay.
+ * right now), `paid` is true when this player already won everything it pays, and `note` says why,
+ * in plain words, when the robot has money locked but it can't pay this player.
  */
-export function prizeHeadline(robot: Robot, mine: PlayerPrize | null): { amount: string | null; note: string | null } {
-  if (robot.bounty.totalWei === "0") return { amount: null, note: null };
+export function prizeHeadline(robot: Robot, mine: PlayerPrize | null): { amount: string | null; note: string | null; paid: boolean } {
+  if (robot.bounty.totalWei === "0") return { amount: null, note: null, paid: false };
   const general = nextPrizeWei(robot);
   if (mine) {
     const wei = BigInt(mine.wei);
-    if (wei > 0n) return { amount: formatQor(wei.toString()), note: null };
-    if (mine.wonAll) return { amount: null, note: "You already won what this robot pays. It pays you again only after its owner updates it." };
+    if (wei > 0n) return { amount: formatQor(wei.toString()), note: null, paid: false };
+    if (mine.bounties.some((b) => b.won)) {
+      // The vault pays each wallet once per prize pool, so one player can't empty it.
+      const left = winsLeft(robot);
+      const others =
+        general > 0n
+          ? ` Other players still win ${formatQor(general.toString())}${left > 0 ? ` (${left} more ${left === 1 ? "win" : "wins"} left)` : ""}.`
+          : "";
+      return {
+        amount: null,
+        paid: true,
+        note: `You already won this robot's prize. The vault pays each wallet once per prize pool, so one player can't empty it. You can still play and breach it; the round is recorded.${others}`,
+      };
+    }
   }
-  if (general > 0n) return { amount: formatQor(general.toString()), note: null };
-  if (takeBackStartedAt(robot)) return { amount: null, note: "Its owner is taking the bounty back, so new rounds aren't paid." };
-  return { amount: null, note: "Someone already won this version of the robot. It pays again after its owner updates it." };
+  if (general > 0n) return { amount: formatQor(general.toString()), note: null, paid: false };
+  if (takeBackStartedAt(robot)) return { amount: null, note: "Its owner is taking the bounty back, so new rounds aren't paid.", paid: false };
+  return { amount: null, note: "Someone already won this version of the robot. It pays again after its owner updates it.", paid: false };
 }

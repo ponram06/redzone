@@ -6302,3 +6302,19 @@ a.ptag:hover .ptag-name {
 .txlink a {
   font-size: 12px;
 }
+
+/* a robot whose free AI plan is used up */
+.ai-limit {
+  display: grid;
+  gap: 4px;
+  margin: 12px 0;
+  padding: 12px 14px;
+  border: 1px solid color-mix(in srgb, var(--gold) 45%, transparent);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--gold) 8%, transparent);
+  font-size: 14px;
+  line-height: 1.45;
+}
+.ai-limit b {
+  color: var(--gold);
+}

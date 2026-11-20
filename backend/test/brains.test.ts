@@ -92,6 +92,23 @@ describe("llm brain", () => {
     expect(calls).toEqual(["fast:free"]);
   });
 
+  it("tells a used-up free limit (429, 402, quota text) apart from other failures", async () => {
+    const reply = (status: number, text = "") => (async () => new Response(text, { status })) as typeof fetch;
+    const fail = async (f: typeof fetch, models = ["a:free"]) => {
+      const brain = new LlmBrain(models, "x", { baseUrl: "http://x", apiKey: "k", fetch: f });
+      return (await brain.plan(FACILITY, "go").catch((e) => e)) as BrainUnavailableError;
+    };
+    expect((await fail(reply(429))).limit).toBe(true);
+    expect((await fail(reply(402))).limit).toBe(true);
+    expect((await fail(reply(403, '{"error":"Rate limit exceeded: free-models-per-day"}'))).limit).toBe(true);
+    expect((await fail(reply(503))).limit).toBe(false);
+    expect((await fail(reply(500, "internal"))).limit).toBe(false);
+    // Two models: one out of quota, one down. Half refused for a limit, so the limit is the reason shown.
+    let n = 0;
+    const mixed = (async () => new Response("", { status: n++ === 0 ? 429 : 503 })) as typeof fetch;
+    expect((await fail(mixed, ["a:free", "b:free"])).limit).toBe(true);
+  });
+
   it("falls through busy models and reports when none answer", async () => {
     const calls: string[] = [];
     const fake = (async (_url: string, init: RequestInit) => {

@@ -60,7 +60,7 @@ export function GameView({ arena, health, robot, all, demoPrompt, onBack, onFini
   const mine = usePlayerPrize(robot, round);
   // A round belongs to the mode it was played in: a practice breach must not show over a bounty round.
   const shown = round && round.practice === (mode === "practice") ? round : null;
-  const { amount: perWin, note: prizeNote } = prizeHeadline(robot, mine);
+  const { amount: perWin, note: prizeNote, paid } = prizeHeadline(robot, mine);
   const tries = acc.player?.attemptsLeft;
 
   return (
@@ -79,7 +79,7 @@ export function GameView({ arena, health, robot, all, demoPrompt, onBack, onFini
               Win <b className="gold">{perWin}</b>
             </span>
           )}
-          {mode === "real" && !perWin && prizeNote && <span title={prizeNote}>No prize for you here</span>}
+          {mode === "real" && !perWin && prizeNote && <span title={prizeNote}>{paid ? "Prize already paid to you ✓" : "No prize for you here"}</span>}
           {mode === "real" && tries !== undefined && <span>{tries === 1 ? "1 try left" : `${tries} tries left`}</span>}
         </div>
         <div className="segmented hud-mode" role="tablist" aria-label="Game mode">
