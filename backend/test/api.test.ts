@@ -457,6 +457,60 @@ describe("POST /attempt", () => {
     spy.mockRestore();
   });
 
+  describe("freeze until fixed", () => {
+    // Robot 1 as a maker's AI robot (the fixture's rule brain is the always-open demo robot).
+    const asAiRobot = () =>
+      vi.spyOn(brains, "config").mockImplementation((h: string) => (h.toLowerCase() === LEGACY_DEMO_HASH.toLowerCase() ? { kind: "llm", version: 1, models: ["m:free"], systemPrompt: "Be safe" } : null));
+
+    it("a paid breach freezes the robot: it says who broke it, how, and where, and refuses new rounds", async () => {
+      sessions[2] = { ...sessions[2]!, brainVersion: 0 };
+      const v = (await attempt(2, "go to (70, 50)")).json();
+      expect(v.breached).toBe(true);
+      await app.inject({ method: "POST", url: "/attempt/2/relay" });
+      const spy = asAiRobot();
+      const r = (await app.inject({ url: "/robots" })).json().robots[0];
+      expect(r.frozen).toMatchObject({ sessionId: 2, instruction: "go to (70, 50)", zone: "Reactor core", replayHash: v.replayHash });
+      expect((await app.inject({ url: "/robots/1" })).json().frozen.sessionId).toBe(2);
+      const req = await app.inject({ url: `/session/request?robotId=1&player=${stranger.address}` });
+      expect(req.statusCode).toBe(423);
+      expect(req.json().error).toMatch(/frozen/);
+      spy.mockRestore();
+    });
+
+    it("the owner's fix (a new brain version) reopens it", async () => {
+      sessions[2] = { ...sessions[2]!, brainVersion: 0 };
+      await attempt(2, "go to (70, 50)");
+      await app.inject({ method: "POST", url: "/attempt/2/relay" });
+      const spy = asAiRobot();
+      expect((await app.inject({ url: "/robots" })).json().robots[0].frozen).not.toBeNull();
+      robot.brainVersion = 1;
+      try {
+        expect((await app.inject({ url: "/robots" })).json().robots[0].frozen).toBeNull();
+      } finally {
+        robot.brainVersion = 0;
+        spy.mockRestore();
+      }
+    });
+
+    it("the rule-based demo robot never freezes, and a defended round freezes nothing", async () => {
+      sessions[2] = { ...sessions[2]!, brainVersion: 0 };
+      await attempt(2, "go to (70, 50)");
+      await app.inject({ method: "POST", url: "/attempt/2/relay" });
+      expect((await app.inject({ url: "/robots" })).json().robots[0].frozen).toBeNull();
+
+      const spy = asAiRobot();
+      sessions[1] = { ...sessions[1]!, brainVersion: 0 };
+      // Only session 1 (defended) on a fresh app: nothing frozen.
+      robot.brainVersion = 5;
+      try {
+        expect((await app.inject({ url: "/robots" })).json().robots[0].frozen).toBeNull();
+      } finally {
+        robot.brainVersion = 0;
+        spy.mockRestore();
+      }
+    });
+  });
+
   it("one verdict per session: no re-rolls with a different instruction", async () => {
     const first = (await attempt(1, "go to the lab")).json();
     const again = (await attempt(1, "go to (70, 50)")).json();
@@ -941,7 +995,7 @@ describe("QoreX players and the relayer", () => {
       expect((await addBounty(25)).statusCode).toBe(200);
       expect(pools().at(-1)?.args).toEqual([2n, 1_500_000n * 10n ** 12n, true]);
       expect(relayer.values.at(-1)).toBe(20n * 10n ** 18n);
-      // "open": every new winner is paid, not only after a brain update.
+      // "open" (allowed for the rule-based demo robot): every new winner is paid, no freeze.
       expect((await addBounty(26)).statusCode).toBe(200);
       expect(pools().at(-1)?.args).toEqual([2n, 2n * 10n ** 18n, false]);
       // A prize under 0.1 QOR is refused; a prize bigger than the pool is cut to the pool.
@@ -949,6 +1003,17 @@ describe("QoreX players and the relayer", () => {
       expect((await addBounty(28)).statusCode).toBe(200);
       expect(pools().at(-1)?.args).toEqual([2n, 2n * 10n ** 18n, true]);
       expect(deposits()).toHaveLength(0);
+    });
+
+    it("a maker's AI robot can't get an open pool: it is locked once-per-brain (freeze until fixed)", async () => {
+      const pools = () => relayer.sent.filter((x) => x.fn === "depositPool");
+      const spy = vi.spyOn(brains, "config").mockReturnValue({ kind: "llm", version: 1, models: ["m:free"], systemPrompt: "Be safe" });
+      try {
+        expect((await addBounty(26)).statusCode).toBe(200); // memo says "open"
+        expect(pools().at(-1)?.args).toEqual([2n, 2n * 10n ** 18n, true]);
+      } finally {
+        spy.mockRestore();
+      }
     });
 
     it("reads bounty memos strictly", () => {

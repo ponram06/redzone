@@ -25,15 +25,15 @@ const AUDITS = [
 const SIGNERS = [
   ["Register a robot, start a round, open a play pass", "The user (QoreX), single use", "Key status + signature"],
   ["Record a round result", "The referee's own key", "Signature"],
-  ["Pay a prize", "Nobody chooses: the next eligible breach, one prize per player", "The registry's record"],
+  ["Pay a prize", "Nobody chooses: the next eligible breach, one per robot version (it then freezes until fixed)", "The registry's record"],
   ["Take a bounty back", "The owner, then a 3-hour wait", "Key status + signature"],
   ["Admin: pause, try price, referee", "The admin", "Key status + signature"],
   ["Start a round under a play pass", "The relayer named in the pass (10 min, ≤ 20 rounds)", "The signed pass"],
 ];
 
 const PROGRESS = [
-  { name: "Smart contracts v4", note: "Live on testnet · prize pools · 348 tests passing", done: true },
-  { name: "Server & referee", note: "106 unit tests + live contract checks", done: true },
+  { name: "Smart contracts v4", note: "Live on testnet · prize pools · freeze until fixed · 445 tests passing", done: true },
+  { name: "Server & referee", note: "110 unit tests + live contract checks", done: true },
   { name: "Website", note: "Play pass, paid tries, dark arena look", done: true },
   { name: "Security reviews", note: "Six reviews across v3 and v4", done: true },
   { name: "Q-Day Drill", note: "18 Nov · no funds taken", done: true },
@@ -86,9 +86,9 @@ export function Report() {
         <>
           <div className="rp-stats">
             <Stat label="Latest security score" value="87" unit="/100" note="QCAI stage 2 · live v4" bar={87} />
-            <Stat label="Contract tests" value="348" unit="passing" note="Including attack & invariant tests" />
+            <Stat label="Contract tests" value="445" unit="passing" note="Including attack & invariant tests" />
             <Stat label="Project complete" value="88" unit="%" note="Final polish & hosting remain" />
-            <Stat label="Live arena bounty" value={formatQor(bountyWei).replace(" QOR", "")} unit="QOR" note="Locked in EscrowVaultV4" live />
+            <Stat label="Live arena bounty" value={formatQor(bountyWei).replace(" QOR", "")} unit="QOR" note={`Locked in ${health?.vaultName ?? "EscrowVaultV4"}`} live />
           </div>
 
           <div className="rp-split">
@@ -194,7 +194,7 @@ export function Report() {
           <div className="rp-stats">
             <Stat label="Security reviews" value="6" />
             <Stat label="Top QCAI score" value="87" unit="/100" />
-            <Stat label="Tests + live checks" value="460" />
+            <Stat label="Tests + live checks" value="561" />
             <div className="rp-stat rp-stat-safe">
               <Shield /> QUANTUM-SAFE
             </div>
@@ -238,7 +238,7 @@ export function Report() {
             </table>
           </div>
           <p className="rp-counts">
-            <b>348</b> Foundry contract tests <b>106</b> backend unit tests <b>6</b> live v4 tests
+            <b>445</b> Foundry contract tests <b>110</b> backend unit tests <b>6</b> live v4 tests
           </p>
         </>
       )}
@@ -292,7 +292,7 @@ export function Report() {
         </div>
         <div className="rp-clist">
           <Contract name="RobotRegistryV4" what="Robots · rounds · results" addr={health?.registry} />
-          <Contract name="EscrowVaultV4" what="Prize pools · payouts" addr={health?.vault} />
+          <Contract name={health?.vaultName ?? "EscrowVaultV4"} what="Prize pools · payouts · freeze until fixed" addr={health?.vault} />
         </div>
       </section>
     </div>

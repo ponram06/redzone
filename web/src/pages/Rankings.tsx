@@ -1,4 +1,5 @@
 import { useAccount } from "../account";
+import { FrozenNotice, StatusBadge } from "../components/RobotStatus";
 import { useEffect, useState } from "react";
 import { api, formatQor, nextPrizeWei, takeBackStartedAt, type LeaderRow, type Robot } from "../api";
 import { RobotIcon } from "../components/RobotIcon";
@@ -147,7 +148,7 @@ function Rankings() {
                   <td>{i + 1}</td>
                   <td>
                     <a href={`#/robots/${r.id}`}>{r.name}</a>{" "}
-                    <span className={`badge tier-${r.tier.toLowerCase()}`}>{TIER_TEXT[r.tier]}</span>
+                    <span className={`badge tier-${r.tier.toLowerCase()}`}>{TIER_TEXT[r.tier]}</span> <StatusBadge robot={r} />
                     {toEvm(r.owner) === meEvm && <span className="you-chip">Your robot</span>}
                   </td>
                   <td>
@@ -219,7 +220,7 @@ export function RobotPage({ id }: { id: number }) {
         <RobotIcon kind={look.kind} color={look.color} size={72} />
         <div>
           <h1 className="page-title">
-            {r.name} <span className={`badge tier-${r.tier.toLowerCase()}`}>{TIER_TEXT[r.tier]}</span>
+            {r.name} <span className={`badge tier-${r.tier.toLowerCase()}`}>{TIER_TEXT[r.tier]}</span> <StatusBadge robot={r} />
           </h1>
           <p className="muted">
             Robot #{r.id} · {KIND_LABEL[look.kind]}
@@ -227,6 +228,7 @@ export function RobotPage({ id }: { id: number }) {
         </div>
       </div>
       <p>{r.job ?? "The owner hasn't said what this robot is used for yet."}</p>
+      <FrozenNotice robot={r} />
       <div className="bigstats">
         <div>
           <span>{r.attacks ? safetyScore(r.ratingBps) : "–"}</span>Safety score

@@ -16,7 +16,7 @@ const faq = ({ fee, perDay, minutes }: Facts): [string, string][] => [
   ["How many times can I play?", `Practice is unlimited. Bounty rounds: ${perDay} free per day, and you can buy extra tries (0.1 QOR each) that never expire. Each round gives you ${minutes} to send one message.`],
   [
     "How do I get paid when I win?",
-    "Automatically. The vault pays the round's player straight to their QoreX account: nobody can redirect it. If the admin pauses the vault in an emergency, wins made during the pause are paid when it ends. A robot can have several prize pools; one win is paid by each pool you haven't won yet.",
+    "Automatically. The vault pays the round's player straight to their QoreX account: nobody can redirect it. If the admin pauses the vault in an emergency, wins made during the pause are paid when it ends. A robot can have several prize pools, and one breach is paid by each of them. After a paid breach, a maker's robot is frozen until its owner fixes it; the next breach after the fix is paid to anyone, earlier winners too. The practice robot pays every new player once.",
   ],
   [
     "Is it fair?",
@@ -64,8 +64,9 @@ export function Help() {
             stolen or quantum-broken ECDSA key can't start sessions, register robots or move bounties.
           </li>
           <li>
-            The referee signs every verdict with its own ML-DSA-87 key. RobotRegistryV4 checks it before recording a result, and EscrowVaultV4
-            pays the earliest recorded win: the whole bounty, or a fixed prize per new winner (one per player). Nobody, not even the admin, can pick the winner or move the money.
+            The referee signs every verdict with its own ML-DSA-87 key. RobotRegistryV4 checks it before recording a result, and{" "}
+            {health?.vaultName ?? "the vault"} pays the earliest recorded win: the whole bounty, or a fixed prize per win, one per version of
+            the robot (it freezes after a win until its owner fixes it). Nobody, not even the admin, can pick the winner or move the money.
           </li>
           <li>
             Known limitation: QoreX can’t send transactions to contracts yet. So makers pay their bounty to the RedZone relayer as a normal
@@ -82,7 +83,7 @@ export function Help() {
                 RobotRegistryV4: <code>{health.registry}</code>
               </li>
               <li>
-                EscrowVaultV4: <code>{health.vault}</code>
+                {health.vaultName ?? "EscrowVaultV4"}: <code>{health.vault}</code>
               </li>
               <li>
                 Referee key hash: <code>{shortHash(health.refereePubkeyHash)}</code>

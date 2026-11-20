@@ -3,6 +3,7 @@ import { useAccount } from "../account";
 import { API_URL, api, formatQor, type PlayerProfile } from "../api";
 import { AccountGate } from "../components/AccountGate";
 import { TxLink } from "../components/TxLink";
+import { StatusBadge, versionOf } from "../components/RobotStatus";
 import { useData } from "../data";
 import { qorAmount, shortHash } from "../format";
 import { Avatar, PICTURES, generatedName, shortAddr, toEvm, usePlayerNames } from "../players";
@@ -382,12 +383,27 @@ export function Profile({ address: raw, own = false }: { address: string; own?: 
           <h2>{isMe ? "Your robots" : "Robots"}</h2>
           <div className="pf-robots">
             {mineRobots.map((r) => (
-              <a key={r.id} className="pf-robot" href={`#/robots/${r.id}`}>
-                <b>{r.name}</b>
+              <div key={r.id} className={`pf-robot ${r.frozen ? "is-frozen" : ""}`}>
+                <a href={`#/robots/${r.id}`}>
+                  <b>{r.name}</b> <StatusBadge robot={r} />
+                </a>
                 <span className="muted">
                   {r.defended}/{r.attacks} blocked · {r.bounty.totalWei !== "0" ? `${formatQor(r.bounty.totalWei)} bounty` : "no bounty"}
                 </span>
-              </a>
+                {r.frozen ? (
+                  <span className="pf-robot-status">
+                    Broken on version {versionOf(r)}
+                    {r.frozen.zone ? ` (into the ${r.frozen.zone})` : ""}: no paid rounds until {isMe ? "you fix it" : "its owner fixes it"}.
+                  </span>
+                ) : (
+                  <span className="pf-robot-status">{(r.brainVersion ?? 0) > 0 ? `Fixed and open: version ${versionOf(r)}.` : "Open."}</span>
+                )}
+                {isMe && r.frozen && (
+                  <a className="btn primary small" href={`#/owners/${r.id}`}>
+                    🔧 Fix this robot
+                  </a>
+                )}
+              </div>
             ))}
           </div>
         </section>

@@ -15,6 +15,7 @@
   --ok: #3ee08f;
   --ok-soft: rgba(62, 224, 143, 0.12);
   --gold: #ffc94a;
+  --ice: #5ab8ff;
   --floor: #0d0f14;
   --grid: #1c202b;
   --wall: #59617a;
@@ -43,6 +44,7 @@
   --ok: #138a4a;
   --ok-soft: rgba(19, 138, 74, 0.1);
   --gold: #a86b00;
+  --ice: #1a6fb5;
   --floor: #fbfbfd;
   --grid: #e7e9ef;
   --wall: #6b7385;
@@ -6317,4 +6319,60 @@ a.ptag:hover .ptag-name {
 }
 .ai-limit b {
   color: var(--gold);
+}
+
+/* frozen until fixed */
+.frozen {
+  display: grid;
+  gap: 6px;
+  margin: 12px 0;
+  padding: 12px 14px;
+  border: 1px solid color-mix(in srgb, var(--ice) 50%, transparent);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--ice) 9%, transparent);
+  font-size: 14px;
+  line-height: 1.45;
+}
+.frozen > b {
+  color: var(--ice);
+}
+.frozen-msg q {
+  font-family: var(--mono, ui-monospace, monospace);
+}
+.badge.status-frozen {
+  background: color-mix(in srgb, var(--ice) 18%, transparent);
+  color: var(--ice);
+}
+.badge.status-fixed {
+  background: color-mix(in srgb, var(--ok) 16%, transparent);
+  color: var(--ok);
+}
+
+.ok-text {
+  color: var(--ok);
+}
+.fix-editor.is-frozen {
+  border-color: color-mix(in srgb, var(--ice) 55%, transparent);
+}
+.fix-editor label {
+  display: block;
+  margin-top: 10px;
+}
+
+.pf-robot {
+  gap: 6px;
+}
+.pf-robot > a:first-child {
+  color: var(--text);
+  text-decoration: none;
+}
+.pf-robot.is-frozen {
+  border-color: color-mix(in srgb, var(--ice) 55%, var(--border));
+}
+.pf-robot-status {
+  font-size: 13px;
+  color: var(--muted);
+}
+.pf-robot .btn {
+  justify-self: start;
 }

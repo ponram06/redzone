@@ -19,6 +19,7 @@ const deployments = JSON.parse(
   network: string;
   contracts: {
     EscrowVaultV4: { address: Address; deployBlock: number };
+    EscrowVaultV5?: { address: Address; deployBlock: number };
     RobotRegistryV4: { address: Address; deployBlock: number; nativeChainId: string };
   };
 };
@@ -26,14 +27,21 @@ const deployments = JSON.parse(
 /** Native (Cosmos) chain id QoreX signs for, from the deployment record. */
 export const NATIVE_CHAIN_ID = deployments.contracts.RobotRegistryV4.nativeChainId;
 export const REGISTRY_DEPLOY_BLOCK = BigInt(deployments.contracts.RobotRegistryV4.deployBlock);
-export const VAULT_DEPLOY_BLOCK = BigInt(deployments.contracts.EscrowVaultV4.deployBlock);
+/** The live vault: EscrowVaultV5 once it is deployed, else EscrowVaultV4. */
+const LIVE_VAULT = deployments.contracts.EscrowVaultV5 ?? deployments.contracts.EscrowVaultV4;
+export const VAULT_NAME = deployments.contracts.EscrowVaultV5 ? "EscrowVaultV5" : "EscrowVaultV4";
+export const VAULT_DEPLOY_BLOCK = BigInt(LIVE_VAULT.deployBlock);
+/** Earlier vaults on the same registry: their payouts stay in the history (activity, profiles). */
+export const PREVIOUS_VAULTS: { address: Address; from: bigint }[] = deployments.contracts.EscrowVaultV5
+  ? [{ address: deployments.contracts.EscrowVaultV4.address, from: BigInt(deployments.contracts.EscrowVaultV4.deployBlock) }]
+  : [];
 /** Native REST endpoint: QORE_REST_URL, else the SDK's preset for this network. */
 export const REST_URL = process.env.QORE_REST_URL?.trim() || "https://api-testnet.qore.host";
 
 export const CHAIN_ID = deployments.evmChainId;
-/** EscrowVaultV4: prize pools. Bounties belong to the robot's owner; each eligible breach is paid
- *  the pool's prize per win (one per player, and by default one per brain version). */
-export const VAULT = deployments.contracts.EscrowVaultV4.address;
+/** The live vault (prize pools). Bounties belong to the robot's owner. Once-per-brain pools pay one
+ *  breach per brain version, to anyone (V5: also to an earlier winner); open pools one per player. */
+export const VAULT = LIVE_VAULT.address;
 /** RobotRegistryV4: v3 (every privileged call authorised by an ML-DSA-87 signature) plus play passes
  *  and paid tries. Older versions stay on chain for history only. */
 export const REGISTRY = deployments.contracts.RobotRegistryV4.address;
@@ -176,14 +184,16 @@ export function payableWei(b: OpenBounty, brainVersion: number, at: number): big
 export const nextWinWei = (open: OpenBounty[], brainVersion: number, now = Math.floor(Date.now() / 1000)) =>
   open.reduce((s, b) => s + payableWei(b, brainVersion, now), 0n);
 
-/** What a breach starting now would pay this player on this robot (skips pools they already won). */
+/** What a breach starting now would pay this player on this robot (skips pools that won't pay them again). */
 export async function prizeFor(robotId: number, player: Address): Promise<{ wei: string; wonAll: boolean; bounties: { id: number; wei: string; won: boolean }[] }> {
   const robot = await readRobot(robotId);
   if (!robot) return { wei: "0", wonAll: false, bounties: [] };
   const now = Math.floor(Date.now() / 1000);
   const rows = await Promise.all(
     robot.bounty.open.map(async (b) => {
-      const won = await client.readContract({ address: VAULT, abi: vaultAbi, functionName: "hasWon", args: [BigInt(b.id), player] });
+      const hasWon = await client.readContract({ address: VAULT, abi: vaultAbi, functionName: "hasWon", args: [BigInt(b.id), player] });
+      // V5: an earlier win blocks only open pools; once-per-brain pools pay the next version to anyone.
+      const won = hasWon && (VAULT_NAME === "EscrowVaultV4" || !b.oncePerBrain);
       return { id: b.id, won, wei: won ? 0n : payableWei(b, robot.brainVersion, now) };
     }),
   );
@@ -379,12 +389,13 @@ export async function readVaultNonce(account: Address): Promise<bigint> {
   return client.readContract({ address: VAULT, abi: vaultAbi, functionName: "nonces", args: [account] });
 }
 
-export type SessionView = { id: number; robotId: number; player: Address; startedAt: number; resultAt: number; outcome: number };
+/** brainVersion: the robot's brain version when the round started (optional so test fakes can leave it out). */
+export type SessionView = { id: number; robotId: number; player: Address; startedAt: number; resultAt: number; outcome: number; brainVersion?: number };
 
 export async function readSession(id: number): Promise<SessionView | null> {
   const s = await client.readContract({ address: REGISTRY, abi: registryAbi, functionName: "getSession", args: [BigInt(id)] });
   if (s.player === "0x0000000000000000000000000000000000000000") return null;
-  return { id, robotId: Number(s.robotId), player: s.player, startedAt: Number(s.startedAt), resultAt: Number(s.resultAt), outcome: s.outcome };
+  return { id, robotId: Number(s.robotId), player: s.player, startedAt: Number(s.startedAt), resultAt: Number(s.resultAt), outcome: s.outcome, brainVersion: Number(s.brainVersion) };
 }
 
 /** Lower-case on purpose, like PQC_VERIFY. */
@@ -471,7 +482,8 @@ export async function readTxSummary(hash: Hex) {
   const receipt = await client.getTransactionReceipt({ hash }).catch(() => null);
   if (!receipt) return null;
   const to = receipt.to?.toLowerCase();
-  if (to !== REGISTRY.toLowerCase() && to !== VAULT.toLowerCase()) return null;
+  const vaults = [VAULT, ...PREVIOUS_VAULTS.map((v) => v.address)].map((a) => a.toLowerCase());
+  if (to !== REGISTRY.toLowerCase() && !vaults.includes(to ?? "")) return null;
   const block = await client.getBlock({ blockNumber: receipt.blockNumber }).catch(() => null);
   return {
     hash,
@@ -480,7 +492,7 @@ export async function readTxSummary(hash: Hex) {
     time: block ? Number(block.timestamp) : null,
     from: receipt.from,
     to: receipt.to,
-    contract: to === REGISTRY.toLowerCase() ? "RobotRegistryV4" : "EscrowVaultV4",
+    contract: to === REGISTRY.toLowerCase() ? "RobotRegistryV4" : to === VAULT.toLowerCase() ? VAULT_NAME : "EscrowVaultV4",
     gasUsed: receipt.gasUsed.toString(),
     events: receipt.logs.length,
     checkYourself: { rpc: RPC_URL, method: "eth_getTransactionReceipt", params: [hash] },

@@ -57,6 +57,8 @@ export class ChainLedger implements LedgerReader {
   private readonly tri: TriesEvent[] = [];
   private regFrom: bigint;
   private vaultFrom: bigint;
+  /** Earlier vaults: only their payouts are read (history), never their deposits. */
+  private readonly history: { address: Address; from: bigint }[];
   private syncing: Promise<void> | null = null;
 
   constructor(
@@ -66,9 +68,11 @@ export class ChainLedger implements LedgerReader {
     private readonly vault: Address,
     vaultDeployBlock: bigint,
     private readonly rest: string,
+    previousVaults: { address: Address; from: bigint }[] = [],
   ) {
     this.regFrom = registryDeployBlock;
     this.vaultFrom = vaultDeployBlock;
+    this.history = previousVaults.map((v) => ({ ...v }));
   }
 
   results() {
@@ -154,6 +158,22 @@ export class ChainLedger implements LedgerReader {
         });
       }
       this.vaultFrom = to + 1n;
+    }
+    for (const h of this.history) {
+      while (h.from <= latest) {
+        const to = minB(h.from + CHUNK - 1n, latest);
+        for (const l of await this.client.getLogs({ address: h.address, event: EV.claimed, fromBlock: h.from, toBlock: to })) {
+          this.clm.push({
+            bountyId: Number(l.args.bountyId),
+            sessionId: Number(l.args.sessionId),
+            player: l.args.player!,
+            amountWei: l.args.amount!,
+            replayHash: l.args.replayHash!,
+            tx: l.transactionHash!,
+          });
+        }
+        h.from = to + 1n;
+      }
     }
   }
 

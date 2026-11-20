@@ -41,6 +41,21 @@ const ARENA_BRAINS_TTL = 60;
 export const roundKeyHash = (key: string) => "0x" + createHash("sha256").update(key.toLowerCase()).digest("hex");
 const ROUND_KEY = /^0x[0-9a-fA-F]{64}$/;
 
+/**
+ * A robot that was breached on its current brain version while it has a once-per-brain prize pool:
+ * paid rounds are refused until the owner fixes it (updates the brain), which reopens it.
+ */
+export type Freeze = {
+  sessionId: number;
+  player: Address;
+  /** When the breach was recorded (unix s). */
+  at: number;
+  replayHash: Hex;
+  /** The message that broke it and the red zone it drove into (from the replay, when this server has it). */
+  instruction: string | null;
+  zone: string | null;
+};
+
 /** How long a robot is shown as "free AI limit reached" after its AI last refused (an answer clears it). */
 const AI_LIMIT_SHOWN_S = 15 * 60;
 
@@ -194,6 +209,9 @@ function cleanInstruction(raw: unknown): string {
 
 export class Game {
   private readonly locks = new Map<string, Promise<unknown>>();
+  /** Breached sessions: session id -> brain version and result time (immutable once recorded). */
+  private readonly breachInfo = new Map<number, { version: number; at: number }>();
+  private ledgerSyncedAt = 0;
   /** Brains whose AI providers last refused with a usage limit: brain hash -> when (unix s). Cleared on an answer. */
   private readonly aiLimited = new Map<string, number>();
   private readonly now: () => number;
@@ -238,6 +256,51 @@ export class Game {
         throw new GameError(503, `the robot's brain is busy, try again in a minute (${(e as Error).message})`);
       }
       throw e;
+    }
+  }
+
+  /**
+   * Is this robot frozen? It is when it has a once-per-brain prize pool and its latest breach was
+   * against its current brain version: the prize for this version is won, so paid rounds wait for
+   * the owner's fix. The rule-based demo robot never freezes. Read from chain events.
+   */
+  async freezeOf(robot: RobotView): Promise<Freeze | null> {
+    if (!robot.bounty.open.some((b) => b.oncePerBrain)) return null;
+    // The rule-based practice robot is the always-open demo: every new player can see a payout.
+    if (this.d.brains.config(robot.brainHash)?.kind === "rule") return null;
+    if (Date.now() - this.ledgerSyncedAt > 5_000) {
+      await this.d.ledger.sync();
+      this.ledgerSyncedAt = Date.now();
+    }
+    let last: { sessionId: number; player: Address; replayHash: Hex } | null = null;
+    for (const r of this.d.ledger.results()) {
+      if (r.breached && r.robotId === robot.id && (!last || r.sessionId > last.sessionId)) last = r;
+    }
+    if (!last) return null;
+    let info = this.breachInfo.get(last.sessionId);
+    if (!info) {
+      const s = await this.d.chain.readSession(last.sessionId);
+      if (!s || s.brainVersion === undefined) return null;
+      info = { version: s.brainVersion, at: s.resultAt };
+      this.breachInfo.set(last.sessionId, info);
+    }
+    if (info.version !== robot.brainVersion) return null;
+    const replay = this.d.store.getReplay(last.replayHash) as { instruction?: string; trace?: { zone?: string } } | null;
+    const zoneId = replay?.trace?.zone ?? null;
+    return {
+      sessionId: last.sessionId,
+      player: last.player,
+      at: info.at,
+      replayHash: last.replayHash,
+      instruction: replay?.instruction ?? null,
+      zone: zoneId ? (this.d.arena.redZones.find((z) => z.id === zoneId)?.name ?? zoneId) : null,
+    };
+  }
+
+  /** Refuse a paid round on a frozen robot, before any signature or gas. */
+  private async assertOpen(robot: RobotView): Promise<void> {
+    if (await this.freezeOf(robot)) {
+      throw new GameError(423, "This robot is frozen: someone broke it and was paid, so it pays again only after its owner fixes it. Try another robot.");
     }
   }
 
@@ -529,6 +592,7 @@ export class Game {
     ]);
     if (!robot) throw new GameError(404, "robot not found");
     if (robot.owner.toLowerCase() === player.toLowerCase()) throw new GameError(409, "owners cannot attack their own robot");
+    await this.assertOpen(robot);
     if (!key.registered) throw new GameError(409, "this account has no ML-DSA-87 key registered yet (register it in QoreX first)");
     if (!(await this.isSignedUp(player))) throw new GameError(402, "sign up first: a one-time payment verifies your account");
     if (state.attemptsLeft < 1) throw new GameError(429, "no attempts left today (5 per UTC day)");
@@ -555,7 +619,8 @@ export class Game {
     }
 
     return this.once(`nonce-${player.toLowerCase()}`, async () => {
-      const [key, state] = await Promise.all([this.d.chain.readPqcKey(player), this.d.chain.readPlayer(player)]);
+      const [key, state, robot] = await Promise.all([this.d.chain.readPqcKey(player), this.d.chain.readPlayer(player), this.d.chain.readRobot(robotId)]);
+      if (robot) await this.assertOpen(robot);
       if (!key.registered) throw new GameError(409, "no ML-DSA-87 key registered for this account");
       if (state.attemptsLeft < 1) throw new GameError(429, "no attempts left today");
       const digest = startSessionDigest(this.d.chainId, this.d.registry, BigInt(robotId), player, state.nonce, BigInt(deadline));
@@ -668,6 +733,7 @@ export class Game {
       const [robot, state] = await Promise.all([this.d.chain.readRobot(robotId), this.d.chain.readPlayer(player)]);
       if (!robot) throw new GameError(404, "robot not found");
       if (robot.owner.toLowerCase() === player.toLowerCase()) throw new GameError(409, "owners cannot attack their own robot");
+      await this.assertOpen(robot);
       if (state.pass.operator.toLowerCase() !== this.d.relayer!.address.toLowerCase() || state.pass.validUntil <= this.now() || state.pass.roundsLeft < 1) {
         throw new GameError(410, "your play pass has ended: approve a new one");
       }
@@ -840,10 +906,14 @@ export class Game {
       const pendingKey = `deposits-${robotId}`;
       // The terms the maker signed in this payment's memo. A prize can't exceed the pool.
       const prizeUqor = terms.prizeUqor === null ? null : terms.prizeUqor < missing ? terms.prizeUqor : missing;
+      // Maker robots freeze after a paid breach until they are fixed, so their pools pay once per
+      // brain version. Open pools (every new player wins once, no freeze) are only for the
+      // rule-based practice robot; an "open" memo for any other robot is locked once-per-brain.
+      const oncePerBrain = terms.oncePerBrain || this.d.brains.config(robot.brainHash)?.kind !== "rule";
       const data =
         prizeUqor === null
           ? encodeFunctionData({ abi: vaultAbi, functionName: "depositBounty", args: [BigInt(robotId)] })
-          : encodeFunctionData({ abi: vaultAbi, functionName: "depositPool", args: [BigInt(robotId), prizeUqor * WEI_PER_UQOR, terms.oncePerBrain] });
+          : encodeFunctionData({ abi: vaultAbi, functionName: "depositPool", args: [BigInt(robotId), prizeUqor * WEI_PER_UQOR, oncePerBrain] });
       const r = await this.d.relayer!.send(
         this.d.vault,
         data,

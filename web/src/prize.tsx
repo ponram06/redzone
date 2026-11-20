@@ -47,6 +47,9 @@ export function winsLeft(robot: Robot): number {
  */
 export function prizeHeadline(robot: Robot, mine: PlayerPrize | null): { amount: string | null; note: string | null; paid: boolean } {
   if (robot.bounty.totalWei === "0") return { amount: null, note: null, paid: false };
+  if (robot.frozen) {
+    return { amount: null, paid: false, note: "Frozen: someone broke this version and was paid. It pays again, to anyone, after its owner fixes it." };
+  }
   const general = nextPrizeWei(robot);
   if (mine) {
     const wei = BigInt(mine.wei);

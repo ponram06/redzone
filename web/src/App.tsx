@@ -53,7 +53,7 @@ function Shell() {
   else if (page === "robots" && id) content = <RobotPage id={id} />;
   else if (page === "robots") content = <Leaderboard tab="robots" />;
   else if (page === "players") content = <Leaderboard tab="players" />;
-  else if (page === "owners") content = <Owners />;
+  else if (page === "owners") content = <Owners focus={id} />;
   else if (page === "help") content = <Help />;
   else if (page === "report") content = <Report />;
   else if (page === "me") content = <MyProfile />;

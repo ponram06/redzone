@@ -21,6 +21,8 @@ export type AppDeps = {
   chainId: number;
   registry: Address;
   vault: Address;
+  /** The live vault contract's name (EscrowVaultV4 or EscrowVaultV5), for the website's texts. */
+  vaultName?: string;
   builtInBrains: Record<string, string>;
   relayer?: { address: Address; cosmos: string } | null;
   prize?: { minUqor: bigint; payTo: string } | null;
@@ -103,6 +105,7 @@ export async function buildApp(d: AppDeps) {
     chainId: d.chainId,
     registry: d.registry,
     vault: d.vault,
+    vaultName: d.vaultName ?? "EscrowVaultV4",
     arena: d.arena.id,
     refereePubkeyHash: keccak256(d.key.publicKey),
     builtInBrains: d.builtInBrains,
@@ -156,8 +159,11 @@ export async function buildApp(d: AppDeps) {
   };
 
   // aiLimitSince: when this robot's AI last refused because its free usage limit is reached (unix s, last 15 min), else null.
+  // frozen: set while a robot waits for its owner's fix after a paid breach (see Game.freezeOf).
   app.get("/robots", async () => ({
-    robots: (await d.readRobots()).map((r) => ({ ...r, ...labelOf(r.id), aiLimitSince: d.game.aiLimitSince(r.brainHash) })),
+    robots: await Promise.all(
+      (await d.readRobots()).map(async (r) => ({ ...r, ...labelOf(r.id), aiLimitSince: d.game.aiLimitSince(r.brainHash), frozen: await d.game.freezeOf(r) })),
+    ),
   }));
 
   /** A RedZone transaction as the chain reports it (the testnet has no block explorer yet). */
@@ -203,7 +209,7 @@ export async function buildApp(d: AppDeps) {
     const r = await d.readRobot(id);
     if (!r) throw new GameError(404, "robot not found");
     const c = d.brains.config(r.brainHash);
-    return { ...r, ...labelOf(id), aiLimitSince: d.game.aiLimitSince(r.brainHash), brain: c ? { kind: c.kind, models: c.kind === "llm" ? c.models : undefined, known: true } : { known: false } };
+    return { ...r, ...labelOf(id), aiLimitSince: d.game.aiLimitSince(r.brainHash), frozen: await d.game.freezeOf(r), brain: c ? { kind: c.kind, models: c.kind === "llm" ? c.models : undefined, known: true } : { known: false } };
   });
 
   /** Owners publish a brain config here, then register the robot on chain with the returned hash. */

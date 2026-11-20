@@ -3,6 +3,7 @@ import { useAccount } from "../account";
 import { API_URL, api, attemptMessage, formatQor, newRoundKey, type Health, type Robot, type Verdict } from "../api";
 import { prizeHeadline, usePlayerPrize } from "../prize";
 import { AiLimitNotice } from "./AiLimitNotice";
+import { FrozenNotice } from "./RobotStatus";
 import { plural, shortHash } from "../format";
 import { explainQorexError, payNative, signPq } from "../qorex";
 import { AccountGate } from "./AccountGate";
@@ -239,11 +240,12 @@ function RealRound({ health, robot, maxInstruction, onResult, onFinished, compac
         </div>
       )}
 
+      {!round && <FrozenNotice robot={robot} />}
       {!round && <AiLimitNotice robot={robot} />}
       {!round ? (
         compact ? (
           <>
-            <button className="btn primary big" disabled={!!busy || player.attemptsLeft < 1} onClick={start}>
+            <button className="btn primary big" disabled={!!busy || player.attemptsLeft < 1 || !!robot.frozen} onClick={start}>
               {verdict ? "Play again" : "Start a round"}
             </button>
             <p className="note">
@@ -267,7 +269,7 @@ function RealRound({ health, robot, maxInstruction, onResult, onFinished, compac
             You get one message per round.
           </p>
           {prizeNote && <p className="note warn-text">{prizeNote} A win still counts on its public record.</p>}
-          <button className="btn primary big" disabled={!!busy || player.attemptsLeft < 1} onClick={start}>
+          <button className="btn primary big" disabled={!!busy || player.attemptsLeft < 1 || !!robot.frozen} onClick={start}>
             {verdict ? "Play again" : "Start a round"}
           </button>
           <p className="note">

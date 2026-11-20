@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
 import { useAccount } from "../account";
-import { api, poolMemo, type OwnerBounty, type PoolTerms, type Robot } from "../api";
+import { api, poolMemo, type BrainConfig, type OwnerBounty, type PoolTerms, type Robot } from "../api";
 import { RobotIcon } from "../components/RobotIcon";
 import { ROBOT_COLORS, ROBOT_KINDS, lookOf, type RobotKind } from "../robotLook";
 import { AccountGate } from "../components/AccountGate";
 import { RobotCard } from "../components/RobotCard";
+import { FrozenNotice } from "../components/RobotStatus";
 import { useData } from "../data";
 import { qorAmount } from "../format";
 import { explainQorexError, payNative, signPq } from "../qorex";
@@ -28,7 +29,7 @@ const DEFAULT_MODEL: Record<string, string> = {
 };
 
 /** Robot makers: write the rules, add the robot. */
-export function Owners() {
+export function Owners({ focus }: { focus?: number } = {}) {
   const { health, robots, reloadRobots } = useData();
   const acc = useAccount();
   const [freeModels, setFreeModels] = useState<string[] | null>(null);
@@ -79,6 +80,13 @@ export function Owners() {
       setSaving(false);
     }
   }
+
+  // #/owners/<id> (e.g. "Fix this robot" on the profile): scroll to that robot once it is listed.
+  useEffect(() => {
+    if (!focus) return;
+    const el = document.getElementById(`owner-robot-${focus}`);
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [focus, robots.length, acc.player?.evm]);
 
   const mine = acc.player ? robots.filter((r) => r.owner.toLowerCase() === acc.player!.evm.toLowerCase()) : [];
   const [bounties, setBounties] = useState<OwnerBounty[]>([]);
@@ -171,14 +179,14 @@ export function Owners() {
           <h2>Your robots</h2>
           <div className="owner-robots">
             {mine.map((r) => (
-              <div key={r.id} className="owner-robot">
+              <div key={r.id} id={`owner-robot-${r.id}`} className="owner-robot">
                 <div className="stack">
                   <RobotCard robot={r} href={`#/robots/${r.id}`} />
                   <RobotPrize robotId={r.id} hasPrize={r.bounty.totalWei !== "0"} bounties={bounties} onChange={refreshMine} />
                 </div>
                 <div className="stack">
                   <RobotJob robot={r} onDone={reloadRobots} />
-                  <ChangeBrain robotId={r.id} current={r.brainHash} saveBrain={saveBrain} onDone={reloadRobots} />
+                  <EditBrain robot={r} onDone={reloadRobots} />
                 </div>
               </div>
             ))}
@@ -349,13 +357,14 @@ function usePool(minUqor: bigint) {
   const [amount, setAmount] = useState(String(Number(minUqor) / 1e6));
   const [perWin, setPerWin] = useState(false);
   const [prize, setPrize] = useState("");
-  const [oncePerBrain, setOncePerBrain] = useState(true);
+  // Maker pools always pay once per brain version: the robot freezes after a win until it is fixed.
+  const oncePerBrain = true;
   const uqor = toUqor(amount, minUqor);
   const prizeUqor = perWin ? toUqor(prize, MIN_PRIZE_UQOR) : null;
   const prizeOk = !perWin || (prizeUqor !== null && uqor !== null && BigInt(prizeUqor) <= BigInt(uqor));
   const terms: PoolTerms = { prizeUqor: perWin ? prizeUqor : null, oncePerBrain };
   const wins = perWin && uqor && prizeUqor ? Math.floor(Number(uqor) / Number(prizeUqor)) : 1;
-  return { amount, setAmount, perWin, setPerWin, prize, setPrize, oncePerBrain, setOncePerBrain, uqor: prizeOk ? uqor : null, terms, wins, minUqor, prizeUqor };
+  return { amount, setAmount, perWin, setPerWin, prize, setPrize, uqor: prizeOk ? uqor : null, terms, wins, minUqor, prizeUqor };
 }
 type Pool = ReturnType<typeof usePool>;
 
@@ -374,7 +383,7 @@ function PrizeInput({ pool }: { pool: Pool }) {
         </button>
         <button type="button" role="radio" aria-checked={pool.perWin} className={`option ${pool.perWin ? "on" : ""}`} onClick={() => pool.setPerWin(true)}>
           <b>A prize for every new bug</b>
-          <span>Each winner gets a fixed prize and the robot stays in the arena, so you find more of its weak spots.</span>
+          <span>Each winner gets a fixed prize. After a win the robot is frozen until you fix it, then it pays the next new bug.</span>
         </button>
       </div>
 
@@ -386,24 +395,10 @@ function PrizeInput({ pool }: { pool: Pool }) {
           {pool.prizeUqor && !pool.uqor && amountOk && <p className="error-text">The prize can't be bigger than the pool.</p>}
           {pool.uqor && pool.prizeUqor && (
             <p className="note">
-              {pool.oncePerBrain ? (
-                <>
-                  Pays <b>one</b> winner {qorAmount(pool.prizeUqor)} now, and one more each time you update your robot, up to <b>{pool.wins}</b> in all.
-                </>
-              ) : (
-                <>
-                  Pays up to <b>{pool.wins}</b> winners {qorAmount(pool.prizeUqor)} each. Each player can win once.
-                </>
-              )}
+              Pays <b>one</b> winner {qorAmount(pool.prizeUqor)}. Your robot is then <b>frozen</b> (no more paid rounds) until you fix its rules;
+              each fix reopens it and pays the next winner, up to <b>{pool.wins}</b> in all. Copies of a trick that already worked earn nothing.
             </p>
           )}
-          <label className="check">
-            <input type="checkbox" checked={pool.oncePerBrain} onChange={(e) => pool.setOncePerBrain(e.target.checked)} />
-            <span>
-              <b>Pay again only after I update my robot</b> (recommended). Once a trick works, copies of it earn nothing until you fix your
-              robot's rules, so each prize is a new bug.
-            </span>
-          </label>
         </>
       )}
       <p className="note">
@@ -602,59 +597,163 @@ function RobotPrize({ robotId, hasPrize, bounties, onChange }: { robotId: number
   );
 }
 
-function ChangeBrain({
-  robotId,
-  current,
-  saveBrain,
-  onDone,
-}: {
-  robotId: number;
-  current: string;
-  saveBrain: () => Promise<string | null>;
-  onDone: () => Promise<void>;
-}) {
-  const [confirm, setConfirm] = useState(false);
-  const [ok, setOk] = useState<string | null>(null);
+/**
+ * Edit a robot's rules right next to it. For a frozen robot this is "Fix this robot": the rules
+ * start as they are now, the message that broke it is ready as a test, "Test my fix" runs it
+ * against the new rules for free (nothing recorded or paid), and "Save fix and reopen" moves the
+ * robot to its next brain version (one QoreX approval), which reopens it to every player.
+ */
+function EditBrain({ robot, onDone }: { robot: Robot; onDone: () => Promise<void> }) {
+  const { arena } = useData();
   const s = useSigned();
+  const frozen = robot.frozen ?? null;
+  const [config, setConfig] = useState<BrainConfig | null>(null);
+  const [rules, setRules] = useState("");
+  const [apiKey, setApiKey] = useState("");
+  const [test, setTest] = useState(frozen?.instruction ?? "");
+  const [draft, setDraft] = useState<string | null>(null);
+  const [result, setResult] = useState<{ breached: boolean; text: string } | null>(null);
+  const [testing, setTesting] = useState(false);
+  const [testError, setTestError] = useState<string | null>(null);
+  const [ok, setOk] = useState<string | null>(null);
+  const [confirm, setConfirm] = useState(false);
 
-  const change = () =>
+  useEffect(() => {
+    api
+      .brain(robot.brainHash)
+      .then((b) => {
+        setConfig(b.config);
+        if (b.config.kind === "llm") setRules(b.config.systemPrompt);
+      })
+      .catch(() => setConfig(null));
+  }, [robot.brainHash]);
+  useEffect(() => setTest((t) => t || frozen?.instruction || ""), [frozen?.instruction]);
+  // Any change to the rules or key means the draft must be saved (and tested) again.
+  useEffect(() => {
+    setDraft(null);
+    setResult(null);
+  }, [rules, apiKey]);
+
+  if (!config || config.kind !== "llm") return null; // the rule-based demo robot has no rules to edit
+  const cfg = config;
+  const own = cfg.provider ?? null;
+  const zoneName = (id?: string) => (id ? (arena?.redZones.find((z) => z.id === id)?.name ?? id) : "a red zone");
+  const nextVersion = (robot.brainVersion ?? 0) + 2;
+
+  async function saveDraft(): Promise<string> {
+    if (draft) return draft;
+    if (!rules.trim()) throw new Error("Write the robot's rules first.");
+    let hash: string;
+    if (own) {
+      if (!apiKey.trim()) throw new Error(`Paste your ${own} API key again: it is needed to save new rules (it is never shown back).`);
+      hash = (await api.publishOwnBrain(own, cfg.models[0]!, rules, apiKey.trim())).brainHash;
+    } else {
+      hash = (await api.publishBrain({ kind: "llm", version: 1, models: cfg.models, systemPrompt: rules })).brainHash;
+    }
+    if (hash.toLowerCase() === robot.brainHash.toLowerCase()) throw new Error("These are the robot's current rules: change them first.");
+    setDraft(hash);
+    return hash;
+  }
+
+  async function runTest() {
+    setTesting(true);
+    setTestError(null);
+    setResult(null);
+    try {
+      if (!test.trim()) throw new Error("Type a message to test with.");
+      const hash = await saveDraft();
+      const r = await api.practice(hash, test.trim());
+      setResult(
+        r.breached
+          ? { breached: true, text: `Still breached ❌ Your new rules still drove into the ${zoneName(r.trace.zone)}. Change them and test again.` }
+          : { breached: false, text: `Blocked ✅ The robot stayed safe${r.say ? `: “${r.say}”` : "."}` },
+      );
+    } catch (e) {
+      setTestError((e as Error).message);
+    } finally {
+      setTesting(false);
+    }
+  }
+
+  const save = () =>
     s.run(async (address) => {
-      const hash = await saveBrain();
-      if (!hash) return;
-      if (hash.toLowerCase() === current.toLowerCase()) throw new Error("This robot already uses that brain.");
-      const req = await api.brainRequest(robotId, address, hash);
+      const hash = await saveDraft();
+      const req = await api.brainRequest(robot.id, address, hash);
       const pqSignature = await signPq(address, req.text);
-      s.setBusy("Updating…");
-      await api.updateBrain({ robotId, owner: address, brainHash: hash, deadline: req.deadline, pqSignature });
-      setOk("Brain updated. Running its everyday-tasks test (about a minute)…");
+      s.setBusy(frozen ? "Saving the fix…" : "Updating…");
+      await api.updateBrain({ robotId: robot.id, owner: address, brainHash: hash, deadline: req.deadline, pqSignature });
       setConfirm(false);
+      const done = `${frozen ? "Fixed and reopened" : "Rules updated"}: version ${nextVersion}.`;
+      setOk(`${done} Running its everyday-tasks test (about a minute)…`);
       await onDone();
-      const u = await api.utility(robotId).catch(() => null);
-      setOk(u ? `Brain updated. It passed ${u.tasksPassed} of its everyday tasks.` : "Brain updated. Its everyday-tasks test is taking longer than usual: reload in a minute to see the score.");
+      const u = await api.utility(robot.id).catch(() => null);
+      setOk(
+        `${done} ` + (u ? `It passed ${u.tasksPassed} of its everyday tasks.` : "Its everyday-tasks test is taking longer than usual: reload in a minute to see the score."),
+      );
       await onDone();
     });
 
   if (ok) return <p className="note">{ok}</p>;
-  if (!confirm) {
-    return (
-      <button className="btn small" onClick={() => setConfirm(true)}>
-        Update it with the rules above
-      </button>
-    );
-  }
+  const warn = result?.breached ? "Your last test still breached. Save anyway? " : !result ? "You haven't tested these rules yet. " : "";
   return (
-    <div className="stack">
-      <p className="note">This gives the robot the rules from step 1 and resets this robot's score to zero. Continue?</p>
+    <details className={`advanced fix-editor ${frozen ? "is-frozen" : ""}`} open={!!frozen}>
+      <summary>{frozen ? "🔧 Fix this robot" : "Change this robot's rules"}</summary>
+      {frozen && <FrozenNotice robot={robot} forOwner />}
+      <label htmlFor={`rules-${robot.id}`}>Its rules{frozen ? " (as they are now: change what let the trick work)" : ""}</label>
+      <textarea id={`rules-${robot.id}`} className="tall" value={rules} maxLength={4000} onChange={(e) => setRules(e.target.value)} />
+      {own && (
+        <>
+          <label htmlFor={`key-${robot.id}`}>Your {own} API key</label>
+          <input
+            id={`key-${robot.id}`}
+            type="password"
+            autoComplete="off"
+            placeholder="Needed again to save new rules"
+            value={apiKey}
+            onChange={(e) => setApiKey(e.target.value)}
+          />
+        </>
+      )}
+
+      <label htmlFor={`test-${robot.id}`}>Test message{frozen ? " (the one that broke it)" : ""}</label>
+      <input
+        id={`test-${robot.id}`}
+        value={test}
+        maxLength={500}
+        onChange={(e) => setTest(e.target.value)}
+        placeholder="A tricky message to try against the new rules"
+      />
       <div className="row">
-        <button className="btn primary small" disabled={!!s.busy} onClick={change}>
-          Yes, change it
+        <button className="btn small" disabled={testing || !!s.busy} onClick={runTest}>
+          {testing ? "Testing…" : "Test my fix"}
         </button>
-        <button className="btn small" onClick={() => setConfirm(false)}>
-          Cancel
-        </button>
+        <span className="note">Free: nothing is recorded or paid.</span>
       </div>
+      {result && <p className={result.breached ? "error-text" : "ok-text"}>{result.text}</p>}
+      {testError && <p className="error-text">{testError}</p>}
+
+      {!confirm ? (
+        <button className="btn primary small" disabled={!!s.busy || testing} onClick={() => setConfirm(true)}>
+          {frozen ? "Save fix and reopen" : "Save new rules"}
+        </button>
+      ) : (
+        <div className="stack">
+          <p className="note">
+            {warn}This moves the robot to version {nextVersion} with one QoreX approval
+            {frozen ? " and reopens it: anyone can win its next prize, including earlier winners" : ""}. Its safety score starts again from zero.
+          </p>
+          <div className="row">
+            <button className="btn primary small" disabled={!!s.busy} onClick={save}>
+              Yes, save it
+            </button>
+            <button className="btn small" onClick={() => setConfirm(false)}>
+              Not yet
+            </button>
+          </div>
+        </div>
+      )}
       {s.busy && <p className="note">{s.busy}</p>}
       {s.error && <p className="error-text">{s.error}</p>}
-    </div>
+    </details>
   );
 }

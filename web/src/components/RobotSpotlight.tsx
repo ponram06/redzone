@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { formatQor, type Robot, type RobotRecord } from "../api";
 import { prizeHeadline, usePlayerPrize } from "../prize";
 import { AiLimitNotice } from "./AiLimitNotice";
+import { FrozenNotice, StatusBadge } from "./RobotStatus";
 import { TIER_TEXT, safetyScore } from "../data";
 import { PlayerTag } from "../players";
 import { ago, brainText, loadRecord } from "./RobotPicker";
@@ -117,7 +118,7 @@ export function RobotSpotlight({
       ? `Every new winner gets ${formatQor(eff(pool).toString())}, once per player, until this ${formatQor(pool.amountWei)} pool runs out.`
       : pool.prizeWei === pool.amountWei
         ? `One big prize: the first player to break it takes all ${formatQor(pool.amountWei)}.`
-        : "One prize per version of the robot's brain: after someone wins, it pays again only once the owner updates the robot.";
+        : "One prize per version of the robot: after a win it is frozen until its owner fixes it, then the next breach pays anyone, earlier winners too.";
   const isRule = rec?.brain?.kind === "rule";
   const demo = isRule ? DEMO_PROMPT : undefined;
   const practiceRobot = robots.find((r) => r.id !== robot.id && r.name === "Sentinel-01");
@@ -160,6 +161,7 @@ export function RobotSpotlight({
               <span className="muted">Robot #{robot.id}</span>
               <span className="spot-kind">{KIND_LABEL[look.kind]}</span>
               <span className={`badge tier-${robot.tier.toLowerCase()}`}>{TIER_TEXT[robot.tier] ?? robot.tier}</span>
+              <StatusBadge robot={robot} />
             </div>
             <div className="spot-diff">
               <span className="record-label">Difficulty</span>
@@ -183,7 +185,7 @@ export function RobotSpotlight({
             <div className={`spot-prize ${hasBounty ? "" : "none"}`}>
               <div>
                 <span className="record-label">{paid ? "Your prize" : hasBounty ? "Win" : "Bounty"}</span>
-                <b>{perWin ?? (paid ? "Paid to you ✓" : hasBounty ? "Nothing now" : "None left")}</b>
+                <b>{perWin ?? (robot.frozen ? "Frozen" : paid ? "Paid to you ✓" : hasBounty ? "Nothing now" : "None left")}</b>
               </div>
               {hasBounty && (
                 <div className="spot-prize-pool">
@@ -198,6 +200,7 @@ export function RobotSpotlight({
               )}
             </div>
 
+            <FrozenNotice robot={robot} />
             <AiLimitNotice robot={robot} />
 
             {isRule && (

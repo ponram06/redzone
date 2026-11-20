@@ -13,6 +13,8 @@ import {
   REST_URL,
   VAULT,
   VAULT_DEPLOY_BLOCK,
+  PREVIOUS_VAULTS,
+  VAULT_NAME,
   client,
   openBounties,
   readBounty,
@@ -89,7 +91,7 @@ const prize = relayer ? { minUqor: BigInt(env.PRIZE_MIN_UQOR ?? "1000000"), payT
 // Rules come from the contract; history comes from chain events and the tx index.
 const rules = await readRules();
 if (rules.utilityTasks !== ARENA.utilityTasks.length) throw new Error(`arena has ${ARENA.utilityTasks.length} tasks, contract expects ${rules.utilityTasks}`);
-const ledger = new ChainLedger(client, REGISTRY, REGISTRY_DEPLOY_BLOCK, VAULT, VAULT_DEPLOY_BLOCK, REST_URL);
+const ledger = new ChainLedger(client, REGISTRY, REGISTRY_DEPLOY_BLOCK, VAULT, VAULT_DEPLOY_BLOCK, REST_URL, PREVIOUS_VAULTS);
 await ledger.sync();
 
 // One-time sign-up fee, paid to the relayer so it funds gas (0 turns sign-up off).
@@ -145,6 +147,7 @@ const app = await buildApp({
   chainId: CHAIN_ID,
   registry: REGISTRY,
   vault: VAULT,
+  vaultName: VAULT_NAME,
   builtInBrains,
   relayer: relayer ? { address: relayer.address, cosmos: relayer.cosmosAddress } : null,
   prize,
@@ -166,6 +169,7 @@ const app = await buildApp({
 const port = Number(env.PORT ?? 8787);
 await app.listen({ port, host: env.HOST ?? "127.0.0.1" });
 console.log(`RedZone referee on http://${env.HOST ?? "127.0.0.1"}:${port}`);
+console.log(`  vault: ${VAULT_NAME} ${VAULT}${PREVIOUS_VAULTS.length ? ` (history also from ${PREVIOUS_VAULTS.map((v) => v.address).join(", ")})` : ""}`);
 console.log(`  brains: ${Object.entries(builtInBrains).map(([k, v]) => `${k}=${v.slice(0, 10)}…`).join(", ")}`);
 console.log(`  llm: ${endpoint ? `${endpoint.baseUrl} (${models.length} model(s))` : "off (rule brain only)"}`);
 console.log(`  relayer: ${relayer ? `${relayer.address} (${relayer.cosmosAddress})` : "none (players relay their own transactions)"}`);

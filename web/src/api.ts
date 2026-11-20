@@ -36,6 +36,8 @@ export type Robot = {
   brainVersion?: number;
   /** When this robot's AI last refused because its free usage limit was reached (unix s, last 15 minutes), else null. */
   aiLimitSince?: number | null;
+  /** Set while the robot waits for its owner's fix after a paid breach: paid rounds are refused until then. */
+  frozen?: Freeze | null;
   /**
    * Open prize pools: what is left, the prize per win, whether it pays once per brain version, the
    * oldest brain version it still pays for, and when the owner asked for it back (0 = not asked).
@@ -124,6 +126,8 @@ export type Health = {
   chainId: number;
   registry: string;
   vault: string;
+  /** The live vault contract (EscrowVaultV4 or EscrowVaultV5). */
+  vaultName?: string;
   refereePubkeyHash: string;
   builtInBrains: Record<string, string>;
   relayer: { address: string; cosmos: string } | null;
@@ -218,7 +222,12 @@ export const takeBackStartedAt = (r: Robot): number | null => {
 /** What a breach would pay this player on this robot now; pools they already won are skipped. */
 export type PlayerPrize = { wei: string; wonAll: boolean; bounties: { id: number; wei: string; won: boolean }[] };
 export type SignRequest = { deadline: number; digest: string; text: string };
-export type BrainConfig = { kind: "rule"; version: 1 } | { kind: "llm"; version: 1; models: string[]; systemPrompt: string };
+export type BrainConfig =
+  | { kind: "rule"; version: 1 }
+  | { kind: "llm"; version: 1; models: string[]; systemPrompt: string; /** the owner's own AI account (key kept on the server) */ provider?: string; keyId?: string };
+
+/** Who broke a frozen robot, with what message, into which red zone, and when (unix s). */
+export type Freeze = { sessionId: number; player: string; at: number; replayHash: string; instruction: string | null; zone: string | null };
 export type UtilityResult = { robotId: number; tasksPassed: number; relay?: { tx?: string; error?: string } };
 
 export const api = {
