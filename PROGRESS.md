@@ -83,7 +83,7 @@ Overall: about **88%** (each phase's weight is in brackets; last updated 2026-11
 - [ ] README: screenshots
 - [ ] Cover image and demo video (owner, planned for 1 Dec)
 - [x] docs/audit/ (dated QCAI PDFs), docs/AUDIT.md (every stage 1 finding mapped), README line pointing to it (21 Nov)
-- [ ] QCAI stage 1 and stage 2 on the live vault EscrowVaultV5 (bundle audits/RedZone.v6.flat.sol; owner runs it)
+- [x] QCAI stage 1 (85/100) and stage 2 (82/100, QUANTUM-SAFE) on the live RobotRegistryV4 + EscrowVaultV5 (21 Nov), every finding answered, no contract change
 - [ ] Final check against the official rules and submit before 2 Dec 23:59 UTC
 
 ## Checkpoint 19 Nov (resume here)

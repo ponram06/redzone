@@ -10,13 +10,22 @@ dated reports are in [docs/audit/](audit/); the full written answers are in [aud
 | 19 Nov 2026 | 1 | **RobotRegistryV4** (live) + EscrowVaultV3 ([bundle](../audits/RedZone.v4.flat.sol)) | ethereum (auto) | 85/100 | [PDF](audit/2026-11-19-QCAI-stage1-RobotRegistryV4-EscrowVaultV3.pdf) |
 | 19 Nov 2026 | 2 | the same, after every stage 1 finding | qorechain | **87/100, QUANTUM-SAFE** | [PDF](audit/2026-11-19-QCAI-stage2-RobotRegistryV4-EscrowVaultV3.pdf) |
 | 21 Nov 2026 | 1 | **RobotRegistryV4 + EscrowVaultV5** (both live) ([bundle](../audits/RedZone.v6.flat.sol)) | ethereum (auto) | 85/100 | [PDF](audit/2026-11-21-QCAI-stage1-RobotRegistryV4-EscrowVaultV5.pdf), [answers](../audits/QCAI-v5-stage1-response.md) |
+| 21 Nov 2026 | 2 | the same, after every stage 1 finding | qorechain | **82/100, QUANTUM-SAFE** | [PDF](audit/2026-11-21-QCAI-stage2-RobotRegistryV4-EscrowVaultV5.pdf), [answers](../audits/QCAI-v5-stage2-response.md) |
 
 ## What is live, and what each audit covers
 
 | Contract | Address (diana, EVM 9800) | Audited |
 |---|---|---|
-| RobotRegistryV4 | `0xef521a3a178a344a5cdd6854271e1fca466fa115` | Yes: the 19 Nov stage 1 and stage 2 above, unchanged since |
-| EscrowVaultV5 (prize pools; freeze until fixed) | `0x241767f1d799149060d133001cf4728d85ac41b7` | Stage 1 on 21 Nov (85/100, no contract change needed: [answers](../audits/QCAI-v5-stage1-response.md)); stage 2 next. It is the audited vault design (EscrowVaultV3, 19 Nov) plus prize pools and one changed rule; bundle with the live registry: [audits/RedZone.v6.flat.sol](../audits/RedZone.v6.flat.sol). 445 Foundry tests pass, including 97 on this vault (invariants: money is conserved, no payout above the prize, an open pool never pays a player twice, a once-per-brain pool never pays the same brain version twice) |
+| RobotRegistryV4 | `0xef521a3a178a344a5cdd6854271e1fca466fa115` | Yes: stage 1 and stage 2 on 19 Nov (85, then 87/100, QUANTUM-SAFE) and again with the V5 vault on 21 Nov; unchanged since |
+| EscrowVaultV5 (prize pools; freeze until fixed) | `0x241767f1d799149060d133001cf4728d85ac41b7` | Yes: stage 1 on 21 Nov (85/100) and stage 2 on 21 Nov (**82/100, QUANTUM-SAFE**); every finding answered, no contract change needed ([stage 1](../audits/QCAI-v5-stage1-response.md), [stage 2](../audits/QCAI-v5-stage2-response.md)). It is the audited vault design (EscrowVaultV3, 19 Nov) plus prize pools and one changed rule; bundle with the live registry: [audits/RedZone.v6.flat.sol](../audits/RedZone.v6.flat.sol). 445 Foundry tests pass, including 97 on this vault (invariants: money is conserved, no payout above the prize, an open pool never pays a player twice, a once-per-brain pool never pays the same brain version twice) |
+
+## Stage 2 (live registry + EscrowVaultV5, 21 Nov): 82/100, QUANTUM-SAFE
+
+Full answers: [audits/QCAI-v5-stage2-response.md](../audits/QCAI-v5-stage2-response.md). ML-DSA-87 key
+format (already checked: algorithm id and exact FIPS 204 sizes), reentrancy (native QOR only,
+`nonReentrant`, state first, checked transfer), precompile availability (checked on every call, fails
+closed), overflow (Solidity 0.8 checked arithmetic) and naming (Solidity style guide): none needed a
+contract change.
 
 ## Stage 1 findings and what was done (live registry + EscrowVaultV5, 21 Nov)
 

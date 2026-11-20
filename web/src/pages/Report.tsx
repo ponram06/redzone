@@ -13,7 +13,8 @@ const TABS: [Tab, string][] = [
 ];
 
 const AUDITS = [
-  { date: "To run", review: "QCAI · live vault (EscrowVaultV5, freeze until fixed)", v: "v4", result: "Bundle ready · not yet audited", good: false, file: "RedZone.v6.flat.sol" },
+  { date: "21 Nov", review: "QCAI · stage 2 · live registry + EscrowVaultV5 (QoreChain setting)", v: "v4", result: "82 / 100 · QUANTUM-SAFE", good: true, file: "QCAI-v5-stage2-response.md" },
+  { date: "21 Nov", review: "QCAI · stage 1 · live registry + EscrowVaultV5", v: "v4", result: "85 / 100 · all findings answered", good: false, file: "QCAI-v5-stage1-response.md" },
   { date: "19 Nov", review: "QCAI · stage 2 (QoreChain setting)", v: "v4", result: "87 / 100 · QUANTUM-SAFE", good: true, file: "QCAI-v4-stage2-response.md" },
   { date: "19 Nov", review: "QCAI · stage 1", v: "v4", result: "85 / 100 · all findings answered", good: false, file: "QCAI-v4-stage1-response.md" },
   { date: "17 Nov", review: "Blockhertz AI auditor (vault)", v: "v3", result: "Gas improvements adopted", good: false, file: "Blockhertz-1-EscrowVaultV2.md" },
@@ -35,7 +36,7 @@ const PROGRESS = [
   { name: "Smart contracts v4", note: "Live on testnet · prize pools · freeze until fixed · 445 tests passing", done: true },
   { name: "Server & referee", note: "110 unit tests + live contract checks", done: true },
   { name: "Website", note: "Play pass, paid tries, dark arena look", done: true },
-  { name: "Security reviews", note: "Six reviews across v3 and v4", done: true },
+  { name: "Security reviews", note: "Eight reviews across v3, v4 and the live V5 vault", done: true },
   { name: "Q-Day Drill", note: "18 Nov · no funds taken", done: true },
   { name: "Cover image & demo video", note: "Due 1 Dec 2026", done: false },
   { name: "Public hosting & final submission", note: "Before 2 Dec 2026", done: false },
@@ -69,7 +70,7 @@ export function Report() {
           <Shield />
           <div>
             <strong>QUANTUM-SAFE</strong>
-            <span>QCAI · registry verified · vault audit pending</span>
+            <span>QCAI · registry and vault audited · QUANTUM-SAFE</span>
           </div>
         </div>
       </section>
@@ -85,7 +86,7 @@ export function Report() {
       {tab === "overview" && (
         <>
           <div className="rp-stats">
-            <Stat label="Latest security score" value="87" unit="/100" note="QCAI stage 2 · live v4" bar={87} />
+            <Stat label="Latest security score" value="82" unit="/100" note="QCAI stage 2 · live registry + V5 vault · QUANTUM-SAFE" bar={82} />
             <Stat label="Contract tests" value="445" unit="passing" note="Including attack & invariant tests" />
             <Stat label="Project complete" value="88" unit="%" note="Final polish & hosting remain" />
             <Stat label="Live arena bounty" value={formatQor(bountyWei).replace(" QOR", "")} unit="QOR" note={`Locked in ${health?.vaultName ?? "EscrowVaultV4"}`} live />
@@ -190,7 +191,7 @@ export function Report() {
         <>
           <SectionHead n="02" label="Tests & audits" />
           <h2 className="rp-h2 big">Proof, not promises.</h2>
-          <p className="rp-p">Six audits. Every finding was fixed or answered with code and a test. The best result is on the live v4 contracts.</p>
+          <p className="rp-p">Eight audits. Every finding was fixed or answered with code and a test. Both live contracts, the registry and the V5 vault, are rated QUANTUM-SAFE.</p>
           <div className="rp-stats">
             <Stat label="Security reviews" value="6" />
             <Stat label="Top QCAI score" value="87" unit="/100" />
