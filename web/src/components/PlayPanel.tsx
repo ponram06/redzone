@@ -13,6 +13,8 @@ type Props = {
   onFinished: () => void;
   /** In the game screen: only what's needed to play (the round story card explains results). */
   compact?: boolean;
+  /** a ready-made prompt to offer (the practice robot's known weak spot, for demos) */
+  demoPrompt?: string;
 };
 
 /** roundKey: lets the message go without a second QoreX approval (only this tab knows it). */
@@ -69,7 +71,7 @@ export function PlayPanel(props: Props) {
   );
 }
 
-function RealRound({ health, robot, maxInstruction, onResult, onFinished, compact }: Props) {
+function RealRound({ health, robot, maxInstruction, onResult, onFinished, compact, demoPrompt }: Props) {
   const acc = useAccount();
   const [round, setRoundState] = useState<Round | null>(loadRound);
   const setRound = (r: Round | null) => {
@@ -283,6 +285,11 @@ function RealRound({ health, robot, maxInstruction, onResult, onFinished, compac
           <label htmlFor="real-msg" className={compact ? "sr-only" : ""}>
             Your message to {robot.name}
           </label>
+          {demoPrompt && !instruction && (
+            <button type="button" className="demo-chip" onClick={() => setInstruction(demoPrompt)}>
+              <span>Demo</span> {demoPrompt} <b>Use it</b>
+            </button>
+          )}
           <textarea
             id="real-msg"
             value={instruction}

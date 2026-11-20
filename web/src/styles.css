@@ -5950,3 +5950,162 @@ a.ptag:hover .ptag-name {
     animation: none;
   }
 }
+
+/* ---------- spotlight as the chooser: title, demo tip ---------- */
+
+.spot-bar {
+  align-items: flex-end;
+  gap: 16px;
+}
+
+.spot-title {
+  margin: 0;
+  font-family: var(--display);
+  font-size: clamp(26px, 3.4vw, 38px);
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+}
+
+.spot-sub {
+  margin: 4px 0 0;
+  color: #8d95a8;
+  font-size: 15px;
+}
+
+.spot-demo {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  border: 1px dashed rgba(62, 224, 143, 0.45);
+  background: rgba(62, 224, 143, 0.06);
+}
+
+.spot-demo-tag {
+  flex: none;
+  margin-top: 2px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: #3ee08f;
+  color: #06120c;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.spot-demo b {
+  color: #eef0f5;
+}
+
+.spot-demo .bad-text {
+  color: #ff5a5a;
+}
+
+.spot-demo p {
+  margin: 4px 0 0;
+  color: #b7bfcd;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.spot-demo code {
+  padding: 2px 7px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.45);
+  border: 1px solid rgba(62, 224, 143, 0.35);
+  color: #7cf0b5;
+  font-family: var(--mono);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.spot-copy {
+  flex: none;
+  height: 34px;
+  padding: 0 14px;
+  border-radius: 9px;
+  border: 1px solid rgba(62, 224, 143, 0.45);
+  background: transparent;
+  color: #7cf0b5;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.spot-copy:hover {
+  background: rgba(62, 224, 143, 0.12);
+}
+
+.spot-hint {
+  margin: 0;
+  color: #9aa3b5;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.linkish {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: #ff5a5a;
+  font: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+/* the ready-made prompt above the message box */
+.demo-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  margin-bottom: 8px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px dashed rgba(62, 224, 143, 0.5);
+  background: rgba(62, 224, 143, 0.07);
+  color: #dfe4ee;
+  font-family: var(--mono);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.demo-chip span {
+  padding: 2px 6px;
+  border-radius: 5px;
+  background: #3ee08f;
+  color: #06120c;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.demo-chip b {
+  margin-left: auto;
+  color: #7cf0b5;
+  font-family: var(--sans, inherit);
+}
+
+.demo-chip:hover {
+  background: rgba(62, 224, 143, 0.14);
+}
+
+@media (max-width: 520px) {
+  .spot-bar {
+    align-items: center;
+  }
+  .spot-sub {
+    display: none;
+  }
+  .spot-demo {
+    flex-wrap: wrap;
+  }
+}

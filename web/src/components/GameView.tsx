@@ -11,6 +11,8 @@ type Props = {
   health: Health;
   robot: Robot;
   all: Robot[];
+  /** a prompt to offer in the message box (the practice robot's known weak spot) */
+  demoPrompt?: string;
   onBack: () => void;
   onFinished: () => void;
 };
@@ -19,7 +21,7 @@ type Props = {
  * The game screen: the arena fills the window, a slim bar on top says who you're playing,
  * your message box is docked at the bottom, and the round's story pops up on the side.
  */
-export function GameView({ arena, health, robot, all, onBack, onFinished }: Props) {
+export function GameView({ arena, health, robot, all, demoPrompt, onBack, onFinished }: Props) {
   const acc = useAccount();
   const [mode, setMode] = useState<"practice" | "real">("real");
   const [round, setRound] = useState<RoundInfo | null>(null);
@@ -146,6 +148,7 @@ export function GameView({ arena, health, robot, all, onBack, onFinished }: Prop
                   health={health}
                   robot={robot}
                   maxInstruction={arena.maxInstruction}
+                  demoPrompt={demoPrompt}
                   onResult={(v, asked) => show({ trace: v.trace, said: v.say, asked }, false)}
                   onFinished={onFinished}
                   compact

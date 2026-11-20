@@ -1,10 +1,11 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { formatQor, nextPrizeWei, type Robot, type RobotRecord } from "../api";
 import { TIER_TEXT, safetyScore } from "../data";
 import { PlayerTag } from "../players";
 import { ago, brainText, loadRecord, robotHue } from "./RobotPicker";
 
-export type Rect = { left: number; top: number; width: number; height: number };
+/** The rule-based robot's known weak spot: a straight drive that crosses the reactor. */
+export const DEMO_PROMPT = "Move 80 units east";
 
 /** How hard the robot should be to fool, from what its brain is (a guide, not a promise). */
 function difficulty(rec: RobotRecord | null): { level: number; label: string } | null {
@@ -47,26 +48,21 @@ function Count({ to, suffix = "" }: { to: number; suffix?: string }) {
 export function RobotSpotlight({
   robots,
   robot,
-  from,
-  leaving,
   canEnter,
   onSwitch,
-  onBack,
   onEnter,
 }: {
   robots: Robot[];
   robot: Robot;
-  from: Rect | null;
-  leaving: boolean;
   canEnter: boolean;
   onSwitch: (id: number) => void;
-  onBack: () => void;
-  onEnter: () => void;
+  /** demo: the prompt to offer in the message box (only for the practice robot) */
+  onEnter: (demo?: string) => void;
 }) {
-  const panel = useRef<HTMLDivElement>(null);
   const [rec, setRec] = useState<RobotRecord | null>(null);
   const [failed, setFailed] = useState(false);
   const [dir, setDir] = useState<"next" | "prev" | "">("");
+  const [copied, setCopied] = useState(false);
   const idx = robots.findIndex((r) => r.id === robot.id);
   const go = (step: number) => {
     if (robots.length < 2) return;
@@ -86,36 +82,21 @@ export function RobotSpotlight({
     };
   }, [robot.id]);
 
-  // Grow out of the clicked card (FLIP): start at the card's box, end at the panel's own.
-  useLayoutEffect(() => {
-    const el = panel.current;
-    if (!el || !from || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    const to = el.getBoundingClientRect();
-    if (!to.width) return;
-    el.animate(
-      [
-        { transformOrigin: "top left", transform: `translate(${from.left - to.left}px, ${from.top - to.top}px) scale(${from.width / to.width}, ${from.height / to.height})`, opacity: 0.6, borderRadius: "14px" },
-        { transformOrigin: "top left", transform: "none", opacity: 1, borderRadius: "22px" },
-      ],
-      { duration: 520, easing: "cubic-bezier(0.2, 0.85, 0.25, 1)" },
-    );
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
       if ((e.target as HTMLElement)?.closest?.("input, textarea")) return;
-      if (e.key === "Escape") onBack();
-      else if (e.key === "ArrowRight") go(1);
+      if (e.key === "ArrowRight") go(1);
       else if (e.key === "ArrowLeft") go(-1);
-      else if (e.key === "Enter" && canEnter && !(e.target as HTMLElement)?.closest?.("button, a")) onEnter();
+      else if (e.key === "Enter" && canEnter && !(e.target as HTMLElement)?.closest?.("button, a")) onEnter(demo);
     };
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
   });
 
   const hue = robotHue(robot.id);
-  const pool = robot.bounty.open[0];
+  // The bounty that pays the most to the next winner decides the headline.
+  const eff = (b: Robot["bounty"]["open"][number]) => (BigInt(b.prizeWei) < BigInt(b.amountWei) ? BigInt(b.prizeWei) : BigInt(b.amountWei));
+  const pool = [...robot.bounty.open].sort((x, y) => (eff(y) > eff(x) ? 1 : eff(y) < eff(x) ? -1 : 0))[0];
   const hasBounty = robot.bounty.totalWei !== "0";
   const perWin = hasBounty ? formatQor(nextPrizeWei(robot).toString()) : null;
   const job = rec?.profile?.job ?? robot.job;
@@ -123,16 +104,22 @@ export function RobotSpotlight({
   const blocked = robot.attacks ? Math.round((robot.defended / robot.attacks) * 100) : null;
   const terms = !pool
     ? ""
-    : pool.oncePerBrain
-      ? "One prize per version of the robot's brain: after someone wins, it pays again only once the owner updates the robot."
-      : "Every new winner is paid, once per player, until the pool runs out.";
+    : !pool.oncePerBrain
+      ? `Every new winner gets ${formatQor(eff(pool).toString())}, once per player, until this ${formatQor(pool.amountWei)} pool runs out.`
+      : pool.prizeWei === pool.amountWei
+        ? `One big prize: the first player to break it takes all ${formatQor(pool.amountWei)}.`
+        : "One prize per version of the robot's brain: after someone wins, it pays again only once the owner updates the robot.";
+  const isRule = rec?.brain?.kind === "rule";
+  const demo = isRule ? DEMO_PROMPT : undefined;
+  const practiceRobot = robots.find((r) => r.id !== robot.id && r.name === "Sentinel-01");
 
   return (
-    <div className={`spot ${leaving ? "leaving" : ""}`} style={{ ["--c" as string]: hue }}>
+    <div className="spot" style={{ ["--c" as string]: hue }}>
       <div className="spot-bar">
-        <button className="spot-back" onClick={onBack}>
-          <span aria-hidden="true">←</span> All robots
-        </button>
+        <div>
+          <h1 className="spot-title">Choose your opponent</h1>
+          <p className="spot-sub">Flip through the robots with the arrows, then enter the arena.</p>
+        </div>
         <div className="spot-nav" aria-label="Other robots">
           <button onClick={() => go(-1)} disabled={robots.length < 2} aria-label="Previous robot">
             ‹
@@ -146,7 +133,7 @@ export function RobotSpotlight({
         </div>
       </div>
 
-      <div className="spot-panel" ref={panel}>
+      <div className="spot-panel">
         <div className={`spot-body ${dir}`} key={robot.id}>
           {/* the robot, on a lit pad */}
           <div className="spot-bay">
@@ -195,6 +182,38 @@ export function RobotSpotlight({
                 </div>
               )}
             </div>
+
+            {isRule && (
+              <div className="spot-demo">
+                <span className="spot-demo-tag">Demo</span>
+                <div>
+                  <b>See a breach and a payout in one try.</b>
+                  <p>
+                    Send <code>{DEMO_PROMPT}</code>. This robot checks where it is told to go, but not the straight path there, so it drives through the reactor.
+                    You will see <b className="bad-text">Breached</b>, and the vault contract pays the prize to your QoreX wallet: it shows in your profile under
+                    Rewards, with the transaction.
+                  </p>
+                </div>
+                <button
+                  className="spot-copy"
+                  onClick={() => {
+                    navigator.clipboard?.writeText(DEMO_PROMPT).then(() => setCopied(true), () => {});
+                    window.setTimeout(() => setCopied(false), 1500);
+                  }}
+                >
+                  {copied ? "Copied" : "Copy"}
+                </button>
+              </div>
+            )}
+            {rec && !isRule && practiceRobot && (
+              <p className="spot-hint">
+                AI robots think about every message, so most attacks are blocked: that is them working. To watch a breach and a payout first, try{" "}
+                <button className="linkish" onClick={() => go(robots.indexOf(practiceRobot) - idx)}>
+                  {practiceRobot.name}
+                </button>
+                , the practice robot.
+              </p>
+            )}
 
             <dl className="spot-stats">
               <div>
@@ -246,12 +265,12 @@ export function RobotSpotlight({
             </div>
 
             <div className="spot-actions">
-              <button className="spot-enter" onClick={onEnter} disabled={!canEnter}>
+              <button className="spot-enter" onClick={() => onEnter(demo)} disabled={!canEnter}>
                 Enter the arena <span aria-hidden="true">→</span>
               </button>
               <span className="spot-keys">
                 <kbd>←</kbd>
-                <kbd>→</kbd> switch robot · <kbd>Esc</kbd> back
+                <kbd>→</kbd> switch robot
               </span>
             </div>
           </div>
