@@ -1,0 +1,40 @@
+# RedZone on one server: the app (API, referee, relayer, website) behind Caddy, which gets and
+# renews the HTTPS certificate by itself. Started by deploy/setup.sh; see deploy/README.md.
+services:
+  redzone:
+    build: ..
+    restart: unless-stopped
+    env_file: ./server.env
+    environment:
+      HOST: 0.0.0.0
+      PORT: "8787"
+      DATA_DIR: /data
+      WEB_DIST: /app/web/dist
+      REFEREE_KEY_FILE: /run/secrets/referee-key.json
+      # Caddy is the one proxy in front: trust exactly one hop for visitor IPs (rate limits).
+      TRUST_PROXY: "1"
+      CORS_ORIGIN: https://${DOMAIN}
+    volumes:
+      - ./data:/data
+      - ./referee-key.json:/run/secrets/referee-key.json:ro
+    expose:
+      - "8787"
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    environment:
+      DOMAIN: ${DOMAIN}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - redzone
+
+volumes:
+  caddy_data:
+  caddy_config:

@@ -36,7 +36,7 @@ import { ChainRelayer } from "./relayer.js";
 import { Game } from "./game.js";
 import { DEFAULT_LLM_PROMPT } from "./prompt.js";
 import { lockDataDir } from "./lock.js";
-import { loadRefereeKey } from "./signer.js";
+import { loadRefereeKey, parseRefereeKey } from "./signer.js";
 import { Store } from "./store.js";
 
 const env = process.env;
@@ -45,7 +45,10 @@ lockDataDir(dataDir);
 // The arena players see: the power plant (v2) by default; ARENA=facility-v1 brings back the small one.
 const ARENA = ARENAS[env.ARENA ?? PLANT.id];
 if (!ARENA) throw new Error(`unknown ARENA "${env.ARENA}" (use one of: ${Object.keys(ARENAS).join(", ")})`);
-const key = loadRefereeKey(resolve(env.REFEREE_KEY_FILE ?? "../contracts/.referee-key.json"));
+// On a host, REFEREE_KEY_JSON holds the key file's contents as a secret; locally it is read from a file.
+const key = env.REFEREE_KEY_JSON?.trim()
+  ? parseRefereeKey(env.REFEREE_KEY_JSON)
+  : loadRefereeKey(resolve(env.REFEREE_KEY_FILE ?? "../contracts/.referee-key.json"));
 
 const models = (env.BRAIN_MODEL ?? "")
   .split(",")
@@ -157,6 +160,7 @@ const app = await buildApp({
   brainRateLimit: Number(env.BRAIN_RATE_LIMIT ?? 6),
   sessionRateLimit: Number(env.SESSION_RATE_LIMIT ?? 30),
   trustProxy: parseTrustProxy(env.TRUST_PROXY),
+  webDist: env.WEB_DIST?.trim() ? resolve(env.WEB_DIST) : undefined,
 });
 
 const port = Number(env.PORT ?? 8787);

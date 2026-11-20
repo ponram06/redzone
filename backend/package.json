@@ -19,6 +19,7 @@
   "dependencies": {
     "@cosmjs/stargate": "^0.39.0",
     "@fastify/cors": "^11.4.3",
+    "@fastify/static": "^8.3.0",
     "@qorechain/sdk": "^0.14.0",
     "@scure/base": "^1.2.6",
     "fastify": "^5.12.8",

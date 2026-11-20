@@ -1,5 +1,6 @@
 /** HTTP API. Built as a factory so tests can inject requests without a network. */
 import cors from "@fastify/cors";
+import fastifyStatic from "@fastify/static";
 import Fastify, { type FastifyReply, type FastifyRequest } from "fastify";
 import { keccak256, type Address } from "viem";
 import type { Arena } from "./arena.js";
@@ -45,6 +46,8 @@ export type AppDeps = {
   sessionRateLimit?: number;
   /** Fastify trustProxy: true, a list of proxy addresses, or a test per hop. Off by default. */
   trustProxy?: boolean | string | ((address: string, hop: number) => boolean);
+  /** Built website folder (web/dist) to serve from the same address as the API, so one server runs everything. */
+  webDist?: string;
 };
 
 /** Tiny fixed-window limiter, per IP and route group. Each group has its own budget per minute. */
@@ -71,6 +74,17 @@ export async function buildApp(d: AppDeps) {
   // without that, every visitor would share one rate-limit bucket.
   const app = Fastify({ logger: false, bodyLimit: 64 * 1024, trustProxy: d.trustProxy ?? false });
   await app.register(cors, { origin: d.corsOrigin ?? true });
+  if (d.webDist) {
+    // Exact routes for the built files only (no wildcard), so they never shadow an API route.
+    // Hashed assets are cached for a year; index.html is always re-checked so new builds show at once.
+    await app.register(fastifyStatic, {
+      root: d.webDist,
+      wildcard: false,
+      cacheControl: false,
+      setHeaders: (res, path) =>
+        res.setHeader("Cache-Control", /[\\/]assets[\\/]/.test(path) ? "public, max-age=31536000, immutable" : "no-cache"),
+    });
+  }
   const brainBudget = d.brainRateLimit ?? 6;
   // brain: routes that call an AI. utility: a skills test (10 AI calls and a transaction).
   // session: signed requests and payment checks; a maker's bounty step alone retries several times.

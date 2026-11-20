@@ -95,7 +95,7 @@ flowchart LR
 | Part | State |
 |---|---|
 | `contracts/` v4: RobotRegistryV4, EscrowVaultV4 prize pools (on PQAccess, MLDSA87, QoreXMessage) | 348 Foundry tests passing: the v4 suite re-run on the prize-pool vault, new prize-pool tests and invariants, and the older v1/v2/v3/v4 suites |
-| `backend/` robot brains + ML-DSA-87 referee API | Working on v4: 101 unit tests, plus 6 live tests against the deployed contracts ([backend/README.md](backend/README.md)) |
+| `backend/` robot brains + ML-DSA-87 referee API | Working on v4: 102 unit tests, plus 6 live tests against the deployed contracts ([backend/README.md](backend/README.md)) |
 | `web/` website for players, robot makers and buyers | Working: play (training-robot practice, play pass, bounty rounds, buy extra tries), safety rankings, robot pages, add a robot, take a bounty back, help. Sign-in with QoreX; a relayer pays gas |
 | `audits/` | v3: self-review, QCAI stage 1 and stage 2 (with written answers), an adversarial audit (all findings fixed), Blockhertz reports on the vault. v4: QCAI stage 1 (85/100) and stage 2 (87/100, QUANTUM-SAFE), with written answers; No contract change needed ([audits/QCAI-v4-stage2-response.md](audits/QCAI-v4-stage2-response.md)). EscrowVaultV4 (prize pools, 19 Nov) is new and has not been through QCAI yet; its one-file bundle is [audits/RedZone.v5.flat.sol](audits/RedZone.v5.flat.sol) |
 | Q-Day Drill (18 Nov) | Hybrid-signed proof accepted; no successful attack, nothing taken from the drill account (drill ran on v3: [docs/QDAY_DRILL.md](docs/QDAY_DRILL.md)) |
@@ -312,6 +312,13 @@ AI assistance is documented in [AI_USAGE.md](AI_USAGE.md).
 MIT
 
 ## Running it in production
+
+**Hosting**: one container runs everything (API, referee, relayer and the website on the same
+address). `deploy/` puts it on any Ubuntu server with Docker and free automatic HTTPS, e.g. an
+Oracle Cloud Always Free machine; see [deploy/README.md](deploy/README.md). The server needs a
+persistent disk for `DATA_DIR`: robot brain configs, profiles, owner keys and replays live there.
+On a host that takes secrets as variables, `REFEREE_KEY_JSON` can hold the referee key file's
+contents instead of `REFEREE_KEY_FILE`, and `WEB_DIST` points to the built website.
 
 - **One server per data folder.** The relayer sends every transaction from one key, so two servers
   would race for the same nonces. The server locks `DATA_DIR/server.lock` at start and a second one

@@ -67,7 +67,12 @@ export type RefereeKey = { publicKey: Hex; secretKey: Uint8Array };
 
 /** Load the referee key made by `npm run referee-key` in contracts/. Never log the secret. */
 export function loadRefereeKey(file: string): RefereeKey {
-  const j = JSON.parse(readFileSync(file, "utf8")) as { algorithm?: string; publicKey: Hex; secretKey: Hex };
+  return parseRefereeKey(readFileSync(file, "utf8"));
+}
+
+/** The referee key from the JSON text of a key file (e.g. a hosting secret). */
+export function parseRefereeKey(json: string): RefereeKey {
+  const j = JSON.parse(json) as { algorithm?: string; publicKey: Hex; secretKey: Hex };
   if (j.algorithm && j.algorithm !== "ML-DSA-87") throw new Error(`unexpected referee key algorithm ${j.algorithm}`);
   const key = { publicKey: j.publicKey, secretKey: hexToBytes(j.secretKey) };
   // Self-check so a broken key fails at startup, not when a player wins.

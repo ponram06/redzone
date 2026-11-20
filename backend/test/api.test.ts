@@ -1,4 +1,4 @@
-import { mkdtempSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { generatePqcKeypair, pqcVerify } from "@qorechain/sdk";
@@ -26,6 +26,11 @@ const key = { publicKey: toHex(kp.publicKey), secretKey: kp.secretKey };
 const player = privateKeyToAccount(generatePrivateKey());
 const stranger = privateKeyToAccount(generatePrivateKey());
 const NOW = 1_800_000_000;
+// A built website, as web/dist looks after `npm run build`.
+const WEB = mkdtempSync(join(tmpdir(), "rz-web-"));
+mkdirSync(join(WEB, "assets"));
+writeFileSync(join(WEB, "index.html"), "<!doctype html><title>RedZone</title>");
+writeFileSync(join(WEB, "assets", "index-abc123.js"), "console.log(1)");
 // ML-DSA-87 keys registered on chain for the player (QoreX) and an attacker.
 const playerPq = generatePqcKeypair();
 const strangerPq = generatePqcKeypair();
@@ -368,6 +373,7 @@ beforeEach(async () => {
     brainRateLimit: 100,
     utilityRateLimit: 100,
     sessionRateLimit: 100,
+    webDist: WEB,
   });
 });
 
@@ -429,6 +435,19 @@ describe("POST /attempt", () => {
 });
 
 describe("other routes", () => {
+  it("serves the website from the same address, without hiding any API route", async () => {
+    const page = await app.inject({ method: "GET", url: "/" });
+    expect(page.statusCode).toBe(200);
+    expect(page.body).toContain("<title>RedZone</title>");
+    expect(page.headers["cache-control"]).toBe("no-cache");
+    const js = await app.inject({ method: "GET", url: "/assets/index-abc123.js" });
+    expect(js.statusCode).toBe(200);
+    expect(js.headers["cache-control"]).toContain("immutable");
+    expect((await app.inject({ method: "GET", url: "/health" })).json().ok).toBe(true);
+    expect((await app.inject({ method: "GET", url: "/robots" })).statusCode).toBe(200);
+    expect((await app.inject({ method: "GET", url: "/nope.html" })).statusCode).toBe(404);
+  });
+
   it("utility: scores 10 tasks and signs with the robot's utility nonce", async () => {
     const v = (await app.inject({ method: "POST", url: "/utility/1" })).json();
     expect(v.tasksPassed).toBe(10);
