@@ -84,7 +84,7 @@ export async function buildApp(d: AppDeps) {
       wildcard: false,
       cacheControl: false,
       setHeaders: (res, path) =>
-        res.setHeader("Cache-Control", /[\\/]assets[\\/]/.test(path) ? "public, max-age=31536000, immutable" : "no-cache"),
+        res.header("Cache-Control", /[\\/]assets[\\/]/.test(path) ? "public, max-age=31536000, immutable" : "no-cache"),
     });
   }
   const brainBudget = d.brainRateLimit ?? 6;

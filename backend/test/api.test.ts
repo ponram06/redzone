@@ -551,6 +551,13 @@ describe("other routes", () => {
     expect((await app.inject({ method: "GET", url: "/nope.html" })).statusCode).toBe(404);
   });
 
+  it("the website folder can't be escaped with path tricks", async () => {
+    for (const url of ["/../package.json", "/%2e%2e/package.json", "/assets/..%2f..%2fpackage.json", "/assets/%2e%2e%5cindex.html", "/assets/", "/.env"]) {
+      const r = await app.inject({ method: "GET", url });
+      expect(r.statusCode, url).not.toBe(200);
+    }
+  });
+
   it("utility: scores 10 tasks and signs with the robot's utility nonce", async () => {
     const v = (await app.inject({ method: "POST", url: "/utility/1" })).json();
     expect(v.tasksPassed).toBe(10);
