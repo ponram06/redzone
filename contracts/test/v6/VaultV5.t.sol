@@ -44,7 +44,8 @@ contract RefuserV6 {
     }
 }
 
-contract VaultV5Test is Test {
+/// @dev Shared setup and helpers (also used by Branches.t.sol).
+abstract contract VaultV5Base is Test {
     address constant VERIFY = 0x0000000000000000000000000000000000000a01;
     address constant STATUS = 0x0000000000000000000000000000000000000a02;
     bytes constant CHAIN = "qorechain-diana";
@@ -191,6 +192,9 @@ contract VaultV5Test is Test {
         (,,,,, st,,,,,) = vault.bounties(id);
     }
 
+}
+
+contract VaultV5Test is VaultV5Base {
     // ------------------------------------------------------ happy paths
 
     function test_FullRound_BreachPaysPlayer() public {

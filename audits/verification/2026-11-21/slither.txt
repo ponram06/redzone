@@ -1,0 +1,133 @@
+'forge clean' running (wd: C:\Users\ponr2\Documents\ChatGPT\redzone\contracts)
+'forge config --json' running
+'forge build --build-info --deny never --skip ./test/** ./script/** --force' running (wd: C:\Users\ponr2\Documents\ChatGPT\redzone\contracts)
+
+Detector: arbitrary-send-eth
+EscrowVault._send(address,uint256) (src/EscrowVault.sol#136-139) sends eth to arbitrary user
+	Dangerous calls:
+	- (ok,None) = to.call{value: amount}() (src/EscrowVault.sol#137)
+RobotRegistryV4.buyTries(address,uint256) (src/v4/RobotRegistryV4.sol#379-390) sends eth to arbitrary user
+	Dangerous calls:
+	- (ok,None) = treasury.call{value: cost}() (src/v4/RobotRegistryV4.sol#388)
+Reference: https://github.com/crytic/slither/wiki/Detector-Documentation#functions-that-send-ether-to-arbitrary-destinations
+
+Detector: incorrect-equality
+RobotRegistryV3._applyResult(uint256,bool,bytes32) (src/v3/RobotRegistryV3.sol#311-332) uses a dangerous strict equality:
+	- currentBrain = s.brainVersion == r.brainVersion (src/v3/RobotRegistryV3.sol#320)
+RobotRegistryV4._applyResult(uint256,bool,bytes32) (src/v4/RobotRegistryV4.sol#440-461) uses a dangerous strict equality:
+	- currentBrain = s.brainVersion == r.brainVersion (src/v4/RobotRegistryV4.sol#449)
+Reference: https://github.com/crytic/slither/wiki/Detector-Documentation#dangerous-strict-equalities
+
+Detector: unused-return
+RobotRegistryV2._requireUserSig(address,string,bytes32,bytes) (src/RobotRegistryV2.sol#314-320) ignores return value by (registered,None,pubkey) = PQGuard.keyStatus(account) (src/RobotRegistryV2.sol#315)
+Reference: https://github.com/crytic/slither/wiki/Detector-Documentation#unused-return
+
+Detector: timestamp
+RobotRegistry.recordResult(uint256,bool,bytes32,uint256,bytes) (src/RobotRegistry.sol#142-168) uses timestamp for comparisons
+	Dangerous comparisons:
+	- block.timestamp > uint256(s.startedAt) + SESSION_TTL + RESULT_GRACE (src/RobotRegistry.sol#152)
+RobotRegistryV2.recordResult(uint256,bool,bytes32,uint256,bytes) (src/RobotRegistryV2.sol#173-199) uses timestamp for comparisons
+	Dangerous comparisons:
+	- block.timestamp > uint256(s.startedAt) + SESSION_TTL + RESULT_GRACE (src/RobotRegistryV2.sol#183)
+RobotRegistryV2._checkRequestDeadline(uint256) (src/RobotRegistryV2.sol#322-325) uses timestamp for comparisons
+	Dangerous comparisons:
+	- block.timestamp > deadline (src/RobotRegistryV2.sol#323)
+	- deadline > block.timestamp + MAX_REQUEST_TTL (src/RobotRegistryV2.sol#324)
+EscrowVaultV2.claimDeadline(uint256) (src/v3/EscrowVaultV2.sol#203-208) uses timestamp for comparisons
+	Dangerous comparisons:
+	- unpause != 0 && resultAt >= start && resultAt < unpause (src/v3/EscrowVaultV2.sol#206)
+EscrowVaultV2.finalizeWithdraw(uint256) (src/v3/EscrowVaultV2.sol#231-250) uses timestamp for comparisons
+	Dangerous comparisons:
+	- block.timestamp < requestedAt + WITHDRAW_DELAY (src/v3/EscrowVaultV2.sol#236)
+	- block.timestamp > requestedAt + WITHDRAW_DELAY + WITHDRAW_EXPIRY (src/v3/EscrowVaultV2.sol#237)
+	- lastUnpause != 0 && block.timestamp < lastUnpause + UNPAUSE_GRACE (src/v3/EscrowVaultV2.sol#239)
+EscrowVaultV2._next(EscrowVaultV2.Bounty) (src/v3/EscrowVaultV2.sol#261-275) uses timestamp for comparisons
+	Dangerous comparisons:
+	- withdrawLive = r != 0 && block.timestamp <= r + WITHDRAW_DELAY + WITHDRAW_EXPIRY (src/v3/EscrowVaultV2.sol#270)
+	- withdrawLive && s.startedAt > r + START_GRACE (src/v3/EscrowVaultV2.sol#271)
+	- isPaused() && s.resultAt >= pausedAt (src/v3/EscrowVaultV2.sol#272)
+	- block.timestamp > claimDeadline(s.resultAt) (src/v3/EscrowVaultV2.sol#273)
+PQAccess.setPaused(bool,uint256,bytes) (src/v3/PQAccess.sol#147-164) uses timestamp for comparisons
+	Dangerous comparisons:
+	- unpausedAt != 0 && block.timestamp < uint256(unpausedAt) + PAUSE_COOLDOWN (src/v3/PQAccess.sol#154)
+	- block.timestamp < end (src/v3/PQAccess.sol#159)
+PQAccess.isPaused() (src/v3/PQAccess.sol#200-202) uses timestamp for comparisons
+	Dangerous comparisons:
+	- paused && block.timestamp < uint256(pausedAt) + MAX_PAUSE (src/v3/PQAccess.sol#201)
+PQAccess.lastUnpausedAt() (src/v3/PQAccess.sol#206-212) uses timestamp for comparisons
+	Dangerous comparisons:
+	- block.timestamp >= end (src/v3/PQAccess.sol#209)
+PQAccess._checkDeadline(uint256) (src/v3/PQAccess.sol#273-276) uses timestamp for comparisons
+	Dangerous comparisons:
+	- block.timestamp > deadline (src/v3/PQAccess.sol#274)
+	- deadline > block.timestamp + MAX_REQUEST_TTL (src/v3/PQAccess.sol#275)
+RobotRegistryV3.activateReferee() (src/v3/RobotRegistryV3.sol#220-228) uses timestamp for comparisons
+	Dangerous comparisons:
+	- block.timestamp < refereeActivatesAt (src/v3/RobotRegistryV3.sol#223)
+RobotRegistryV3.startSessionFor(uint256,address,uint256,bytes) (src/v3/RobotRegistryV3.sol#270-279) uses timestamp for comparisons
+	Dangerous comparisons:
+	- deadline > block.timestamp + MAX_START_TTL (src/v3/RobotRegistryV3.sol#276)
+RobotRegistryV3._applyResult(uint256,bool,bytes32) (src/v3/RobotRegistryV3.sol#311-332) uses timestamp for comparisons
+	Dangerous comparisons:
+	- block.timestamp > resultDeadline(sessionId) (src/v3/RobotRegistryV3.sol#315)
+	- currentBrain = s.brainVersion == r.brainVersion (src/v3/RobotRegistryV3.sol#320)
+EscrowVaultV3.claimDeadline(uint256) (src/v4/EscrowVaultV3.sol#203-208) uses timestamp for comparisons
+	Dangerous comparisons:
+	- unpause != 0 && resultAt >= start && resultAt < unpause (src/v4/EscrowVaultV3.sol#206)
+EscrowVaultV3.finalizeWithdraw(uint256) (src/v4/EscrowVaultV3.sol#231-250) uses timestamp for comparisons
+	Dangerous comparisons:
+	- block.timestamp < requestedAt + WITHDRAW_DELAY (src/v4/EscrowVaultV3.sol#236)
+	- block.timestamp > requestedAt + WITHDRAW_DELAY + WITHDRAW_EXPIRY (src/v4/EscrowVaultV3.sol#237)
+	- lastUnpause != 0 && block.timestamp < lastUnpause + UNPAUSE_GRACE (src/v4/EscrowVaultV3.sol#239)
+EscrowVaultV3._next(EscrowVaultV3.Bounty) (src/v4/EscrowVaultV3.sol#261-275) uses timestamp for comparisons
+	Dangerous comparisons:
+	- withdrawLive = r != 0 && block.timestamp <= r + WITHDRAW_DELAY + WITHDRAW_EXPIRY (src/v4/EscrowVaultV3.sol#270)
+	- withdrawLive && s.startedAt > r + START_GRACE (src/v4/EscrowVaultV3.sol#271)
+	- isPaused() && s.resultAt >= pausedAt (src/v4/EscrowVaultV3.sol#272)
+	- block.timestamp > claimDeadline(s.resultAt) (src/v4/EscrowVaultV3.sol#273)
+EscrowVaultV4.claimDeadline(uint256) (src/v4/EscrowVaultV4.sol#245-250) uses timestamp for comparisons
+	Dangerous comparisons:
+	- unpause != 0 && resultAt >= start && resultAt < unpause (src/v4/EscrowVaultV4.sol#248)
+EscrowVaultV4.finalizeWithdraw(uint256) (src/v4/EscrowVaultV4.sol#273-292) uses timestamp for comparisons
+	Dangerous comparisons:
+	- block.timestamp < requestedAt + WITHDRAW_DELAY (src/v4/EscrowVaultV4.sol#278)
+	- block.timestamp > requestedAt + WITHDRAW_DELAY + WITHDRAW_EXPIRY (src/v4/EscrowVaultV4.sol#279)
+	- lastUnpause != 0 && block.timestamp < lastUnpause + UNPAUSE_GRACE (src/v4/EscrowVaultV4.sol#281)
+EscrowVaultV4._next(uint256,EscrowVaultV4.Bounty) (src/v4/EscrowVaultV4.sol#303-319) uses timestamp for comparisons
+	Dangerous comparisons:
+	- withdrawLive = r != 0 && block.timestamp <= r + WITHDRAW_DELAY + WITHDRAW_EXPIRY (src/v4/EscrowVaultV4.sol#314)
+	- withdrawLive && s.startedAt > r + START_GRACE (src/v4/EscrowVaultV4.sol#315)
+	- isPaused() && s.resultAt >= pausedAt (src/v4/EscrowVaultV4.sol#316)
+	- block.timestamp > claimDeadline(s.resultAt) (src/v4/EscrowVaultV4.sol#317)
+RobotRegistryV4.activateReferee() (src/v4/RobotRegistryV4.sol#271-279) uses timestamp for comparisons
+	Dangerous comparisons:
+	- block.timestamp < refereeActivatesAt (src/v4/RobotRegistryV4.sol#274)
+RobotRegistryV4.startSessionFor(uint256,address,uint256,bytes) (src/v4/RobotRegistryV4.sol#321-330) uses timestamp for comparisons
+	Dangerous comparisons:
+	- deadline > block.timestamp + MAX_START_TTL (src/v4/RobotRegistryV4.sol#327)
+RobotRegistryV4.openPassFor(address,address,uint256,uint256,uint256,bytes) (src/v4/RobotRegistryV4.sol#342-352) uses timestamp for comparisons
+	Dangerous comparisons:
+	- operator == address(0) || validUntil <= block.timestamp || validUntil > block.timestamp + PASS_TTL (src/v4/RobotRegistryV4.sol#347)
+RobotRegistryV4.startSessionWithPass(uint256,address) (src/v4/RobotRegistryV4.sol#364-372) uses timestamp for comparisons
+	Dangerous comparisons:
+	- block.timestamp > p.validUntil (src/v4/RobotRegistryV4.sol#367)
+RobotRegistryV4._applyResult(uint256,bool,bytes32) (src/v4/RobotRegistryV4.sol#440-461) uses timestamp for comparisons
+	Dangerous comparisons:
+	- block.timestamp > _resultDeadline(sessionId) (src/v4/RobotRegistryV4.sol#444)
+	- currentBrain = s.brainVersion == r.brainVersion (src/v4/RobotRegistryV4.sol#449)
+EscrowVaultV5.claimDeadline(uint256) (src/v5/EscrowVaultV5.sol#242-247) uses timestamp for comparisons
+	Dangerous comparisons:
+	- unpause != 0 && resultAt >= start && resultAt < unpause (src/v5/EscrowVaultV5.sol#246)
+EscrowVaultV5.finalizeWithdraw(uint256) (src/v5/EscrowVaultV5.sol#272-285) uses timestamp for comparisons
+	Dangerous comparisons:
+	- block.timestamp < requestedAt + WITHDRAW_DELAY (src/v5/EscrowVaultV5.sol#275-276)
+	- block.timestamp > requestedAt + WITHDRAW_DELAY + WITHDRAW_EXPIRY (src/v5/EscrowVaultV5.sol#276-277)
+	- lastUnpause != 0 && block.timestamp < lastUnpause + UNPAUSE_GRACE (src/v5/EscrowVaultV5.sol#279-280)
+EscrowVaultV5._next(uint256,EscrowVaultV5.Bounty) (src/v5/EscrowVaultV5.sol#298-318) uses timestamp for comparisons
+	Dangerous comparisons:
+	- withdrawLive = r != 0 && block.timestamp <= r + WITHDRAW_DELAY + WITHDRAW_EXPIRY (src/v5/EscrowVaultV5.sol#313-314)
+	- withdrawLive && s.startedAt > r + START_GRACE (src/v5/EscrowVaultV5.sol#314)
+	- isPaused() && s.resultAt >= pausedAt (src/v5/EscrowVaultV5.sol#315)
+	- block.timestamp > claimDeadline(s.resultAt) (src/v5/EscrowVaultV5.sol#316-317)
+Reference: https://github.com/crytic/slither/wiki/Detector-Documentation#block-timestamp
+. analyzed (15 contracts with 76 detectors), 32 result(s) found

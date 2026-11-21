@@ -230,7 +230,9 @@ function RealRound({ health, robot, maxInstruction, onResult, onFinished, compac
             ))}
           {verdict.relay?.error && (
             <p className="error-text">
-              We couldn't save this result yet.{" "}
+              {won && verdict.relay.resultTx && verdict.claims.length
+                ? "Your win is saved on chain, but the payment hasn't gone through yet. The server retries it every few minutes, even if you leave."
+                : "We couldn't save this result yet. The server retries it every few minutes, even if you leave."}{" "}
               <button className="link" onClick={retry} disabled={!!busy}>
                 Try again
               </button>

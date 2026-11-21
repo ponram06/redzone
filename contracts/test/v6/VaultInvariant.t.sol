@@ -85,6 +85,7 @@ contract VaultHandlerV6 is Test {
     bool public winnerPaidAgain;
     mapping(uint256 => uint256) internal paidVersionPlus1;
     bool public prizeTooBig;
+    bool public paidSomeoneElse;
 
     function play(uint8 who, bool breach, uint32 thinkTime) external {
         uint256 i = who % 3;
@@ -162,8 +163,10 @@ contract VaultHandlerV6 is Test {
             paidTwice = true; // open pool: one prize per player
         }
         uint256 before = p.balance;
+        uint256 vaultBefore = address(vault).balance;
         vault.claimBounty(b);
         if (p.balance - before > prize) prizeTooBig = true;
+        if (vaultBefore - address(vault).balance != p.balance - before) paidSomeoneElse = true; // only the player gains
         paidToPlayers += p.balance - before;
     }
 
@@ -305,6 +308,7 @@ contract VaultInvariantV6Test is Test {
     function invariant_OnePrizePerPlayerAndNeverMoreThanThePrize() public view {
         assertFalse(handler.paidTwice());
         assertFalse(handler.prizeTooBig());
+        assertFalse(handler.paidSomeoneElse());
     }
 
     /// Sanity: the handler really reaches payouts (so the invariants are not vacuous).

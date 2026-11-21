@@ -10,7 +10,20 @@ import { pqcSign, pqcVerify } from "@qorechain/sdk";
 import { encodeAbiParameters, encodePacked, hexToBytes, keccak256, stringToBytes, toHex, type Address, type Hex } from "viem";
 
 export const REGISTRY_DOMAIN = "RedZone.RobotRegistry.v4";
-export const VAULT_DOMAIN = "RedZone.EscrowVault.v4";
+/** Each vault's signing domain: the tag it passes to PQAccess (checked against the sources in signer.test.ts). */
+export const VAULT_DOMAINS: Record<string, string> = {
+  EscrowVaultV4: "RedZone.EscrowVault.v4",
+  EscrowVaultV5: "RedZone.EscrowVault.v5",
+};
+/** The live vault's domain (EscrowVaultV5). */
+export const VAULT_DOMAIN = VAULT_DOMAINS.EscrowVaultV5!;
+
+/** The signing domain of the vault named `name` (EscrowVaultV4 or EscrowVaultV5). */
+export function vaultDomain(name: string): string {
+  const d = VAULT_DOMAINS[name];
+  if (!d) throw new Error(`unknown vault ${name}: add its domain tag to VAULT_DOMAINS`);
+  return d;
+}
 
 const typehash = (s: string) => keccak256(stringToBytes(s));
 export const RESULT_TYPEHASH = typehash(
@@ -121,13 +134,13 @@ export function updateBrainDigest(chainId: number, registry: Address, robotId: b
 
 export const WITHDRAW_TYPEHASH = typehash("RedZone.Withdraw(uint256 bountyId,address to,uint256 nonce,uint256 deadline)");
 
-/** EscrowVaultV2.withdrawDigest: what the bounty owner signs (requestWithdraw) to take a bounty back. */
-export function withdrawDigest(chainId: number, vault: Address, bountyId: bigint, to: Address, nonce: bigint, deadline: bigint): Hex {
+/** The vault's withdrawDigest: what the bounty owner signs (requestWithdraw) to take a bounty back. */
+export function withdrawDigest(chainId: number, vault: Address, bountyId: bigint, to: Address, nonce: bigint, deadline: bigint, domain = VAULT_DOMAIN): Hex {
   const data = encodeAbiParameters(
     [{ type: "bytes32" }, { type: "uint256" }, { type: "address" }, { type: "uint256" }, { type: "uint256" }],
     [WITHDRAW_TYPEHASH, bountyId, to, nonce, deadline],
   );
-  return domainDigest(VAULT_DOMAIN, chainId, vault, data);
+  return domainDigest(domain, chainId, vault, data);
 }
 
 export const OPEN_PASS_TYPEHASH = typehash(

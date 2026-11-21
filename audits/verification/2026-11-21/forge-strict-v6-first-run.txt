@@ -1,0 +1,275 @@
+Compiling 1 files with Solc 0.8.28
+Solc 0.8.28 finished in 2.17s
+Compiler run successful!
+
+Ran 91 tests for test/v6/VaultV5.t.sol:VaultV5Test
+[PASS] testFuzz_LockedAlwaysMatchesBalance(uint96,uint96,bool) (runs: 10000, μ: 1274112, ~: 1274202)
+[PASS] testFuzz_Stage2_ResultWindow(uint32) (runs: 10000, μ: 864494, ~: 888497)
+[PASS] test_AdminTransfer_Cancel() (gas: 920186)
+[PASS] test_AdminTransfer_TwoStep() (gas: 1212781)
+[PASS] test_Attack_AdminActionsNeedAdminSignature() (gas: 910904)
+[PASS] test_Attack_AdminDeadlineLimits() (gas: 221624)
+[PASS] test_Attack_AdminSigReplay() (gas: 557624)
+[PASS] test_Attack_BadNames() (gas: 57670)
+[PASS] test_Attack_ClaimWithBreachOfOtherRobot() (gas: 1599184)
+[PASS] test_Attack_ClaimWithNoBreaches() (gas: 163448)
+[PASS] test_Attack_ClaimWithoutBreach() (gas: 1040390)
+[PASS] test_Attack_DepositChecks() (gas: 58274)
+[PASS] test_Attack_DoubleClaim() (gas: 1147847)
+[PASS] test_Attack_FinalizeWithoutRequest() (gas: 160999)
+[PASS] test_Attack_OldBreachCannotTakeNewBounty() (gas: 1096750)
+[PASS] test_Attack_OtherKeyCannotJudge() (gas: 1018585)
+[PASS] test_Attack_OwnerCannotAttackOwnRobot() (gas: 461862)
+[PASS] test_Attack_OwnerFrontRunsStartWithWithdraw() (gas: 1622215)
+[PASS] test_Attack_PrecompileMissingFailsClosed() (gas: 561249)
+[PASS] test_Attack_ReentrancyOnClaim() (gas: 1348506)
+[PASS] test_Attack_ResultBoundToRobotAndPlayer() (gas: 905123)
+[PASS] test_Attack_ResultReplayAndTiming() (gas: 1214546)
+[PASS] test_Attack_SessionRequestReplay() (gas: 620810)
+[PASS] test_Attack_StartRequestHeldTooLong() (gas: 203347)
+[PASS] test_Attack_WithdrawSigReplayAndRedirect() (gas: 1277575)
+[PASS] test_Attack_WithdrawSignedByOthers() (gas: 994241)
+[PASS] test_Audit3_AcceptBoundToProposal() (gas: 1092148)
+[PASS] test_Audit3_CancelRefereeProposal() (gas: 783970)
+[PASS] test_Audit3_EarliestBreachWinsWhoeverCalls() (gas: 1839225)
+[PASS] test_Audit3_ExpiredWinCanBeSkippedThenWithdraw() (gas: 1617289)
+[PASS] test_Audit3_PauseExtendsClaimWindow() (gas: 1677580)
+[PASS] test_Audit3_StaleWithdrawRequestLapses() (gas: 1627021)
+[PASS] test_Audit3_StockpiledBreachExpires() (gas: 1778141)
+[PASS] test_Audit3_WithdrawWaitsForPendingWin() (gas: 1635751)
+[PASS] test_BountyBelongsToRobotOwnerNotFunder() (gas: 161153)
+[PASS] test_DailyLimit() (gas: 1385008)
+[PASS] test_Deploy_NeedsWorkingDeployerKey() (gas: 1439446)
+[PASS] test_Deploy_NeedsWorkingRefereeKey() (gas: 912215)
+[PASS] test_Deploy_ProofBoundToDeployerAndChain() (gas: 1017380)
+[PASS] test_FailedPaymentRevertsEverything() (gas: 1076370)
+[PASS] test_FullRound_BreachPaysPlayer() (gas: 1150155)
+[PASS] test_NoEcdsaShortcuts() (gas: 701022)
+[PASS] test_OldBrainVerdictNotCounted() (gas: 1387839)
+[PASS] test_OneBreachClaimsEveryOpenBounty() (gas: 1312759)
+[PASS] test_Pass_BoundsAndSignature() (gas: 1233648)
+[PASS] test_Pass_CannotAttackOwnRobotOrBeatDailyLimit() (gas: 1924035)
+[PASS] test_Pass_OneSignatureManyRounds() (gas: 731043)
+[PASS] test_Pass_OnlyOperatorAndOnlyInTime() (gas: 534959)
+[PASS] test_Pause_ExpiresAndHasCooldown() (gas: 1274691)
+[PASS] test_Pause_FreezesDepositsAndPayouts() (gas: 1208054)
+[PASS] test_Pause_RegistryPauseKeepsVerdicts() (gas: 1431774)
+[PASS] test_Pause_ResultBeforePauseStaysClaimable() (gas: 1615921)
+[PASS] test_Pause_ResultDuringPauseWaits() (gas: 1696603)
+[PASS] test_Pause_SameValueRefused() (gas: 560872)
+[PASS] test_Pause_WinDuringPauseBeatsWithdrawal() (gas: 2159934)
+[PASS] test_Pool_DepositBounds() (gas: 209632)
+[PASS] test_Pool_EachWinnerGetsOnePrize() (gas: 1940253)
+[PASS] test_Pool_LastPrizeIsTheRemainder() (gas: 1891563)
+[PASS] test_Pool_OncePerBrainVersion() (gas: 3461328)
+[PASS] test_Pool_OnePrizePerPlayer() (gas: 1511851)
+[PASS] test_Pool_OwnerWithdrawsTheRest() (gas: 1663247)
+[PASS] test_Pool_SinglePrizeDepositTakesAll() (gas: 1150273)
+[PASS] test_Pool_WinBeatsWithdrawal() (gas: 1680635)
+[PASS] test_ProposeReferee_NewKeyMustProveItself() (gas: 1271554)
+[PASS] test_RatingAndTiers() (gas: 31259609)
+[PASS] test_RefereeChange_IsTimeLocked() (gas: 1087228)
+[PASS] test_SessionAfterWithdrawRequestCannotClaim() (gas: 1613062)
+[PASS] test_Stage2_ChainIdLength() (gas: 5504399)
+[PASS] test_Stage2_NonMLDSA87KeyRefused() (gas: 463519)
+[PASS] test_Stage2_OZGuardBlocksCrossFunctionReentry() (gas: 1218145)
+[PASS] test_Stage2_PrecompileAvailability() (gas: 440745)
+[PASS] test_Stage2_RefereeKeyMustBeMLDSA87() (gas: 809490)
+[PASS] test_Stage2_SecondSignatureOverUsedDigestRefused() (gas: 962835)
+[PASS] test_Stage2_SessionBoundaries() (gas: 1188884)
+[PASS] test_Stage2_UserDigestsMarkedUsed() (gas: 560400)
+[PASS] test_Stage2_WrongSignatureLengthRefused() (gas: 856452)
+[PASS] test_Tries_ConstructorPrice() (gas: 4812241)
+[PASS] test_Tries_OffUntilPriced() (gas: 24355)
+[PASS] test_Tries_PaymentGoesStraightToTreasury() (gas: 588262)
+[PASS] test_Tries_PriceIsAdminOnlyAndBounded() (gas: 1375298)
+[PASS] test_Tries_RefusingTreasuryRevertsThePurchase() (gas: 591967)
+[PASS] test_Tries_UsedOnlyAfterFreeTriesAndKeptAcrossDays() (gas: 2012202)
+[PASS] test_Tries_WithPassRunPastTheFreeLimit() (gas: 1476088)
+[PASS] test_UnknownRobotAndUtilityChecks() (gas: 1156012)
+[PASS] test_Utility_ReplayAndBounds() (gas: 393499)
+[PASS] test_V5_OpenPoolStillOnePrizePerPlayerAcrossVersions() (gas: 2719202)
+[PASS] test_V5_WinnerIsPaidAgainAfterTheFix() (gas: 3369788)
+[PASS] test_Views() (gas: 1345915)
+[PASS] test_WinInProgressIsPaidBeforeWithdrawal() (gas: 1627091)
+[PASS] test_Withdraw_ReRequestFixesBadDestination() (gas: 821678)
+[PASS] test_Withdraw_TwoStepAfterDelay() (gas: 667055)
+Suite result: ok. 91 passed; 0 failed; 0 skipped; finished in 70.17s (12.32s CPU time)
+
+Ran 29 tests for test/v6/Branches.t.sol:BranchesV6Test
+[PASS] test_Branch_AdminWithoutKeyCannotAct() (gas: 391392)
+[PASS] test_Branch_CancelWithNothingPendingRefused() (gas: 443000)
+[PASS] test_Branch_ChainIdBadCharacterRefused() (gas: 1007162)
+[PASS] test_Branch_ChainIdLengthInLibrary() (gas: 588680)
+[PASS] test_Branch_ClosedBountyHasNoNextBreach() (gas: 1156257)
+[PASS] test_Branch_DeployerWithoutKeyCannotDeploy() (gas: 261799)
+[PASS] test_Branch_EmptyRefereeKeyRefusedAtDeploy() (gas: 532641)
+[PASS] test_Branch_EmptyRefereeKeyRefusedOnProposal() (gas: 442701)
+[PASS] test_Branch_KeyStatusRevertFailsClosed() (gas: 288857)
+[PASS] test_Branch_KeyStatusShortAnswerFailsClosed() (gas: 279171)
+[PASS] test_Branch_LibraryHelpersFailClosed() (gas: 1398940)
+[PASS] test_Branch_MisbehavingPrecompileNeverPays() (gas: 1080226)
+[PASS] test_Branch_NewAdminMustHoldKey() (gas: 448248)
+[PASS] test_Branch_NewAdminMustHoldMLDSA87Key() (gas: 836546)
+[PASS] test_Branch_ResultAfterItsDeadlineRefused() (gas: 945268)
+[PASS] test_Branch_RobotForZeroAddressRefused() (gas: 399812)
+[PASS] test_Branch_RoundStartedBeforeDepositCannotWinIt() (gas: 2012628)
+[PASS] test_Branch_SkipOnClosedOrMissingBountyRefused() (gas: 1148019)
+[PASS] test_Branch_UtilityAfterItsDeadlineRefused() (gas: 214559)
+[PASS] test_Branch_VaultNeedsRegistry() (gas: 522794)
+[PASS] test_Branch_VaultRefusesRegistryWithLongerSessions() (gas: 600737)
+[PASS] test_Branch_VaultRefusesRegistryWithLongerStartWindow() (gas: 599372)
+[PASS] test_Branch_VaultTimingsFitTheLiveRegistry() (gas: 15276)
+[PASS] test_Branch_VerdictForUnknownSessionRefused() (gas: 253035)
+[PASS] test_Branch_VerifyEmptyAnswerFailsClosed() (gas: 442946)
+[PASS] test_Branch_VerifyGarbageAnswerFailsClosed() (gas: 493230)
+[PASS] test_Branch_VerifyRevertFailsClosed() (gas: 501052)
+[PASS] test_Branch_WithdrawOnClosedBountyRefused() (gas: 1361948)
+[PASS] test_Branch_WithdrawToZeroAddressRefused() (gas: 370661)
+Suite result: ok. 29 passed; 0 failed; 0 skipped; finished in 70.17s (20.48ms CPU time)
+
+Ran 6 tests for test/v6/VaultInvariant.t.sol:VaultInvariantV6Test
+[PASS] invariant_BalanceCoversLocked() (runs: 1000, calls: 200000, reverts: 0)
+
+╭----------------+-----------------+-------+---------+----------╮
+| Contract       | Selector        | Calls | Reverts | Discards |
++===============================================================+
+| VaultHandlerV6 | claim           | 18342 | 0       | 0        |
+|----------------+-----------------+-------+---------+----------|
+| VaultHandlerV6 | deposit         | 18138 | 0       | 0        |
+|----------------+-----------------+-------+---------+----------|
+| VaultHandlerV6 | depositPool     | 18257 | 0       | 0        |
+|----------------+-----------------+-------+---------+----------|
+| VaultHandlerV6 | finalize        | 18268 | 0       | 0        |
+|----------------+-----------------+-------+---------+----------|
+| VaultHandlerV6 | judgeLater      | 18146 | 0       | 0        |
+|----------------+-----------------+-------+---------+----------|
+| VaultHandlerV6 | newBrain        | 18229 | 0       | 0        |
+|----------------+-----------------+-------+---------+----------|
+| VaultHandlerV6 | play            | 18352 | 0       | 0        |
+|----------------+-----------------+-------+---------+----------|
+| VaultHandlerV6 | requestWithdraw | 17893 | 0       | 0        |
+|----------------+-----------------+-------+---------+----------|
+| VaultHandlerV6 | startOnly       | 18255 | 0       | 0        |
+|----------------+-----------------+-------+---------+----------|
+| VaultHandlerV6 | togglePause     | 17958 | 0       | 0        |
+|----------------+-----------------+-------+---------+----------|
+| VaultHandlerV6 | wait            | 18162 | 0       | 0        |
+╰----------------+-----------------+-------+---------+----------╯
+
+[PASS] invariant_LockedMatchesOpenBounties() (runs: 1000, calls: 200000, reverts: 0)
+
+╭----------------+-----------------+-------+---------+----------╮
+| Contract       | Selector        | Calls | Reverts | Discards |
++===============================================================+
+| VaultHandlerV6 | claim           | 18130 | 0       | 0        |
+|----------------+-----------------+-------+---------+----------|
+| VaultHandlerV6 | deposit         | 18162 | 0       | 0        |
+|----------------+-----------------+-------+---------+----------|
+| VaultHandlerV6 | depositPool     | 18177 | 0       | 0        |
+|----------------+-----------------+-------+---------+----------|
+| VaultHandlerV6 | finalize        | 18151 | 0       | 0        |
+|----------------+-----------------+-------+---------+----------|
+| VaultHandlerV6 | judgeLater      | 18260 | 0       | 0        |
+|----------------+-----------------+-------+---------+----------|
+| VaultHandlerV6 | newBrain        | 18260 | 0       | 0        |
+|----------------+-----------------+-------+---------+----------|
+| VaultHandlerV6 | play            | 18203 | 0       | 0        |
+|----------------+-----------------+-------+---------+----------|
+| VaultHandlerV6 | requestWithdraw | 17924 | 0       | 0        |
+|----------------+-----------------+-------+---------+----------|
+| VaultHandlerV6 | startOnly       | 18195 | 0       | 0        |
+|----------------+-----------------+-------+---------+----------|
+| VaultHandlerV6 | togglePause     | 18381 | 0       | 0        |
+|----------------+-----------------+-------+---------+----------|
+| VaultHandlerV6 | wait            | 18157 | 0       | 0        |
+╰----------------+-----------------+-------+---------+----------╯
+
+[PASS] invariant_MoneyIsConserved() (runs: 1000, calls: 200000, reverts: 0)
+
+╭----------------+-----------------+-------+---------+----------╮
+| Contract       | Selector        | Calls | Reverts | Discards |
++===============================================================+
+| VaultHandlerV6 | claim           | 18108 | 0       | 0        |
+|----------------+-----------------+-------+---------+----------|
+| VaultHandlerV6 | deposit         | 18029 | 0       | 0        |
+|----------------+-----------------+-------+---------+----------|
+| VaultHandlerV6 | depositPool     | 18466 | 0       | 0        |
+|----------------+-----------------+-------+---------+----------|
+| VaultHandlerV6 | finalize        | 18262 | 0       | 0        |
+|----------------+-----------------+-------+---------+----------|
+| VaultHandlerV6 | judgeLater      | 18175 | 0       | 0        |
+|----------------+-----------------+-------+---------+----------|
+| VaultHandlerV6 | newBrain        | 17966 | 0       | 0        |
+|----------------+-----------------+-------+---------+----------|
+| VaultHandlerV6 | play            | 18087 | 0       | 0        |
+|----------------+-----------------+-------+---------+----------|
+| VaultHandlerV6 | requestWithdraw | 18176 | 0       | 0        |
+|----------------+-----------------+-------+---------+----------|
+| VaultHandlerV6 | startOnly       | 18196 | 0       | 0        |
+|----------------+-----------------+-------+---------+----------|
+| VaultHandlerV6 | togglePause     | 18409 | 0       | 0        |
+|----------------+-----------------+-------+---------+----------|
+| VaultHandlerV6 | wait            | 18126 | 0       | 0        |
+╰----------------+-----------------+-------+---------+----------╯
+
+[PASS] invariant_OnePrizePerPlayerAndNeverMoreThanThePrize() (runs: 1000, calls: 200000, reverts: 0)
+
+╭----------------+-----------------+-------+---------+----------╮
+| Contract       | Selector        | Calls | Reverts | Discards |
++===============================================================+
+| VaultHandlerV6 | claim           | 18142 | 0       | 0        |
+|----------------+-----------------+-------+---------+----------|
+| VaultHandlerV6 | deposit         | 18328 | 0       | 0        |
+|----------------+-----------------+-------+---------+----------|
+| VaultHandlerV6 | depositPool     | 18128 | 0       | 0        |
+|----------------+-----------------+-------+---------+----------|
+| VaultHandlerV6 | finalize        | 18163 | 0       | 0        |
+|----------------+-----------------+-------+---------+----------|
+| VaultHandlerV6 | judgeLater      | 17973 | 0       | 0        |
+|----------------+-----------------+-------+---------+----------|
+| VaultHandlerV6 | newBrain        | 18164 | 0       | 0        |
+|----------------+-----------------+-------+---------+----------|
+| VaultHandlerV6 | play            | 18054 | 0       | 0        |
+|----------------+-----------------+-------+---------+----------|
+| VaultHandlerV6 | requestWithdraw | 18328 | 0       | 0        |
+|----------------+-----------------+-------+---------+----------|
+| VaultHandlerV6 | startOnly       | 18158 | 0       | 0        |
+|----------------+-----------------+-------+---------+----------|
+| VaultHandlerV6 | togglePause     | 18234 | 0       | 0        |
+|----------------+-----------------+-------+---------+----------|
+| VaultHandlerV6 | wait            | 18328 | 0       | 0        |
+╰----------------+-----------------+-------+---------+----------╯
+
+[PASS] invariant_WinsAreNeverBeatenByWithdrawal() (runs: 1000, calls: 200000, reverts: 0)
+
+╭----------------+-----------------+-------+---------+----------╮
+| Contract       | Selector        | Calls | Reverts | Discards |
++===============================================================+
+| VaultHandlerV6 | claim           | 18048 | 0       | 0        |
+|----------------+-----------------+-------+---------+----------|
+| VaultHandlerV6 | deposit         | 18286 | 0       | 0        |
+|----------------+-----------------+-------+---------+----------|
+| VaultHandlerV6 | depositPool     | 18134 | 0       | 0        |
+|----------------+-----------------+-------+---------+----------|
+| VaultHandlerV6 | finalize        | 18205 | 0       | 0        |
+|----------------+-----------------+-------+---------+----------|
+| VaultHandlerV6 | judgeLater      | 18079 | 0       | 0        |
+|----------------+-----------------+-------+---------+----------|
+| VaultHandlerV6 | newBrain        | 18409 | 0       | 0        |
+|----------------+-----------------+-------+---------+----------|
+| VaultHandlerV6 | play            | 18224 | 0       | 0        |
+|----------------+-----------------+-------+---------+----------|
+| VaultHandlerV6 | requestWithdraw | 18411 | 0       | 0        |
+|----------------+-----------------+-------+---------+----------|
+| VaultHandlerV6 | startOnly       | 17870 | 0       | 0        |
+|----------------+-----------------+-------+---------+----------|
+| VaultHandlerV6 | togglePause     | 18228 | 0       | 0        |
+|----------------+-----------------+-------+---------+----------|
+| VaultHandlerV6 | wait            | 18106 | 0       | 0        |
+╰----------------+-----------------+-------+---------+----------╯
+
+[PASS] test_HandlerReachesPayouts() (gas: 2163759)
+Suite result: ok. 6 passed; 0 failed; 0 skipped; finished in 101.28s (376.36s CPU time)
+
+Ran 3 test suites in 101.29s (241.62s CPU time): 126 tests passed, 0 failed, 0 skipped (126 total tests)

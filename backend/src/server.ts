@@ -32,13 +32,15 @@ import {
   readSession,
   readTryPrice,
   readVaultNonce,
+  registryAbi,
+  vaultAbi,
 } from "./chain.js";
 import { ChainLedger } from "./ledger.js";
 import { ChainRelayer } from "./relayer.js";
 import { Game } from "./game.js";
 import { DEFAULT_LLM_PROMPT } from "./prompt.js";
 import { lockDataDir } from "./lock.js";
-import { loadRefereeKey, parseRefereeKey } from "./signer.js";
+import { loadRefereeKey, parseRefereeKey, resultDigest, startSessionDigest, vaultDomain, withdrawDigest } from "./signer.js";
 import { Store } from "./store.js";
 
 const env = process.env;
@@ -128,6 +130,7 @@ const game = new Game({
   sessionTtl: rules.sessionTtl,
   resultGrace: rules.resultGrace,
   withdrawDelay: rules.withdrawDelay,
+  vaultDomain: vaultDomain(VAULT_NAME),
   // Bounty and paid-try payments count only from the current contracts' deployment.
   paymentsFromHeight: Number(REGISTRY_DEPLOY_BLOCK),
   bountiesFromHeight: Number(VAULT_DEPLOY_BLOCK),
@@ -165,6 +168,37 @@ const app = await buildApp({
   trustProxy: parseTrustProxy(env.TRUST_PROXY),
   webDist: env.WEB_DIST?.trim() ? resolve(env.WEB_DIST) : undefined,
 });
+
+// Self-check: the digests this server builds must equal the contracts' own, or every signature it
+// asks players and owners for would be refused on chain. Mismatch: stop. RPC down: warn, go on.
+{
+  const who = "0x1111111111111111111111111111111111111111" as const;
+  const dl = 1_900_000_000n;
+  const h = ("0x" + "ab".repeat(32)) as `0x${string}`;
+  const checks: [string, () => Promise<`0x${string}`>, `0x${string}`][] = [
+    ["vault withdrawDigest", () => client.readContract({ address: VAULT, abi: vaultAbi, functionName: "withdrawDigest", args: [1n, who, 2n, dl] }), withdrawDigest(CHAIN_ID, VAULT, 1n, who, 2n, dl, vaultDomain(VAULT_NAME))],
+    ["registry startSessionDigest", () => client.readContract({ address: REGISTRY, abi: registryAbi, functionName: "startSessionDigest", args: [1n, who, 2n, dl] }), startSessionDigest(CHAIN_ID, REGISTRY, 1n, who, 2n, dl)],
+    ["registry resultDigest", () => client.readContract({ address: REGISTRY, abi: registryAbi, functionName: "resultDigest", args: [3n, 1n, who, true, h, dl] }), resultDigest(CHAIN_ID, REGISTRY, 3n, 1n, who, true, h, dl)],
+  ];
+  for (const [name, onChain, local] of checks) {
+    const got = await onChain().catch((e: Error) => {
+      console.warn(`digest self-check skipped for ${name}: ${e.message.slice(0, 120)}`);
+      return null;
+    });
+    if (got && got.toLowerCase() !== local.toLowerCase()) throw new Error(`${name}: this server builds ${local}, the contract ${got}. Signatures would be refused; fix the signing domain before starting.`);
+  }
+}
+
+// A win whose payout failed (network, RPC) is retried by the server too, not only by the player's
+// "Try again" button, so it is paid even if the player closed the page.
+if (relayer) {
+  setInterval(() => {
+    game
+      .retryFailedRelays()
+      .then((n) => n && console.log(`retried ${n} unfinished payout(s)`))
+      .catch((e: Error) => console.error(`payout retry: ${e.message.slice(0, 200)}`));
+  }, 120_000).unref();
+}
 
 const port = Number(env.PORT ?? 8787);
 await app.listen({ port, host: env.HOST ?? "127.0.0.1" });

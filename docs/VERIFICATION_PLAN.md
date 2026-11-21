@@ -1,4 +1,4 @@
-# Full verification pass (22 Nov 2026)
+# Full verification pass (21 Nov 2026)
 
 Goal: check every part of RedZone that holds or moves money, or decides who gets it, against
 written rules, with evidence for each. "Bug-free" cannot be proven; what we can do is make every
@@ -52,13 +52,13 @@ subtracted from new payments (pools locked short; no money lost, test added), an
 
 ### A. Contracts (live: RobotRegistryV4, EscrowVaultV5, with PQAccess, MLDSA87, PQGuard, QoreXMessage)
 
-- [ ] **Branch coverage to 100%** on EscrowVaultV5 and RobotRegistryV4: list each uncovered branch
+- [x] **Branch coverage to 100%** on EscrowVaultV5 and RobotRegistryV4: list each uncovered branch
       (`forge coverage --report lcov`), write a test that reaches it or explain why it can't be.
-- [ ] **PQGuard / MLDSA87 error paths** with a mock that returns short or malformed data, reverts,
+- [x] **PQGuard / MLDSA87 error paths** with a mock that returns short or malformed data, reverts,
       or is missing: every case must revert (fail closed), never return true.
-- [ ] **Triage all 14 Slither results** (rule 2). Re-check the High: who can set `treasury`, and can a
+- [x] **Triage all 14 Slither results** (rule 2). Re-check the High: who can set `treasury`, and can a
       buyer ever pay someone else.
-- [ ] **Strict invariant run** (`STRICT=1`) with these properties, adding any that are missing:
+- [x] **Strict invariant run** (`STRICT=1`) with these properties, adding any that are missing:
   - money in = locked + paid to players + paid to owners (vault balance never below `totalLocked`);
   - no payout larger than the pool's prize, none to anyone but the session's player;
   - an open pool never pays a player twice; a once-per-brain pool never pays the same brain
@@ -66,30 +66,30 @@ subtracted from new payments (pools locked short; no money lost, test added), an
   - a take-back never beats a win that was recorded in time;
   - the admin can never move funds; a pause ends by itself;
   - every state change needs a valid, unused ML-DSA-87 signature (no ECDSA-only path).
-- [ ] **Signature domain review**: every digest includes chain id, contract address, nonce and
+- [x] **Signature domain review**: every digest includes chain id, contract address, nonce and
       deadline; no two actions share a typehash; QoreX message format matches the server.
-- [ ] **Line-by-line read** of EscrowVaultV5 `_next`, `claimBounty`, `skipBreach`, `finalizeWithdraw`
+- [x] **Line-by-line read** of EscrowVaultV5 `_next`, `claimBounty`, `skipBreach`, `finalizeWithdraw`
       and RobotRegistryV4 `_applyResult`, `startSessionFor`, `recordResult`, against the rules above.
-- [ ] **Fuzz the edge values**: prize = pool, prize = MIN_PRIZE, pool = MIN_BOUNTY, deadlines at
+- [x] **Fuzz the edge values**: prize = pool, prize = MIN_PRIZE, pool = MIN_BOUNTY, deadlines at
       exactly now / now + TTL, brain updates in the same block as a result.
 
 ### B. Server (referee, relayer, API)
 
-- [ ] **Referee**: the same instruction and brain answer always give the same verdict; a verdict is
+- [x] **Referee**: the same instruction and brain answer always give the same verdict; a verdict is
       signed only for the session's robot, player and the current deadline; one verdict per session.
-- [ ] **Relayer**: only sends to the registry and the live vault; never signs a user's action for
+- [x] **Relayer**: only sends to the registry and the live vault; never signs a user's action for
       them; deposits only paid minus deposited (checked again after the V4 -> V5 bug); nonce queue.
-- [ ] **Freeze**: a frozen robot refuses every way of starting a paid round (QoreX, play pass);
+- [x] **Freeze**: a frozen robot refuses every way of starting a paid round (QoreX, play pass);
       a fix reopens it; the demo robot never freezes.
-- [ ] **Input limits and rate limits** on every route; error messages never leak keys or paths.
-- [ ] **Secrets**: never logged, never in git, file permissions on the server, `.env` not served.
+- [x] **Input limits and rate limits** on every route; error messages never leak keys or paths.
+- [x] **Secrets**: never logged, never in git, file permissions on the server, `.env` not served.
 - [ ] Live tests (`npm run test:live`) against the deployed contracts.
 
 ### C. Website
 
-- [ ] What the site shows matches the chain for every robot (prize per win, frozen, totals).
+- [x] What the site shows matches the chain for every robot (prize per win, frozen, totals).
 - [ ] Every QoreX signature request shows what it authorises; errors are readable.
-- [ ] Build passes; npm audit clean.
+- [x] Build passes; npm audit clean.
 
 ### D. Live end-to-end on testnet (with the owner)
 
@@ -97,6 +97,14 @@ subtracted from new payments (pools locked short; no money lost, test added), an
 - [ ] Breach an AI robot (or a test robot): it freezes; paid rounds are refused; the owner fixes it
       with "Fix this robot"; it reopens; the earlier winner can win again.
 - [ ] Re-add robot #5's 2 QOR from kira; take-back of a pool still works on V5.
+
+## Results (21 Nov)
+
+Every item above is done except the live end-to-end run (D), which needs the owner, and the
+`test:live` suite. Verdicts and evidence: [audits/verification/TRIAGE.md](../audits/verification/TRIAGE.md).
+Found and fixed in this pass (server, not contracts): a payout retry could never pay once the verdict
+was on chain (two paths), and a failed payout was only retried if the player pressed "Try again"; the
+server now retries by itself every 2 minutes. No contract bug was found; the contracts are unchanged.
 
 ## Exit criteria
 

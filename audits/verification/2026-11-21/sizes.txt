@@ -1,0 +1,687 @@
+Compiling 16 files with Solc 0.8.28
+Solc 0.8.28 finished in 15.68s
+Compiler run successful with warnings:
+Warning (2018): Function state mutability can be restricted to pure
+  --> test/EscrowVault.t.sol:71:5:
+   |
+71 |     function _sig(bytes memory pk, bytes32 digest) internal view returns (bytes memory) {
+   |     ^ (Relevant source part starts here and spans across multiple lines).
+
+Warning (2018): Function state mutability can be restricted to pure
+  --> test/RobotRegistry.t.sol:51:5:
+   |
+51 |     function _sig(bytes memory pk, bytes32 digest) internal view returns (bytes memory) {
+   |     ^ (Relevant source part starts here and spans across multiple lines).
+
+Warning (2018): Function state mutability can be restricted to pure
+  --> test/RobotRegistryV2.t.sol:65:5:
+   |
+65 |     function _raw(bytes memory pk, bytes32 digest) internal view returns (bytes memory) {
+   |     ^ (Relevant source part starts here and spans across multiple lines).
+
+
+╭-----------------------+------------------+-------------------+--------------------+---------------------╮
+| Contract              | Runtime Size (B) | Initcode Size (B) | Runtime Margin (B) | Initcode Margin (B) |
++=========================================================================================================+
+| EscrowVault           | 6,832            | 8,098             | 17,744             | 41,054              |
+|-----------------------+------------------+-------------------+--------------------+---------------------|
+| EscrowVaultV2         | 12,486           | 15,494            | 12,090             | 33,658              |
+|-----------------------+------------------+-------------------+--------------------+---------------------|
+| EscrowVaultV3         | 12,486           | 15,494            | 12,090             | 33,658              |
+|-----------------------+------------------+-------------------+--------------------+---------------------|
+| EscrowVaultV4         | 13,202           | 16,210            | 11,374             | 32,942              |
+|-----------------------+------------------+-------------------+--------------------+---------------------|
+| EscrowVaultV5         | 13,220           | 16,228            | 11,356             | 32,924              |
+|-----------------------+------------------+-------------------+--------------------+---------------------|
+| LibraryHarness        | 2,697            | 2,725             | 21,879             | 46,427              |
+|-----------------------+------------------+-------------------+--------------------+---------------------|
+| MLDSA87               | 85               | 135               | 24,491             | 49,017              |
+|-----------------------+------------------+-------------------+--------------------+---------------------|
+| MockPQC               | 1,629            | 1,657             | 22,947             | 47,495              |
+|-----------------------+------------------+-------------------+--------------------+---------------------|
+| MockPQC87             | 1,764            | 1,792             | 22,812             | 47,360              |
+|-----------------------+------------------+-------------------+--------------------+---------------------|
+| NotABoolPrecompile    | 78               | 104               | 24,498             | 49,048              |
+|-----------------------+------------------+-------------------+--------------------+---------------------|
+| PQGuard               | 85               | 135               | 24,491             | 49,017              |
+|-----------------------+------------------+-------------------+--------------------+---------------------|
+| QoreXMessage          | 85               | 135               | 24,491             | 49,017              |
+|-----------------------+------------------+-------------------+--------------------+---------------------|
+| Reenterer             | 404              | 538               | 24,172             | 48,614              |
+|-----------------------+------------------+-------------------+--------------------+---------------------|
+| ReentererV4           | 404              | 538               | 24,172             | 48,614              |
+|-----------------------+------------------+-------------------+--------------------+---------------------|
+| ReentererV5           | 404              | 538               | 24,172             | 48,614              |
+|-----------------------+------------------+-------------------+--------------------+---------------------|
+| ReentererV6           | 404              | 538               | 24,172             | 48,614              |
+|-----------------------+------------------+-------------------+--------------------+---------------------|
+| ReentrantClaimer      | 972              | 1,106             | 23,604             | 48,046              |
+|-----------------------+------------------+-------------------+--------------------+---------------------|
+| Refuser               | 115              | 141               | 24,461             | 49,011              |
+|-----------------------+------------------+-------------------+--------------------+---------------------|
+| RefuserV4             | 115              | 141               | 24,461             | 49,011              |
+|-----------------------+------------------+-------------------+--------------------+---------------------|
+| RefuserV5             | 115              | 141               | 24,461             | 49,011              |
+|-----------------------+------------------+-------------------+--------------------+---------------------|
+| RefuserV6             | 115              | 141               | 24,461             | 49,011              |
+|-----------------------+------------------+-------------------+--------------------+---------------------|
+| RevertingPrecompile   | 126              | 152               | 24,450             | 49,000              |
+|-----------------------+------------------+-------------------+--------------------+---------------------|
+| RobotRegistry         | 9,319            | 10,585            | 15,257             | 38,567              |
+|-----------------------+------------------+-------------------+--------------------+---------------------|
+| RobotRegistryV2       | 12,411           | 14,110            | 12,165             | 35,042              |
+|-----------------------+------------------+-------------------+--------------------+---------------------|
+| RobotRegistryV3       | 17,317           | 20,119            | 7,259              | 29,033              |
+|-----------------------+------------------+-------------------+--------------------+---------------------|
+| RobotRegistryV4       | 19,975           | 23,026            | 4,601              | 26,126              |
+|-----------------------+------------------+-------------------+--------------------+---------------------|
+| ShortAnswerPrecompile | 78               | 104               | 24,498             | 49,048              |
+|-----------------------+------------------+-------------------+--------------------+---------------------|
+| WrongTimingRegistry   | 218              | 336               | 24,358             | 48,816              |
+╰-----------------------+------------------+-------------------+--------------------+---------------------╯
+
+Warning: AST source not found for C:/Users/ponr2/Documents/ChatGPT/redzone/contracts/test\v3\AuditPoC.t.sol
+note[unwrapped-modifier-logic]: wrap modifier logic to reduce code size
+  --> src\EscrowVault.sol:49:5
+   |
+49 | /     modifier nonReentrant() {
+50 | |         if (_lock != 1) revert Reentrancy();
+51 | |         _lock = 2;
+52 | |         _;
+53 | |         _lock = 1;
+54 | |     }
+   | |_____^
+   |
+help: wrap modifier logic to reduce code size
+   |
+49 ~     modifier nonReentrant() {
+50 +         _nonReentrantBefore();
+51 +         _;
+52 +         _nonReentrantAfter();
+53 +     }
+54 + 
+55 +     function _nonReentrantBefore() internal {
+56 +         if (_lock != 1) revert Reentrancy();
+57 +         _lock = 2;
+58 +     }
+59 + 
+60 +     function _nonReentrantAfter() internal {
+61 +         _lock = 1;
+62 +     }
+   |
+   = help: https://book.getfoundry.sh/reference/forge/forge-lint#unwrapped-modifier-logic
+
+note[screaming-snake-case-immutable]: immutables should use SCREAMING_SNAKE_CASE
+  --> src\v3\PQAccess.sol:48:31
+   |
+48 |     bytes32 private immutable _domainTag;
+   |                               ^^^^^^^^^^ help: consider using: `_DOMAIN_TAG`
+   |
+   = help: https://book.getfoundry.sh/reference/forge/forge-lint#screaming-snake-case-immutable
+
+note[screaming-snake-case-immutable]: immutables should use SCREAMING_SNAKE_CASE
+  --> src\PQAdmin.sol:16:31
+   |
+16 |     bytes32 private immutable _domainTag;
+   |                               ^^^^^^^^^^ help: consider using: `_DOMAIN_TAG`
+   |
+   = help: https://book.getfoundry.sh/reference/forge/forge-lint#screaming-snake-case-immutable
+
+note[unused-import]: unused imports should be removed
+  --> test\v3\RedZoneV3.t.sol:11:9
+   |
+11 | import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+   |         ^^^^^^^^^^^^^^^
+   |
+   = help: https://book.getfoundry.sh/reference/forge/forge-lint#unused-import
+
+note[unused-import]: unused imports should be removed
+ --> src\v4\RobotRegistryV4.sol:5:9
+  |
+5 | import {QoreXMessage} from "../QoreXMessage.sol";
+  |         ^^^^^^^^^^^^
+  |
+  = help: https://book.getfoundry.sh/reference/forge/forge-lint#unused-import
+
+note[screaming-snake-case-immutable]: immutables should use SCREAMING_SNAKE_CASE
+  --> src\v3\EscrowVaultV2.sol:91:38
+   |
+91 |     RobotRegistryV3 public immutable registry;
+   |                                      ^^^^^^^^ help: consider using: `REGISTRY`
+   |
+   = help: https://book.getfoundry.sh/reference/forge/forge-lint#screaming-snake-case-immutable
+
+note[mixed-case-function]: function names should use mixedCase
+   --> src\v3\PQAccess.sol:195:14
+    |
+195 |     function isPQAvailable() external view returns (bool) {
+    |              ^^^^^^^^^^^^^ help: consider using: `isPqAvailable`
+    |
+    = help: https://book.getfoundry.sh/reference/forge/forge-lint#mixed-case-function
+
+note[unwrapped-modifier-logic]: wrap modifier logic to reduce code size
+  --> src\PQAdmin.sol:33:5
+   |
+33 | /     modifier notExpired(uint256 deadline) {
+34 | |         if (block.timestamp > deadline) revert Expired();
+35 | |         _;
+36 | |     }
+   | |_____^
+   |
+help: wrap modifier logic to reduce code size
+   |
+33 ~     modifier notExpired(uint256 deadline) {
+34 +         _notExpired(deadline);
+35 +         _;
+36 +     }
+37 + 
+38 +     function _notExpired(uint256 deadline) internal {
+39 +         if (block.timestamp > deadline) revert Expired();
+40 +     }
+   |
+   = help: https://book.getfoundry.sh/reference/forge/forge-lint#unwrapped-modifier-logic
+
+warning[unsafe-typecast]: typecasts that can truncate values should be checked
+   --> test\RobotRegistry.t.sol:231:34
+    |
+231 |             players[i] = address(uint160(0x1000 + i));
+    |                                  ^^^^^^^^^^^^^^^^^^^
+    |
+    = note: consider disabling this lint if you're certain the cast is safe
+            
+            // casting to 'uint160' is safe because [explain why]
+            // forge-lint: disable-next-line(unsafe-typecast)
+            
+            
+    = help: https://book.getfoundry.sh/reference/forge/forge-lint#unsafe-typecast
+
+warning[unsafe-typecast]: typecasts that can truncate values should be checked
+   --> test\v3\RedZoneV3.t.sol:885:53
+    |
+885 |             bytes memory pk = _key(abi.encodePacked(uint16(i + 1000)));
+    |                                                     ^^^^^^^^^^^^^^^^
+    |
+    = note: consider disabling this lint if you're certain the cast is safe
+            
+            // casting to 'uint16' is safe because [explain why]
+            // forge-lint: disable-next-line(unsafe-typecast)
+            
+            
+    = help: https://book.getfoundry.sh/reference/forge/forge-lint#unsafe-typecast
+
+note[unused-import]: unused imports should be removed
+  --> test\v5\RedZoneV5.t.sol:12:9
+   |
+12 | import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+   |         ^^^^^^^^^^^^^^^
+   |
+   = help: https://book.getfoundry.sh/reference/forge/forge-lint#unused-import
+
+note[unwrapped-modifier-logic]: wrap modifier logic to reduce code size
+  --> src\PQAdmin.sol:38:5
+   |
+38 | /     modifier whenNotPaused() {
+39 | |         if (paused) revert Paused();
+40 | |         _;
+41 | |     }
+   | |_____^
+   |
+help: wrap modifier logic to reduce code size
+   |
+38 ~     modifier whenNotPaused() {
+39 +         _whenNotPaused();
+40 +         _;
+41 +     }
+42 + 
+43 +     function _whenNotPaused() internal {
+44 +         if (paused) revert Paused();
+45 +     }
+   |
+   = help: https://book.getfoundry.sh/reference/forge/forge-lint#unwrapped-modifier-logic
+
+note[mixed-case-function]: function names should use mixedCase
+  --> src\PQGuard.sol:44:14
+   |
+44 |     function hasPQKey(address account) internal view returns (bool registered) {
+   |              ^^^^^^^^ help: consider using: `hasPqKey`
+   |
+   = help: https://book.getfoundry.sh/reference/forge/forge-lint#mixed-case-function
+
+note[unwrapped-modifier-logic]: wrap modifier logic to reduce code size
+   --> src\v4\RobotRegistryV4.sol:204:5
+    |
+204 | /     modifier notExpired(uint256 deadline) {
+205 | |         if (block.timestamp > deadline) revert Expired();
+206 | |         _;
+207 | |     }
+    | |_____^
+    |
+help: wrap modifier logic to reduce code size
+    |
+204 ~     modifier notExpired(uint256 deadline) {
+205 +         _notExpired(deadline);
+206 +         _;
+207 +     }
+208 + 
+209 +     function _notExpired(uint256 deadline) internal {
+210 +         if (block.timestamp > deadline) revert Expired();
+211 +     }
+    |
+    = help: https://book.getfoundry.sh/reference/forge/forge-lint#unwrapped-modifier-logic
+
+note[unwrapped-modifier-logic]: wrap modifier logic to reduce code size
+   --> src\v3\PQAccess.sol:104:5
+    |
+104 | /     modifier onlyAdmin(bytes32 digest, bytes calldata adminSig) {
+105 | |         address a = admin;
+106 | |         if (!MLDSA87.verify(MLDSA87.accountKey(a), adminSig, abi.encodePacked(digest))) revert PQGuard.PQCSignatureInvalid();
+107 | |         _useDigest(digest);
+108 | |         nonces[a] = nonces[a] + 1;
+109 | |         _;
+110 | |     }
+    | |_____^
+    |
+help: wrap modifier logic to reduce code size
+    |
+104 ~     modifier onlyAdmin(bytes32 digest, bytes adminSig) {
+105 +         _onlyAdmin(digest, adminSig);
+106 +         _;
+107 +     }
+108 + 
+109 +     function _onlyAdmin(bytes32 digest, bytes adminSig) internal {
+110 +         address a = admin;
+111 +         if (!MLDSA87.verify(MLDSA87.accountKey(a), adminSig, abi.encodePacked(digest))) revert PQGuard.PQCSignatureInvalid();
+112 +         _useDigest(digest);
+113 +         nonces[a] = nonces[a] + 1;
+114 +     }
+    |
+    = help: https://book.getfoundry.sh/reference/forge/forge-lint#unwrapped-modifier-logic
+
+warning[unchecked-call]: Low-level calls should check the success return value
+   --> test\v3\VaultInvariant.t.sol:105:9
+    |
+105 |         (, bytes memory raw) = address(vault).staticcall(abi.encodeCall(vault.bounties, (b)));
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: https://book.getfoundry.sh/reference/forge/forge-lint#unchecked-call
+
+warning[unsafe-typecast]: typecasts that can truncate values should be checked
+   --> test\v5\RedZoneV5.t.sol:902:53
+    |
+902 |             bytes memory pk = _key(abi.encodePacked(uint16(i + 1000)));
+    |                                                     ^^^^^^^^^^^^^^^^
+    |
+    = note: consider disabling this lint if you're certain the cast is safe
+            
+            // casting to 'uint16' is safe because [explain why]
+            // forge-lint: disable-next-line(unsafe-typecast)
+            
+            
+    = help: https://book.getfoundry.sh/reference/forge/forge-lint#unsafe-typecast
+
+note[asm-keccak256]: use of inefficient hashing mechanism; consider using inline assembly
+   --> src\v4\RobotRegistryV4.sol:225:31
+    |
+225 | ...ofDigest = keccak256(abi.encode(DEPLOY_TYPEHASH, keccak256("RedZone.RobotRegistry.v4"), block.chainid, msg.sender));
+    |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: https://book.getfoundry.sh/reference/forge/forge-lint#asm-keccak256
+
+note[screaming-snake-case-immutable]: immutables should use SCREAMING_SNAKE_CASE
+   --> src\v4\EscrowVaultV4.sol:106:38
+    |
+106 |     RobotRegistryV4 public immutable registry;
+    |                                      ^^^^^^^^ help: consider using: `REGISTRY`
+    |
+    = help: https://book.getfoundry.sh/reference/forge/forge-lint#screaming-snake-case-immutable
+
+note[asm-keccak256]: use of inefficient hashing mechanism; consider using inline assembly
+  --> src\PQAdmin.sol:61:21
+   |
+61 |         bytes32 h = keccak256(newPubkey);
+   |                     ^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: https://book.getfoundry.sh/reference/forge/forge-lint#asm-keccak256
+
+note[unwrapped-modifier-logic]: wrap modifier logic to reduce code size
+   --> src\v3\PQAccess.sol:112:5
+    |
+112 | /     modifier whenNotPaused() {
+113 | |         if (isPaused()) revert Paused();
+114 | |         _;
+115 | |     }
+    | |_____^
+    |
+help: wrap modifier logic to reduce code size
+    |
+112 ~     modifier whenNotPaused() {
+113 +         _whenNotPaused();
+114 +         _;
+115 +     }
+116 + 
+117 +     function _whenNotPaused() internal {
+118 +         if (isPaused()) revert Paused();
+119 +     }
+    |
+    = help: https://book.getfoundry.sh/reference/forge/forge-lint#unwrapped-modifier-logic
+
+note[asm-keccak256]: use of inefficient hashing mechanism; consider using inline assembly
+   --> src\v3\PQAccess.sol:131:23
+    |
+131 |         bytes32 tag = keccak256(bytes(domainTag));
+    |                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: https://book.getfoundry.sh/reference/forge/forge-lint#asm-keccak256
+
+note[asm-keccak256]: use of inefficient hashing mechanism; consider using inline assembly
+   --> src\v3\PQAccess.sol:132:31
+    |
+132 |         bytes32 proofDigest = keccak256(abi.encode(DEPLOY_TYPEHASH, tag, block.chainid, msg.sender));
+    |                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: https://book.getfoundry.sh/reference/forge/forge-lint#asm-keccak256
+
+note[asm-keccak256]: use of inefficient hashing mechanism; consider using inline assembly
+   --> src\v4\RobotRegistryV4.sol:250:21
+    |
+250 |         bytes32 h = keccak256(newPubkey);
+    |                     ^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: https://book.getfoundry.sh/reference/forge/forge-lint#asm-keccak256
+
+note[screaming-snake-case-immutable]: immutables should use SCREAMING_SNAKE_CASE
+  --> src\v4\EscrowVaultV3.sol:91:38
+   |
+91 |     RobotRegistryV4 public immutable registry;
+   |                                      ^^^^^^^^ help: consider using: `REGISTRY`
+   |
+   = help: https://book.getfoundry.sh/reference/forge/forge-lint#screaming-snake-case-immutable
+
+warning[unchecked-call]: Low-level calls should check the success return value
+   --> test\v5\VaultInvariant.t.sol:126:9
+    |
+126 |         (, bytes memory raw) = address(vault).staticcall(abi.encodeCall(vault.bounties, (b)));
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: https://book.getfoundry.sh/reference/forge/forge-lint#unchecked-call
+
+note[asm-keccak256]: use of inefficient hashing mechanism; consider using inline assembly
+   --> src\v3\PQAccess.sol:220:16
+    |
+220 |         return keccak256(abi.encode(DEPLOY_TYPEHASH, keccak256(bytes(domainTag)), block.chainid, deployer));
+    |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: https://book.getfoundry.sh/reference/forge/forge-lint#asm-keccak256
+
+warning[unchecked-call]: Low-level calls should check the success return value
+   --> test\v3\VaultInvariant.t.sol:245:9
+    |
+245 |         (, bytes memory raw) = address(vault).staticcall(abi.encodeCall(vault.bounties, (i)));
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: https://book.getfoundry.sh/reference/forge/forge-lint#unchecked-call
+
+warning[unsafe-typecast]: typecasts that can truncate values should be checked
+   --> src\v4\RobotRegistryV4.sol:252:30
+    |
+252 |         refereeActivatesAt = uint64(block.timestamp + REFEREE_DELAY);
+    |                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: consider disabling this lint if you're certain the cast is safe
+            
+            // casting to 'uint64' is safe because [explain why]
+            // forge-lint: disable-next-line(unsafe-typecast)
+            
+            
+    = help: https://book.getfoundry.sh/reference/forge/forge-lint#unsafe-typecast
+
+note[asm-keccak256]: use of inefficient hashing mechanism; consider using inline assembly
+   --> src\PQAdmin.sol:101:16
+    |
+101 |         return keccak256(abi.encodePacked(_domainTag, block.chainid, address(this), keccak256(structData)));
+    |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: https://book.getfoundry.sh/reference/forge/forge-lint#asm-keccak256
+
+warning[unchecked-call]: Low-level calls should check the success return value
+   --> test\v5\VaultInvariant.t.sol:269:9
+    |
+269 |         (, bytes memory raw) = address(vault).staticcall(abi.encodeCall(vault.bounties, (i)));
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: https://book.getfoundry.sh/reference/forge/forge-lint#unchecked-call
+
+note[unused-import]: unused imports should be removed
+ --> test\v3\VaultInvariant.t.sol:5:9
+  |
+5 | import {PQAccess} from "../../src/v3/PQAccess.sol";
+  |         ^^^^^^^^
+  |
+  = help: https://book.getfoundry.sh/reference/forge/forge-lint#unused-import
+
+note[unwrapped-modifier-logic]: wrap modifier logic to reduce code size
+   --> src\v3\RobotRegistryV3.sol:156:5
+    |
+156 | /     modifier notExpired(uint256 deadline) {
+157 | |         if (block.timestamp > deadline) revert Expired();
+158 | |         _;
+159 | |     }
+    | |_____^
+    |
+help: wrap modifier logic to reduce code size
+    |
+156 ~     modifier notExpired(uint256 deadline) {
+157 +         _notExpired(deadline);
+158 +         _;
+159 +     }
+160 + 
+161 +     function _notExpired(uint256 deadline) internal {
+162 +         if (block.timestamp > deadline) revert Expired();
+163 +     }
+    |
+    = help: https://book.getfoundry.sh/reference/forge/forge-lint#unwrapped-modifier-logic
+
+note[asm-keccak256]: use of inefficient hashing mechanism; consider using inline assembly
+   --> src\v3\PQAccess.sol:244:16
+    |
+244 |         return keccak256(abi.encodePacked(_domainTag, block.chainid, address(this), keccak256(structData)));
+    |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: https://book.getfoundry.sh/reference/forge/forge-lint#asm-keccak256
+
+note[unused-import]: unused imports should be removed
+ --> test\v5\VaultInvariant.t.sol:5:9
+  |
+5 | import {PQAccess} from "../../src/v3/PQAccess.sol";
+  |         ^^^^^^^^
+  |
+  = help: https://book.getfoundry.sh/reference/forge/forge-lint#unused-import
+
+note[mixed-case-function]: function names should use mixedCase
+  --> test\v6\Branches.t.sol:65:14
+   |
+65 |     function hasPQKey(address a) external view returns (bool) {
+   |              ^^^^^^^^ help: consider using: `hasPqKey`
+   |
+   = help: https://book.getfoundry.sh/reference/forge/forge-lint#mixed-case-function
+
+note[unused-import]: unused imports should be removed
+  --> test\v6\VaultV5.t.sol:12:9
+   |
+12 | import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+   |         ^^^^^^^^^^^^^^^
+   |
+   = help: https://book.getfoundry.sh/reference/forge/forge-lint#unused-import
+
+warning[unsafe-typecast]: typecasts that can truncate values should be checked
+   --> src\v4\RobotRegistryV4.sol:350:64
+    |
+350 |         passes[player] = Pass({operator: operator, validUntil: uint64(validUntil), roundsLeft: uint32(maxRounds)});
+    |                                                                ^^^^^^^^^^^^^^^^^^
+    |
+    = note: consider disabling this lint if you're certain the cast is safe
+            
+            // casting to 'uint64' is safe because [explain why]
+            // forge-lint: disable-next-line(unsafe-typecast)
+            
+            
+    = help: https://book.getfoundry.sh/reference/forge/forge-lint#unsafe-typecast
+
+note[asm-keccak256]: use of inefficient hashing mechanism; consider using inline assembly
+   --> src\v3\RobotRegistryV3.sol:171:31
+    |
+171 | ...ofDigest = keccak256(abi.encode(DEPLOY_TYPEHASH, keccak256("RedZone.RobotRegistry.v3"), block.chainid, msg.sender));
+    |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: https://book.getfoundry.sh/reference/forge/forge-lint#asm-keccak256
+
+warning[unchecked-call]: Low-level calls should check the success return value
+   --> test\v6\VaultInvariant.t.sol:129:9
+    |
+129 |         (, bytes memory raw) = address(vault).staticcall(abi.encodeCall(vault.bounties, (b)));
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: https://book.getfoundry.sh/reference/forge/forge-lint#unchecked-call
+
+warning[unsafe-typecast]: typecasts that can truncate values should be checked
+   --> src\v4\RobotRegistryV4.sol:350:96
+    |
+350 |         passes[player] = Pass({operator: operator, validUntil: uint64(validUntil), roundsLeft: uint32(maxRounds)});
+    |                                                                                                ^^^^^^^^^^^^^^^^^
+    |
+    = note: consider disabling this lint if you're certain the cast is safe
+            
+            // casting to 'uint32' is safe because [explain why]
+            // forge-lint: disable-next-line(unsafe-typecast)
+            
+            
+    = help: https://book.getfoundry.sh/reference/forge/forge-lint#unsafe-typecast
+
+warning[unsafe-typecast]: typecasts that can truncate values should be checked
+   --> test\v6\Branches.t.sol:352:49
+    |
+352 |         bytes memory pk = _key(abi.encodePacked(uint16(i + 3000)));
+    |                                                 ^^^^^^^^^^^^^^^^
+    |
+    = note: consider disabling this lint if you're certain the cast is safe
+            
+            // casting to 'uint16' is safe because [explain why]
+            // forge-lint: disable-next-line(unsafe-typecast)
+            
+            
+    = help: https://book.getfoundry.sh/reference/forge/forge-lint#unsafe-typecast
+
+warning[unchecked-call]: Low-level calls should check the success return value
+   --> test\v4\VaultInvariant.t.sol:105:9
+    |
+105 |         (, bytes memory raw) = address(vault).staticcall(abi.encodeCall(vault.bounties, (b)));
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: https://book.getfoundry.sh/reference/forge/forge-lint#unchecked-call
+
+note[unsafe-cheatcode]: usage of unsafe cheatcodes that can perform dangerous operations
+  --> script\DeployV3.s.sol:17:30
+   |
+17 |         string memory j = vm.readFile(".v3-proofs.json");
+   |                              ^^^^^^^^
+   |
+   = help: https://book.getfoundry.sh/reference/forge/forge-lint#unsafe-cheatcode
+
+warning[unchecked-call]: Low-level calls should check the success return value
+   --> test\v6\VaultInvariant.t.sol:282:9
+    |
+282 |         (, bytes memory raw) = address(vault).staticcall(abi.encodeCall(vault.bounties, (i)));
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: https://book.getfoundry.sh/reference/forge/forge-lint#unchecked-call
+
+note[asm-keccak256]: use of inefficient hashing mechanism; consider using inline assembly
+   --> src\v3\RobotRegistryV3.sol:196:21
+    |
+196 |         bytes32 h = keccak256(newPubkey);
+    |                     ^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: https://book.getfoundry.sh/reference/forge/forge-lint#asm-keccak256
+
+note[unused-import]: unused imports should be removed
+ --> test\v6\VaultInvariant.t.sol:5:9
+  |
+5 | import {PQAccess} from "../../src/v3/PQAccess.sol";
+  |         ^^^^^^^^
+  |
+  = help: https://book.getfoundry.sh/reference/forge/forge-lint#unused-import
+
+note[unused-import]: unused imports should be removed
+  --> test\v4\RedZoneV4.t.sol:12:9
+   |
+12 | import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+   |         ^^^^^^^^^^^^^^^
+   |
+   = help: https://book.getfoundry.sh/reference/forge/forge-lint#unused-import
+
+warning[unsafe-typecast]: typecasts that can truncate values should be checked
+   --> src\v3\RobotRegistryV3.sol:198:30
+    |
+198 |         refereeActivatesAt = uint64(block.timestamp + REFEREE_DELAY);
+    |                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: consider disabling this lint if you're certain the cast is safe
+            
+            // casting to 'uint64' is safe because [explain why]
+            // forge-lint: disable-next-line(unsafe-typecast)
+            
+            
+    = help: https://book.getfoundry.sh/reference/forge/forge-lint#unsafe-typecast
+
+note[screaming-snake-case-immutable]: immutables should use SCREAMING_SNAKE_CASE
+   --> src\v5\EscrowVaultV5.sol:108:38
+    |
+108 |     RobotRegistryV4 public immutable registry;
+    |                                      ^^^^^^^^ help: consider using: `REGISTRY`
+    |
+    = help: https://book.getfoundry.sh/reference/forge/forge-lint#screaming-snake-case-immutable
+
+warning[unsafe-typecast]: typecasts that can truncate values should be checked
+   --> test\v6\VaultV5.t.sol:906:53
+    |
+906 |             bytes memory pk = _key(abi.encodePacked(uint16(i + 1000)));
+    |                                                     ^^^^^^^^^^^^^^^^
+    |
+    = note: consider disabling this lint if you're certain the cast is safe
+            
+            // casting to 'uint16' is safe because [explain why]
+            // forge-lint: disable-next-line(unsafe-typecast)
+            
+            
+    = help: https://book.getfoundry.sh/reference/forge/forge-lint#unsafe-typecast
+
+warning[unsafe-typecast]: typecasts that can truncate values should be checked
+   --> test\v4\RedZoneV4.t.sol:902:53
+    |
+902 |             bytes memory pk = _key(abi.encodePacked(uint16(i + 1000)));
+    |                                                     ^^^^^^^^^^^^^^^^
+    |
+    = note: consider disabling this lint if you're certain the cast is safe
+            
+            // casting to 'uint16' is safe because [explain why]
+            // forge-lint: disable-next-line(unsafe-typecast)
+            
+            
+    = help: https://book.getfoundry.sh/reference/forge/forge-lint#unsafe-typecast
+
+warning[unchecked-call]: Low-level calls should check the success return value
+   --> test\v4\VaultInvariant.t.sol:245:9
+    |
+245 |         (, bytes memory raw) = address(vault).staticcall(abi.encodeCall(vault.bounties, (i)));
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: https://book.getfoundry.sh/reference/forge/forge-lint#unchecked-call
+
+note[unused-import]: unused imports should be removed
+ --> test\v4\VaultInvariant.t.sol:5:9
+  |
+5 | import {PQAccess} from "../../src/v3/PQAccess.sol";
+  |         ^^^^^^^^
+  |
+  = help: https://book.getfoundry.sh/reference/forge/forge-lint#unused-import
+

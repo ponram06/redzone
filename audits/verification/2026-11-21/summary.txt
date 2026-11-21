@@ -1,0 +1,10 @@
+RedZone verification, Sat Nov 21 07:13:45 UTC 2026, profile strict
+contracts build                    ok
+forge test (strict)                Ran 12 test suites in 328.58s (1431.69s CPU time): 477 tests passed, 0 failed, 0 skipped (477 total tests)
+coverage (live contracts)          see coverage.txt
+slither                            . analyzed (15 contracts with 76 detectors), 32 result(s) found
+backend typecheck                  ok
+backend tests                            Tests  118 passed (118)
+backend npm audit (prod deps)      found 0 vulnerabilities 
+web build                          ok
+web npm audit (prod deps)          found 0 vulnerabilities 

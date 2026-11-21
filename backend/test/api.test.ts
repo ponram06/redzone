@@ -58,6 +58,8 @@ let vault: { next: number; bounties: Map<number, FakeBounty>; paid: { bountyId: 
 /** Session ids of recorded breaches not yet paid or skipped, per bounty (the vault's cursor, simplified). */
 let unpaid: Map<number, number[]>;
 let clock: number;
+/** The Game behind `app`, for calls the HTTP API does not expose (the background retry). */
+let theGame: Game;
 
 /** Records what would go on chain; answers startSessionFor with a SessionStarted log. */
 class FakeRelayer implements Relayer {
@@ -360,6 +362,7 @@ beforeEach(async () => {
     [txHash(34)]: { code: 0, from: toQorAddress(player.address), to: PAY_TO, uqor: 2_000_000n, memo: "RedZone bounty #2", height: 19 },
   };
   const game = new Game({ arena: FACILITY, brains, store, key, chain, ledger, chainId: 9800, registry: REG, vault: VAULT, sessionTtl: 600, resultGrace: 3600, withdrawDelay: WITHDRAW_DELAY, paymentsFromHeight: 20, relayer, signup: { feeUqor: FEE, payTo: PAY_TO }, prize: { minUqor: 1_000_000n, payTo: PAY_TO }, now: () => clock });
+  theGame = game;
   app = await buildApp({
     game,
     arena: FACILITY,
@@ -719,6 +722,112 @@ describe("QoreX players and the relayer", () => {
     expect(again.relay.error).toBeUndefined();
     expect(again.relay.resultTx).toBeDefined();
     expect(again.relay.claimTxs).toHaveLength(1);
+  });
+
+  it("a retry after the verdict landed but the payout failed pays the prize (no second recordResult)", async () => {
+    // Behave like the chain: a session's result can be recorded once; the first claim fails in transit.
+    const real = relayer.send.bind(relayer);
+    const recorded = new Set<number>();
+    let claimFails = 1;
+    const spy = vi.spyOn(relayer, "send").mockImplementation(async (to, data, value, onSent) => {
+      const abi = to.toLowerCase() === VAULT ? vaultAbi : registryAbi;
+      const call = decodeFunctionData({ abi, data });
+      if (call.functionName === "recordResult") {
+        const sid = Number((call.args as unknown as [bigint])[0]);
+        if (recorded.has(sid)) throw new Error("execution reverted: AlreadyRecorded()");
+        recorded.add(sid);
+        const r = await real(to, data, value, onSent);
+        sessions[sid] = { ...sessions[sid]!, outcome: 2, resultAt: NOW };
+        return r;
+      }
+      if (call.functionName === "claimBounty" && claimFails-- > 0) throw new Error("network down");
+      return real(to, data, value, onSent);
+    });
+    try {
+      const v = (await pqAttempt(2, "go to (70, 50)")).json();
+      expect(v.relay.resultTx).toBeDefined();
+      expect(v.relay.error).toMatch(/network down/);
+      const again = (await app.inject({ method: "POST", url: "/attempt/2/relay" })).json();
+      expect(again.relay.error).toBeUndefined();
+      expect(again.relay.claimTxs).toHaveLength(1);
+      expect(vault.paid[0]).toMatchObject({ sessionId: 2, player: player.address });
+      expect(relayer.sent.filter((s) => s.fn === "recordResult")).toHaveLength(1);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("a retry after a recordResult whose receipt was lost pays the prize (the result is read from chain)", async () => {
+    const real = relayer.send.bind(relayer);
+    const recorded = new Set<number>();
+    let lose = 1;
+    const spy = vi.spyOn(relayer, "send").mockImplementation(async (to, data, value, onSent) => {
+      const abi = to.toLowerCase() === VAULT ? vaultAbi : registryAbi;
+      const call = decodeFunctionData({ abi, data });
+      if (call.functionName === "recordResult") {
+        const sid = Number((call.args as unknown as [bigint])[0]);
+        if (recorded.has(sid)) throw new Error("execution reverted: AlreadyRecorded()");
+        recorded.add(sid);
+        await real(to, data, value, onSent);
+        sessions[sid] = { ...sessions[sid]!, outcome: 2, resultAt: NOW };
+        if (lose-- > 0) throw new Error("timed out waiting for the receipt"); // landed, but we never heard
+      }
+      return real(to, data, value, onSent);
+    });
+    try {
+      const v = (await pqAttempt(2, "go to (70, 50)")).json();
+      expect(v.relay.error).toMatch(/timed out/);
+      const again = (await app.inject({ method: "POST", url: "/attempt/2/relay" })).json();
+      expect(again.relay.error).toBeUndefined();
+      expect(again.relay.claimTxs).toHaveLength(1);
+      expect(vault.paid[0]).toMatchObject({ sessionId: 2, player: player.address });
+      expect(recorded.size).toBe(1);
+      // nothing left to do: a third call changes nothing
+      const third = (await app.inject({ method: "POST", url: "/attempt/2/relay" })).json();
+      expect(third.relay.claimTxs).toHaveLength(1);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("the server retries a failed payout by itself, so a win is paid even if the player left", async () => {
+    const real = relayer.send.bind(relayer);
+    let claimFails = 1;
+    const spy = vi.spyOn(relayer, "send").mockImplementation(async (to, data, value, onSent) => {
+      const abi = to.toLowerCase() === VAULT ? vaultAbi : registryAbi;
+      const call = decodeFunctionData({ abi, data });
+      if (call.functionName === "recordResult") {
+        const r = await real(to, data, value, onSent);
+        const sid = Number((call.args as unknown as [bigint])[0]);
+        sessions[sid] = { ...sessions[sid]!, outcome: 2, resultAt: NOW };
+        return r;
+      }
+      if (call.functionName === "claimBounty" && claimFails-- > 0) throw new Error("network down");
+      return real(to, data, value, onSent);
+    });
+    try {
+      const v = (await pqAttempt(2, "go to (70, 50)")).json();
+      expect(v.relay.error).toMatch(/network down/);
+      expect(vault.paid).toHaveLength(0);
+      expect(await theGame.retryFailedRelays()).toBe(1); // the player never comes back
+      expect(vault.paid[0]).toMatchObject({ sessionId: 2, player: player.address });
+      const stored = (await app.inject({ method: "POST", url: "/attempt/2/relay" })).json();
+      expect(stored.relay.error).toBeUndefined();
+      expect(stored.relay.claimTxs).toHaveLength(1);
+      expect(await theGame.retryFailedRelays()).toBe(0); // nothing left
+      // Too old to pay (past the result deadline plus the longest claim window): left alone.
+      relayer.failNext = 1;
+      const d = (await pqAttempt(1, "Fetch a box from storage.")).json();
+      expect(d.relay.error).toMatch(/network down/);
+      const before = relayer.sent.length;
+      clock += 2 * 3600; // past its result deadline and never recorded: it can't be recorded any more
+      expect(await theGame.retryFailedRelays()).toBe(0);
+      clock += 30 * 86400; // past the longest claim window
+      expect(await theGame.retryFailedRelays()).toBe(0);
+      expect(relayer.sent.length).toBe(before);
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   const signUp = (address: string, n: number) => {

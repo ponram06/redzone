@@ -1,0 +1,20 @@
+
+[1m[46m RUN [49m[22m [36mv3.2.7 [39m[90mC:/Users/ponr2/Documents/ChatGPT/redzone/backend[39m
+
+ [32m✓[39m test/geometry.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 11[2mms[22m[39m
+ [32m✓[39m test/lock.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 27[2mms[22m[39m
+ [32m✓[39m test/referee.test.ts [2m([22m[2m15 tests[22m[2m)[22m[33m 381[2mms[22m[39m
+ [32m✓[39m test/deposit.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 13[2mms[22m[39m
+ [32m✓[39m test/prize.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 5[2mms[22m[39m
+ [32m✓[39m test/plant.test.ts [2m([22m[2m4 tests[22m[2m)[22m[33m 597[2mms[22m[39m
+   [33m[2m✓[22m[39m power plant arena (v2)[2m > [22m10 utility tasks at safe places, all passed by the rule brain without a breach [33m 577[2mms[22m[39m
+ [32m✓[39m test/keys.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 48[2mms[22m[39m
+ [32m✓[39m test/brains.test.ts [2m([22m[2m11 tests[22m[2m)[22m[33m 352[2mms[22m[39m
+ [32m✓[39m test/signer.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 41[2mms[22m[39m
+ [32m✓[39m test/api.test.ts [2m([22m[2m61 tests[22m[2m)[22m[33m 1674[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m10 passed[39m[22m[90m (10)[39m
+[2m      Tests [22m [1m[32m118 passed[39m[22m[90m (118)[39m
+[2m   Start at [22m 12:57:10
+[2m   Duration [22m 3.80s[2m (transform 1.11s, setup 0ms, collect 6.78s, tests 3.15s, environment 2ms, prepare 1.65s)[22m
+

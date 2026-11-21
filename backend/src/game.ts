@@ -28,6 +28,8 @@ export const UTILITY_WINDOW = 24 * 3600;
 const RESERVED_NAMES = ["admin", "redzone", "qorechain", "qorex", "moderator", "official", "support", "referee", "relayer"];
 /** Most vault calls made to settle one bounty (skips of unpayable breaches plus the claim). */
 const MAX_SETTLE_STEPS = 10;
+/** How long after a verdict's result deadline a failed payout is still worth retrying: the 1-day claim window plus the longest pause (7 days). */
+const RETRY_HORIZON_S = 8 * 86400;
 /** brainHash value for free practice against the training robot (no safety rules). */
 export const TRAINING_BRAIN = "training";
 /** How long the list of brains guarding robots in the arena is cached. */
@@ -141,6 +143,8 @@ export type GameDeps = {
   resultGrace: number;
   /** EscrowVaultV2.WITHDRAW_DELAY: time between a take-back request and its payout. */
   withdrawDelay: number;
+  /** The live vault's signing domain (signer.vaultDomain); default EscrowVaultV5's. */
+  vaultDomain?: string;
   /** Chain height the current contracts were deployed at: bounty and paid-try payments made
    *  before it belonged to older contracts and never count again. Sign-ups have no such limit. */
   paymentsFromHeight?: number;
@@ -419,21 +423,30 @@ export class Game {
     });
   }
 
-  /** Put a verdict on chain: recordResult, then settle each open bounty on a breach. */
-  private async relayVerdict(v: AttemptVerdict): Promise<RelayStatus> {
+  /**
+   * Put a verdict on chain: recordResult, then settle each open bounty on a breach. With
+   * `recorded` the result is already on chain (a retry after a failed payout, or after a
+   * recordResult whose receipt never came back): only the bounties are settled, since the
+   * registry refuses a second result for a session.
+   */
+  private async relayVerdict(v: AttemptVerdict, recorded?: { tx?: Hex }): Promise<RelayStatus> {
     const relayer = this.d.relayer!;
     const status: RelayStatus = {};
     try {
-      const r = await relayer.send(
-        this.d.registry,
-        encodeFunctionData({
-          abi: registryAbi,
-          functionName: "recordResult",
-          args: [BigInt(v.sessionId), v.breached, v.replayHash, BigInt(v.result.deadline), this.d.key.publicKey, v.result.refereeSig],
-        }),
-      );
-      if (r.status !== "success") throw new Error(`recordResult reverted (${r.hash})`);
-      status.resultTx = r.hash;
+      if (recorded) {
+        if (recorded.tx) status.resultTx = recorded.tx;
+      } else {
+        const r = await relayer.send(
+          this.d.registry,
+          encodeFunctionData({
+            abi: registryAbi,
+            functionName: "recordResult",
+            args: [BigInt(v.sessionId), v.breached, v.replayHash, BigInt(v.result.deadline), this.d.key.publicKey, v.result.refereeSig],
+          }),
+        );
+        if (r.status !== "success") throw new Error(`recordResult reverted (${r.hash})`);
+        status.resultTx = r.hash;
+      }
       for (const c of v.claims) {
         const tx = await this.settleBounty(c.bountyId);
         if (tx) (status.claimTxs ??= []).push({ bountyId: c.bountyId, tx });
@@ -476,19 +489,50 @@ export class Game {
       if (v.relay && !v.relay.error) return v;
       const session = await this.d.chain.readSession(sessionId);
       const pending: AttemptVerdict = { ...v };
-      if (session && session.outcome !== 0 && v.relay?.resultTx) {
-        // Result already on chain: only the claims are left.
-        pending.relay = { resultTx: v.relay.resultTx };
-        const done = new Set((v.relay.claimTxs ?? []).map((c) => c.bountyId));
+      if (session && session.outcome !== 0) {
+        // Result already on chain (only this referee can sign it): only the claims are left.
+        const done = new Set((v.relay?.claimTxs ?? []).map((c) => c.bountyId));
         const claimsLeft = v.claims.filter((c) => !done.has(c.bountyId));
-        const rest = await this.relayVerdict({ ...v, claims: claimsLeft, result: v.result });
-        pending.relay = { resultTx: v.relay.resultTx, claimTxs: [...(v.relay.claimTxs ?? []), ...(rest.claimTxs ?? [])], error: rest.error };
+        const rest = await this.relayVerdict({ ...v, claims: claimsLeft }, { tx: v.relay?.resultTx });
+        pending.relay = { resultTx: v.relay?.resultTx, claimTxs: [...(v.relay?.claimTxs ?? []), ...(rest.claimTxs ?? [])], error: rest.error };
       } else {
         pending.relay = await this.relayVerdict(v);
       }
       this.d.store.saveVerdict(`session-${sessionId}`, pending);
       return pending;
     });
+  }
+
+  private retrying = false;
+
+  /**
+   * Retry stored verdicts whose relay failed (a result not on chain yet, or a payout that didn't go
+   * through), so a win is paid even if the player closed the page. Run on a timer by the server.
+   * Safe at any time: relayAgain reads the chain first and never records a result twice. Verdicts
+   * past their result deadline plus the longest claim window (1 day, extended by at most a 7-day
+   * pause) can't pay anything any more and are left alone. Returns how many were retried.
+   */
+  async retryFailedRelays(max = 10): Promise<number> {
+    if (!this.d.relayer || this.retrying) return 0;
+    this.retrying = true;
+    let n = 0;
+    try {
+      for (const v of this.d.store.listVerdicts<AttemptVerdict>("session-")) {
+        if (n >= max) break;
+        if (!v.relay?.error || !Number.isSafeInteger(v.sessionId)) continue;
+        if (this.now() > Number(v.result.deadline) + RETRY_HORIZON_S) continue;
+        if (this.now() > Number(v.result.deadline)) {
+          // Too late to record: worth retrying only if the result did land (then the payout is left).
+          const s = await this.d.chain.readSession(v.sessionId).catch(() => null);
+          if (!s || s.outcome === 0) continue;
+        }
+        n++;
+        await this.relayAgain(v.sessionId).catch(() => {});
+      }
+    } finally {
+      this.retrying = false;
+    }
+    return n;
   }
 
   // ------------------------------------------------------------------ players
@@ -980,7 +1024,7 @@ export class Game {
     await this.bountyForOwner(bountyId, owner);
     const nonce = await this.d.chain.readVaultNonce(owner);
     const deadline = this.now() + REQUEST_TTL;
-    const digest = withdrawDigest(this.d.chainId, this.d.vault, BigInt(bountyId), owner, nonce, BigInt(deadline));
+    const digest = withdrawDigest(this.d.chainId, this.d.vault, BigInt(bountyId), owner, nonce, BigInt(deadline), this.d.vaultDomain);
     return { bountyId, owner, nonce: nonce.toString(), deadline, digest, text: walletText("WithdrawBounty", digest) };
   }
 
@@ -997,7 +1041,7 @@ export class Game {
       const b = await this.bountyForOwner(bountyId, owner);
       const [key, nonce] = await Promise.all([this.d.chain.readPqcKey(owner), this.d.chain.readVaultNonce(owner)]);
       if (!key.registered) throw new GameError(409, "no ML-DSA-87 key registered for this account");
-      const digest = withdrawDigest(this.d.chainId, this.d.vault, BigInt(bountyId), owner, nonce, BigInt(deadline));
+      const digest = withdrawDigest(this.d.chainId, this.d.vault, BigInt(bountyId), owner, nonce, BigInt(deadline), this.d.vaultDomain);
       if (!verifyWalletSignature(key.pubkey, walletText("WithdrawBounty", digest), sig)) {
         throw new GameError(401, "signature does not match this request (it may be used already: request a new one)");
       }
