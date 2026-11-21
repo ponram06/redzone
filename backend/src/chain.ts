@@ -369,10 +369,24 @@ export async function readNextRobotId(): Promise<number> {
 export async function readDeposit(hash: Hex): Promise<{ status: "pending" | "success" | "reverted"; bountyId?: number; amountWei: bigint }> {
   const r = await client.getTransactionReceipt({ hash }).catch(() => null);
   if (!r) return { status: "pending", amountWei: 0n };
+  return depositFromReceipt(r, VAULT);
+}
+
+/**
+ * The BountyDeposited event of `vault` in a transaction receipt. Only the live vault's deposits
+ * count: the server also remembers deposits it made into an earlier vault (e.g. EscrowVaultV4 before
+ * the switch to V5), and those must not be subtracted from what a maker paid for the live vault, or
+ * their new payment would be locked short. Anything else reads as "reverted" (not a deposit here).
+ */
+export function depositFromReceipt(
+  r: { status: "success" | "reverted"; logs: readonly { address: Address; data: Hex; topics: readonly Hex[] }[] },
+  vault: Address,
+): { status: "success" | "reverted"; bountyId?: number; amountWei: bigint } {
   if (r.status !== "success") return { status: "reverted", amountWei: 0n };
   for (const log of r.logs) {
+    if (log.address.toLowerCase() !== vault.toLowerCase()) continue;
     try {
-      const ev = decodeEventLog({ abi: vaultAbi, data: log.data, topics: log.topics });
+      const ev = decodeEventLog({ abi: vaultAbi, data: log.data, topics: log.topics as [Hex, ...Hex[]] });
       if (ev.eventName === "BountyDeposited") return { status: "success", bountyId: Number(ev.args.bountyId), amountWei: ev.args.amount };
     } catch {
       // not our event
