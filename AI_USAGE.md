@@ -2,10 +2,45 @@
 
 This file records how AI tools were used to build RedZone, for the Best AI-Native Build award.
 
+## Summary
+
+AI was used in two ways:
+- **To build RedZone.** Claude Code wrote most of the code, tests and documents, with the owner
+  directing and approving each step.
+- **Inside the product.** Free AI models act as robot brains that players try to trick.
+
 ## Tools
 
 - Claude Code (Claude Opus 5.5) in VS Code: research, contract design, Solidity, backend, tests, docs.
+- Claude in Chrome: end-to-end tests of the live website with the owner signed in to QoreX.
 - Free LLMs on OpenRouter as the robot brain inside the product (see below).
+
+## Workflow
+
+1. **The owner sets the goal.** Examples: "a crash-test arena for AI robots",
+   "freeze until fixed", "nothing hardcoded".
+2. **AI researches first.** It reads the official QoreChain templates and SDKs and checks facts
+   on the live testnet before writing code. Examples: that the precompiles are active, the deploy
+   gas cap, and the format of QoreX signatures.
+3. **AI writes the code and the tests together.** A fix starts with a test that fails before it.
+4. **AI attacks its own work.** It wrote Q-Day rehearsals, an attacker playbook, invariant fuzzing
+   and adversarial reviews, and fixed what it found.
+5. **The owner approves everything that matters.** That covers every wallet signature, every
+   transaction that spends QOR, every deployment, and every QCAI audit run (150 QOR each). Nothing
+   on chain happened without the owner's QoreX approval.
+6. **AI documents it.** It wrote this log, the READMEs, the audit answers and the verification
+   verdicts.
+
+## Who did what
+
+| AI (Claude Code) | Owner (human) |
+|---|---|
+| Solidity contracts and 477 Foundry tests | The idea, the category and the game design |
+| Server: referee, brains, relayer, chain reader and 118 tests | Rules that define the product: rating formula, brain reset, bounty required, freeze until fixed |
+| Website and 3D arena | Feedback after playing as a player and as a maker; what to fix |
+| Deploy scripts, hosting setup | Accounts, wallets, funding, the Azure server, API keys |
+| Attack rehearsals, audit answers, verification pass | Every QoreX approval, every deployment, paying for and running QCAI |
+| Documentation | Final review and submission |
 
 ## Log
 
@@ -28,6 +63,10 @@ This file records how AI tools were used to build RedZone, for the Best AI-Nativ
 | 2026-11-20 | Put the project online on a free-credit Azure for Students server: one Docker container serves the API, referee, relayer and website, behind Caddy with automatic HTTPS; scripts to install, upload secrets and data, and update. Found and fixed a missing runtime dependency on the first deploy. | Created the student account and the server, chose region and size within the credit. |
 | 2026-11-20 | Made the site explain itself to judges: "Paid to you" with the real once-per-wallet rule instead of "Nothing now", and a plain "free AI limit used up" message and banner when a robot's free AI provider refuses (HTTP 429/402/quota), instead of "busy". | Asked for both after testing as a player. |
 | 2026-11-21 | Designed with the owner and built "freeze until fixed": EscrowVaultV5 (one changed rule: a once-per-brain pool pays the first breach of each version to anyone, earlier winners included), 97 new contract tests with invariants (445 in all), freeze detection and enforcement on the server, Frozen/Fixed badges, and an owner "Fix this robot" editor with a free "Test my fix". Deployed V5, moved the pools from V4 through the live server, wrote docs/AUDIT.md and the QCAI bundle for V5. | Defined the rule (a breach freezes the robot until its owner fixes it, then anyone can win again), approved moving the funds. |
+
+| 2026-11-21 | Wrote the QCAI bundle for the live pair (RobotRegistryV4 + EscrowVaultV5) and answered every stage 1 and stage 2 finding with code links and tests (85/100, then 82/100, QUANTUM-SAFE; no contract change needed). | Paid for and ran both QCAI stages. |
+| 2026-11-21/22 | Full verification pass: Slither, coverage, 10,000-run fuzzing and 1,000 x 200-call invariants, server review, npm audit. Found and fixed three server bugs, each with a test that failed before the fix. The worst was that take-backs on V5 were signed for the previous vault, so the vault would have refused them. Added 32 branch tests (477 in all); no contract bug found. Each result has a verdict in audits/verification/TRIAGE.md. | Asked for "the most secure contract and a perfectly working app"; approved the commit and deploy. |
+| 2026-11-22 | Rewrote the READMEs and the audit summary in plain language for judges and new readers, checked against the official rules. | Asked for documents anyone can understand. |
 
 ## Product use of AI
 

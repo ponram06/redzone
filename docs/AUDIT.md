@@ -1,7 +1,15 @@
 # RedZone: QCAI audit
 
-Two-stage audits with the QoreChain AI Smart Contract Auditor (dashboard.qorechain.io/audit). The
-dated reports are in [docs/audit/](audit/); the full written answers are in [audits/](../audits/).
+**In short:** the two contracts that hold RedZone's money were audited twice by the QoreChain AI
+Smart Contract Auditor (QCAI, dashboard.qorechain.io/audit). Stage 1 found issues, we answered every
+one, and stage 2 audited the result. The live pair scored 85/100, then **82/100, QUANTUM-SAFE**.
+Every finding was either already handled in the code (with the line and the test that proves it)
+or did not apply, so no contract change was needed. Two earlier versions went through the same
+process.
+
+The dated reports are in [docs/audit/](audit/); the full written answers are in [audits/](../audits/).
+After the audits, a separate verification pass ran Slither, coverage and deeper fuzzing, and
+reviewed the server ([audits/verification/TRIAGE.md](../audits/verification/TRIAGE.md)).
 
 | Date | Stage | Contracts (one flattened bundle) | Setting | Score | Report |
 |---|---|---|---|---|---|
@@ -17,7 +25,26 @@ dated reports are in [docs/audit/](audit/); the full written answers are in [aud
 | Contract | Address (diana, EVM 9800) | Audited |
 |---|---|---|
 | RobotRegistryV4 | `0xef521a3a178a344a5cdd6854271e1fca466fa115` | Yes: stage 1 and stage 2 on 19 Nov (85, then 87/100, QUANTUM-SAFE) and again with the V5 vault on 21 Nov; unchanged since |
-| EscrowVaultV5 (prize pools; freeze until fixed) | `0x241767f1d799149060d133001cf4728d85ac41b7` | Yes: stage 1 on 21 Nov (85/100) and stage 2 on 21 Nov (**82/100, QUANTUM-SAFE**); every finding answered, no contract change needed ([stage 1](../audits/QCAI-v5-stage1-response.md), [stage 2](../audits/QCAI-v5-stage2-response.md)). It is the audited vault design (EscrowVaultV3, 19 Nov) plus prize pools and one changed rule; bundle with the live registry: [audits/RedZone.v6.flat.sol](../audits/RedZone.v6.flat.sol). 445 Foundry tests pass, including 97 on this vault (invariants: money is conserved, no payout above the prize, an open pool never pays a player twice, a once-per-brain pool never pays the same brain version twice) |
+| EscrowVaultV5 (prize pools; freeze until fixed) | `0x241767f1d799149060d133001cf4728d85ac41b7` | Yes: stage 1 on 21 Nov (85/100) and stage 2 on 21 Nov (**82/100, QUANTUM-SAFE**); every finding answered, no contract change needed ([stage 1](../audits/QCAI-v5-stage1-response.md), [stage 2](../audits/QCAI-v5-stage2-response.md)). It is the audited vault design (EscrowVaultV3, 19 Nov) plus prize pools and one changed rule; bundle with the live registry: [audits/RedZone.v6.flat.sol](../audits/RedZone.v6.flat.sol). 477 Foundry tests pass (445 at the audit, plus 32 branch tests from the verification pass), including 97 on this vault (invariants: money is conserved, no payout above the prize, an open pool never pays a player twice, a once-per-brain pool never pays the same brain version twice) |
+
+## Where the post-quantum checks are, what they protect, and the tests
+
+Both precompiles are called from one place, [PQGuard.sol](../contracts/src/PQGuard.sol), through the
+ML-DSA-87 wrapper [MLDSA87.sol](../contracts/src/v3/MLDSA87.sol). The wrapper checks the exact
+FIPS 204 sizes and fails closed on anything unexpected.
+
+| Call | Protects | Code | Tests |
+|---|---|---|---|
+| `pqcKeyStatus` (`0x…0a02`) | Finds the ML-DSA-87 key registered for the signer's account. A request from an account with no key, or with a key of another algorithm, is refused. | [PQGuard.sol:31-41](../contracts/src/PQGuard.sol#L31-L41), [MLDSA87.sol:43-57](../contracts/src/v3/MLDSA87.sol#L43-L57) | `test_Stage2_NonMLDSA87KeyRefused`, `test_Stage2_PrecompileAvailability`, `test_Branch_KeyStatusShortAnswerFailsClosed`, `test_Branch_KeyStatusRevertFailsClosed` |
+| `pqcVerify` (`0x…0a01`), user requests | Registering a robot, changing its brain, starting a round, opening a play pass, taking a bounty back. Each request is bound to the contract, chain, nonce and deadline. | [PQAccess.sol:252-257](../contracts/src/v3/PQAccess.sol#L252-L257) | Forged, replayed and wrong-length signatures in [RedZoneV4.t.sol](../contracts/test/v4/RedZoneV4.t.sol) and [VaultV5.t.sol](../contracts/test/v6/VaultV5.t.sol), `test_NoEcdsaShortcuts` |
+| `pqcVerify`, admin actions | Pause, admin handover, referee change (with a 2-day wait), try price | [PQAccess.sol:104-110](../contracts/src/v3/PQAccess.sol#L104-L110) | `test_Attack_AdminActionsNeedAdminSignature`, `test_Attack_AdminSigReplay`, `test_Audit3_AcceptBoundToProposal` |
+| `pqcVerify`, referee verdicts | Every recorded result, and with it every payout, carries the referee's signature. It is bound to the session, robot, player and replay. | [RobotRegistryV4.sol:198-202](../contracts/src/v4/RobotRegistryV4.sol#L198-L202) | `test_Stage2_RefereeKeyMustBeMLDSA87`, `test_Branch_MisbehavingPrecompileNeverPays`, `testFuzz_Stage2_ResultWindow` |
+| `pqcVerify`, deploy proofs | Each constructor checks an ML-DSA-87 proof with the live precompile, so a deployment only succeeds on a chain whose post-quantum checks work | Constructors of RobotRegistryV4 and EscrowVaultV5 | The deploy transactions on testnet (README, "Solidity PQC checks") |
+
+If the precompile is missing, reverts, or returns a short or garbage answer, every signed action
+reverts, so nothing can be paid: `test_Branch_VerifyRevertFailsClosed`,
+`test_Branch_VerifyEmptyAnswerFailsClosed`, `test_Branch_VerifyGarbageAnswerFailsClosed`,
+`test_Attack_PrecompileMissingFailsClosed`.
 
 ## Stage 2 (live registry + EscrowVaultV5, 21 Nov): 82/100, QUANTUM-SAFE
 

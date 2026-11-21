@@ -1,111 +1,101 @@
-# QoreChain Foundry starter
+# RedZone contracts
 
-A [Foundry](https://getfoundry.sh) project for the QoreChain EVM: a `Counter`
-contract, its tests, a deploy script, and a small helper that opens the EVM
-authorisation window your deployer needs.
+These Solidity contracts hold RedZone's money and its public record. Every action that moves
+money or changes a record must carry a **post-quantum ML-DSA-87 signature**. The contracts check it
+on chain with QoreChain's `pqcVerify` and `pqcKeyStatus` precompiles. A stolen or quantum-broken
+ECDSA key alone can't move anything.
 
-| Network | EVM chain id | RPC (named in `foundry.toml`) |
-| --- | --- | --- |
-| Testnet (`qorechain-diana`) | 9800 | `qorechain_testnet` = `https://evm-testnet.qore.host` |
-| Mainnet (`qorechain-vladi`) | 9801 | `qorechain` = `https://evm.qore.host` |
+## The two live contracts
 
-## Prerequisites
+| Contract | What it does |
+|---|---|
+| **RobotRegistryV4** ([src/v4/RobotRegistryV4.sol](src/v4/RobotRegistryV4.sol)) | The public record. It stores each robot (owner, name, brain fingerprint) and starts rounds. It gives 5 free tries a day, sells extra tries and opens 10-minute play passes. It records the referee's signed verdicts and computes each robot's safety rating and badge. |
+| **EscrowVaultV5** ([src/v5/EscrowVaultV5.sol](src/v5/EscrowVaultV5.sol)) | The money. It holds bounties and prize pools in native QOR and pays a breach only to the player of the session that breached. It enforces "freeze until fixed": a breached robot pays again only after its owner updates the brain. A bounty owner can take an unwon bounty back after a 3-hour delay, and never while a win is unpaid. |
 
-- Foundry (`forge`), installed with `foundryup`.
-- Node.js 20 or later and a package manager, for the window helper.
-- A funded account on the network you deploy to.
+Both are built on three shared parts in [src/v3/](src/v3/) and [src/](src/):
 
-## Setup
+| Part | Role |
+|---|---|
+| [PQGuard.sol](src/PQGuard.sol) | Calls the precompiles: `pqcVerify` at `0x…0a01` and `pqcKeyStatus` at `0x…0a02` |
+| [MLDSA87.sol](src/v3/MLDSA87.sol) | Checks keys and signatures against the exact FIPS 204 ML-DSA-87 sizes; anything unexpected fails closed |
+| [PQAccess.sol](src/v3/PQAccess.sol) | Signed requests: digest = contract tag + chain id + contract address + request, plus a nonce and a deadline per signer. Admin actions need the admin's ML-DSA-87 signature; admin handover takes two steps |
+| [QoreXMessage.sol](src/QoreXMessage.sol) | Rebuilds the exact text the QoreX wallet shows and signs, so a signature for one action can't authorise another |
 
-```sh
-pnpm install          # the window helper's dependencies
-pnpm forge-std        # forge-std and OpenZeppelin v5.1.0 into lib/ (--no-git)
-cp .env.example .env  # the scaffolder already did this
-```
+The other files in `src/` are earlier versions (v1 to v4 vaults and registries). They are kept
+because their addresses appear in the project's history and the Q-Day Drill. None of them holds
+money that matters any more.
 
-Put the deployer's key in `.env` (`PRIVATE_KEY`). Never commit `.env`.
-
-## Build and test
-
-```sh
-forge build
-forge test
-```
-
-Tests run on Foundry's local EVM and need no network.
-
-## Before you deploy: open an EVM window
-
-QoreChain admits an EVM transaction only when the sender has:
-
-1. a registered **ML-DSA-87** key, and
-2. a live **EVM authorisation window**.
-
-Both are set up on QoreChain's native lane with messages signed with the
-post-quantum key, so the secp256k1 key in `PRIVATE_KEY` can never authorise
-spending on its own. A deploy from an account without them is refused, so do
-this first:
+## Tests
 
 ```sh
-pnpm window status     # account, PQC key, window
-pnpm window register   # once per account: registers its ML-DSA-87 key
-pnpm window open       # opens a window: 600 blocks, 5 transactions
+npm install
+npm run forge-std      # forge-std and OpenZeppelin v5.1.0 into lib/
+forge test             # everyday depth: 477 tests
+FOUNDRY_PROFILE=strict forge test   # 10,000 fuzz runs, 1,000 x 200-call invariant campaigns
 ```
 
-With `QORE_MNEMONIC` set, the helper derives the account and its ML-DSA-87 key
-from the mnemonic. Otherwise it uses `PRIVATE_KEY` for the account and a PQC
-recovery code, `QORE_PQC_RECOVERY_CODE`, for the ML-DSA-87 key; it stops with a
-message if the code is missing. Create a code once and put it in `.env`:
+Tests run on Foundry's local EVM with mock precompiles ([test/mocks/](test/mocks/)) and need no
+network.
+
+| Folder | Covers |
+|---|---|
+| [test/v6/](test/v6/) | **The live pair.** VaultV5.t.sol covers pools, freezing, take-backs and payouts. VaultInvariant.t.sol checks that money in equals money locked plus paid out, that nobody but the session's player gains, and that no payout exceeds the prize. Branches.t.sol has one test for every branch the other suites didn't reach, including misbehaving precompiles, which must fail closed. |
+| [test/v4/](test/v4/), [test/v5/](test/v5/) | Play pass, paid tries, prize pools, and the registry's audit findings |
+| [test/v3/](test/v3/) | ML-DSA-only access, attack proofs-of-concept from the adversarial audit, vault invariants |
+| `test/*.t.sol` | v1 and v2, including the 45-test attacker playbook for RobotRegistryV2 |
+
+The full pass runs from the repo root with `STRICT=1 bash scripts/verify-all.sh`. It runs:
+- build and tests;
+- coverage;
+- Slither;
+- backend tests;
+- npm audit.
+
+Every result has a verdict in
+[../audits/verification/TRIAGE.md](../audits/verification/TRIAGE.md).
+
+## QoreChain's EVM window (needed before any deploy)
+
+QoreChain admits an EVM transaction only from an account that has:
+- a registered ML-DSA-87 key;
+- an open **EVM authorisation window**.
+
+Both are set up with native messages signed by the post-quantum key. The ECDSA key in
+`PRIVATE_KEY` can never authorise spending on its own. The helper
+[scripts/window.ts](scripts/window.ts) comes from `create-qorechain-dapp`; RedZone added `close` and
+`proof`.
 
 ```sh
-pnpm window recovery-code   # prints a new QRC1 code (generatePqcRecoveryCode)
+cp .env.example .env       # PRIVATE_KEY and QORE_PQC_RECOVERY_CODE (or QORE_MNEMONIC)
+npm run window status      # account, PQC key, window
+npm run window register    # once per account: register its ML-DSA-87 key
+npm run window open        # open a window (blocks, transaction count and value are capped)
+npm run window close       # close it right after use
 ```
 
-Keep a copy of the code apart from the private key and keep using the same
-one: a different code gives the account a different ML-DSA-87 key. If the
-account already has a key registered by another wallet, open the window from
-that wallet instead. An account registered with this helper before SDK 0.13.0
-has a different key registered; `pnpm window status` then shows
-"registered, but NOT this key". Rotate it to the recovery-code key with
-`rotatePqcKeyMsg` (MsgRotatePQCKey), loading the old key with
-`unifiedAccountFromSeed(seed, { legacySeedDerivation: true })` (see the
-`@qorechain/sdk` README).
-
-What to know about the window:
-
-- It bounds the number of blocks, the number of EVM transactions, and the total
-  they may spend: value **plus** the maximum fee (gas limit x fee cap) of each
-  transaction. Foundry sets the fee cap near twice the base fee (a dry run on
-  the testnet priced a deploy at 200 gwei), so `pnpm window open` sizes the
-  window for transactions of up to 3,000,000 gas at 250 gwei. Set
-  `QORE_WINDOW_MAX_UQOR` to choose the total yourself.
-- `blocks` is a block count, not a duration.
-- Opening a window is a native-lane transaction, and it **advances the
-  account's nonce**. Open the window first, then deploy; Foundry reads the
-  nonce when it broadcasts.
-- Opening replaces any earlier window.
+Close the window as soon as you're done. While it's open, the ECDSA key alone can spend within its
+limits; we found this during the Q-Day rehearsal ([../docs/QDAY_DRILL.md](../docs/QDAY_DRILL.md)).
+The RedZone relayer's window is also **scoped**: it only admits calls to the two RedZone contracts.
 
 ## Deploy
 
+Foundry can't simulate QoreChain's precompiles, so the deploy scripts use viem. Each constructor
+checks an ML-DSA-87 deploy proof with the live `pqcVerify`. A deployment can therefore only succeed
+on a chain whose post-quantum checks work.
+
 ```sh
-pnpm window open
-forge script script/Counter.s.sol --rpc-url qorechain_testnet --broadcast
-# or: pnpm deploy:testnet
+npm run referee-key        # creates the referee's ML-DSA-87 key (.referee-key.json, git-ignored)
+forge build
+npm run v4-proofs          # the deploy-time proofs the constructors check
+TREASURY=0x... npm run deploy:v4 -- --dry-run
+npm run window open
+TREASURY=0x... npm run deploy:v4            # RobotRegistryV4
+npx tsx --env-file=.env scripts/deploy-vault-v5.ts   # EscrowVaultV5, pointed at the registry
+npm run window close
 ```
 
-The script reads `PRIVATE_KEY` and `COUNTER_INITIAL` from `.env`.
+QoreChain caps a contract creation at about 5M gas, roughly 20 KB of code. That's why a few
+admin-only helpers are internal; the tests compute them the same way. Addresses and transactions
+are recorded in [../deployments/testnet.json](../deployments/testnet.json).
 
-Fees: on both networks today `eth_gasPrice` answers 112.5 gwei (a 100 gwei
-base fee plus a 12.5 gwei priority fee). Foundry's defaults pick this up.
-
-Contract verification: Sourcify does not list chain ids 9800 and 9801 yet.
-
-## Project layout
-
-```
-src/Counter.sol           the contract
-test/Counter.t.sol        Foundry tests
-script/Counter.s.sol      the deploy script
-scripts/window.ts         the EVM window helper (pnpm window)
-foundry.toml              compiler settings and the named RPC endpoints
-```
+Never commit `.env`, `.referee-key.json` or `.attacker.json`.

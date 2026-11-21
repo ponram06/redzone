@@ -3,7 +3,7 @@
  * (startSessionFor, recordResult, claimBounty). Every one of them is authorised by an ML-DSA-87
  * signature checked inside the contract, so the relayer cannot forge or redirect anything.
  *
- * Its EVM window is opened with `allowedTargets` = [RobotRegistryV3, EscrowVaultV2] (chain v3.2.3):
+ * Its EVM window is opened with `allowedTargets` = the live registry and vault (RobotRegistryV4, EscrowVaultV5):
  * even with the relayer's ECDSA key, nothing can be sent anywhere else. Value is only sent for
  * prizes: makers pay the prize to this account with QoreX (QoreX can't call contracts yet), and the
  * relayer locks it in the vault with depositBounty. The window's value budget is sized per deposit.

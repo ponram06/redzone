@@ -4,6 +4,10 @@ One Ubuntu server runs RedZone 24/7: the app in Docker, behind Caddy, which gets
 certificate by itself. Everything players see comes from the chain and from the data you copy over;
 nothing is made up.
 
+**The live site** (https://redzone.malaysiawest.cloudapp.azure.com) runs on an Azure for Students VM
+(Ubuntu, Malaysia West) set up exactly this way, with the Azure DNS name passed as `DOMAIN`. The
+steps below use Oracle Cloud's free tier, but any Ubuntu server with ports 80 and 443 open works.
+
 ## 1. Get a free server
 
 Oracle Cloud Always Free (free for good, no sleeping, 4 ARM cores, 24 GB RAM):
