@@ -7,7 +7,7 @@ Rules: no Claude co-author line in commits. Never commit `.env`, `.referee-key.j
 Do not spend drill-account QOR or touch the fest website without the owner.
 
 Overall: about **95%** (each phase's weight is in brackets; last updated 2026-11-22). Left: the
-live end-to-end round with the main QoreX account, screenshots, cover image, demo video, submission.
+live end-to-end round with the main QoreX account, cover image, demo video, submission.
 
 ## Phase 1. Setup and registration (5%): done
 - [x] Hackathon registration, Post-Quantum dApp category, project page on build.qorechain.io
@@ -85,7 +85,7 @@ live end-to-end round with the main QoreX account, screenshots, cover image, dem
 - [x] README: architecture diagram, how to play, v3 addresses and protections
 - [x] Documents rewritten in plain language (22 Nov): README (idea in one minute, key words, requirements checklist, qor1 addresses of admin, relayer and treasury), contracts/README (was still the scaffold's Counter text), backend/README (was on v3), docs/AUDIT.md (where the PQC calls are and what they protect, as the rules ask), AI_USAGE.md (workflow, who did what, 21-22 Nov)
 - [x] Checked against build.qorechain.io/rules (22 Nov): public repo, MIT LICENSE, README, credits, testnet qor1 addresses, pqcVerify + pqcKeyStatus, scoped EVM window, two-stage QCAI with docs/audit PDFs and docs/AUDIT.md, Foundry tests, AI_USAGE.md. Project form: tick the AI-native option; list kits create-qorechain-dapp, @qorechain/sdk, @qorechain/evm
-- [ ] README: screenshots
+- [x] README: screenshots (docs/screenshots, taken on the live site 22 Nov)
 - [ ] Cover image (16:9, at least 1200 x 675, JPG/PNG/WebP, up to 5 MB) and demo video (up to 3 minutes) (owner, planned for 1 Dec)
 - [x] docs/audit/ (dated QCAI PDFs), docs/AUDIT.md (every stage 1 finding mapped), README line pointing to it (21 Nov)
 - [x] QCAI stage 1 (85/100) and stage 2 (82/100, QUANTUM-SAFE) on the live RobotRegistryV4 + EscrowVaultV5 (21 Nov), every finding answered, no contract change
@@ -97,7 +97,7 @@ live end-to-end round with the main QoreX account, screenshots, cover image, dem
 - [x] Power plant arena v2 (160x100, reactor, chemical store, substation, crane; workshop, canteen) with substation, gantry crane, truck, workers in 3D; compact game panels; home page with a live 3D arena hero, robot picker, header Play-now button (19 Nov)
 - Skills scores on chain were measured on the old arena; rerun `POST /utility/<id>` later if wanted (each run needs the next utilityNonce)
 - [x] Player profiles (20 Nov): readable names + pixel avatars instead of hashes everywhere (generated, or a nickname signed in QoreX, `/player/name`), header profile chip and menu, `#/me` and `#/player/<address>`: wallet balance, GPay-style activity, prizes with proofs, rounds, stats, achievements (`/player/:address/profile`)
-- Next (22 Nov): V5 end-to-end round with the owner (Phase 6), screenshots, then cover, video and the project form
+- Next: V5 end-to-end round with the owner (Phase 6), then cover and video. Project form text updated 22 Nov (477 tests, verification pass); AI-native ticked
 - Servers: live on the Azure VM (deploy/README.md). Don't start the laptop backend while the VM runs (one relayer only)
 
 ## Needs the owner
@@ -105,4 +105,4 @@ live end-to-end round with the main QoreX account, screenshots, cover image, dem
 - Hosting accounts: done (Azure for Students)
 - Cover image and demo video (planned for 1 Dec)
 - V5 end-to-end round with the main QoreX account (Phase 6)
-- Project form on build.qorechain.io (GitHub App: installed 22 Nov)
+- Project form on build.qorechain.io: done and updated 22 Nov (GitHub App installed)

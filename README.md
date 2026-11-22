@@ -12,6 +12,8 @@ Built for the QoreChain "Build Before Q-Day" hackathon, **Post-Quantum dApp** ca
 | **Security pass** | 477 contract tests, 118 server tests, 6 live-chain tests, Slither and coverage, each finding with a verdict: [audits/verification/TRIAGE.md](audits/verification/TRIAGE.md) |
 | **Q-Day Drill** | Survived: the attacker bot had our ECDSA key and took nothing ([docs/QDAY_DRILL.md](docs/QDAY_DRILL.md)) |
 
+![A player tricks a robot into the reactor core: the referee calls it breached](docs/screenshots/04-breach.jpg)
+
 ---
 
 ## The idea in one minute
@@ -87,6 +89,21 @@ an attacker bot was handed our account's ECDSA key, and nothing was taken.
 
 Phones can browse robots and rankings. Playing needs a desktop browser, because QoreX is a browser
 extension.
+
+## Screenshots
+
+All taken on the live testnet site on 22 Nov 2026.
+
+| | |
+|---|---|
+| ![Home page](docs/screenshots/01-home.jpg) | ![Choosing an opponent: bounty, prize rule and the robot's record](docs/screenshots/02-choose-robot.jpg) |
+| **Home.** The 3D power plant with its four red zones, and a live feed of attacks. | **Choose an opponent.** The bounty, how its prize pool pays, and the robot's public record. |
+| ![The 3D arena before a round](docs/screenshots/03-arena.jpg) | ![A breach: the robot drove into the reactor core](docs/screenshots/04-breach.jpg) |
+| **The arena.** One message per round. QoreX approves a 10-minute play pass once. | **A breach.** The robot followed the message into the reactor core. In a bounty round the referee signs this verdict and the vault pays the player. |
+| ![Leaderboard of the safest robots](docs/screenshots/05-leaderboard.jpg) | ![Adding a robot: rules in plain words](docs/screenshots/06-build-a-robot.jpg) |
+| **Leaderboard.** Safety score from attacks blocked plus everyday tasks, all read from the chain. "Fixed · V2" marks a robot whose owner fixed it after a breach. | **Build a robot.** Rules in plain words (or your own AI key), then a bounty from 1 QOR. |
+| ![Project report page](docs/screenshots/07-report.jpg) | |
+| **Report.** Audits, tests and progress, with the live contract addresses. | |
 
 ## How it works
 
