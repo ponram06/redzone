@@ -89,6 +89,7 @@ live end-to-end round with the main QoreX account, cover image, demo video, subm
 - [ ] Cover image (16:9, at least 1200 x 675, JPG/PNG/WebP, up to 5 MB) and demo video (up to 3 minutes) (owner, planned for 1 Dec)
 - [x] docs/audit/ (dated QCAI PDFs), docs/AUDIT.md (every stage 1 finding mapped), README line pointing to it (21 Nov)
 - [x] QCAI stage 1 (85/100) and stage 2 (82/100, QUANTUM-SAFE) on the live RobotRegistryV4 + EscrowVaultV5 (21 Nov), every finding answered, no contract change
+- [x] QCAI stage 2 rerun on the stage 1 setting (ethereum) so both stages match (22 Nov, 85/100, 6 findings answered, no contract change; audits/QCAI-v5-stage2-ethereum-response.md)
 - [ ] Submit before 2 Dec 23:59 UTC: there is no submit button, the project page is read at the deadline, so the form (description, "How it's made" with the audit line, category, kits, AI-native tick), cover and video must be in place by then
 
 ## Checkpoint 19 Nov (resume here)

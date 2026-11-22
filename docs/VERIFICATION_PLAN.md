@@ -42,7 +42,7 @@ typecheck, tests and `npm audit`, and the web build and `npm audit`, then writes
 | Coverage, MLDSA87 / PQGuard | branches **50% / 14%** (tests use a mock precompile, so the real-precompile error paths are not hit) |
 | Slither (live contracts, no informational) | 1 High `arbitrary-send-eth` (buyTries -> treasury), 1 Medium `incorrect-equality` (brainVersion), 12 Low `timestamp` |
 | npm audit | backend 0, web 0 (after upgrading @fastify/static on 21 Nov) |
-| QCAI | registry + V5 vault: 85, then 82/100 QUANTUM-SAFE, all findings answered |
+| QCAI | registry + V5 vault: 85, then 82/100 QUANTUM-SAFE (qorechain) and 85/100 (stage 2 rerun on ethereum, 22 Nov), all findings answered |
 
 Fixed on 21 Nov while preparing this: a server bug where deposits into the previous vault were
 subtracted from new payments (pools locked short; no money lost, test added), and the

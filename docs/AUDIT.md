@@ -2,7 +2,9 @@
 
 **In short:** the two contracts that hold RedZone's money were audited twice by the QoreChain AI
 Smart Contract Auditor (QCAI, dashboard.qorechain.io/audit). Stage 1 found issues, we answered every
-one, and stage 2 audited the result. The live pair scored 85/100, then **82/100, QUANTUM-SAFE**.
+one, and stage 2 audited the result. The live pair scored **85/100 in both stages on the same
+Ethereum setting** (21 and 22 Nov), and **82/100, QUANTUM-SAFE** on the QoreChain setting, which
+scores quantum readiness.
 Every finding was either already handled in the code (with the line and the test that proves it)
 or did not apply, so no contract change was needed. Two earlier versions went through the same
 process.
@@ -19,13 +21,14 @@ reviewed the server ([audits/verification/TRIAGE.md](../audits/verification/TRIA
 | 19 Nov 2026 | 2 | the same, after every stage 1 finding | qorechain | **87/100, QUANTUM-SAFE** | [PDF](audit/2026-11-19-QCAI-stage2-RobotRegistryV4-EscrowVaultV3.pdf) |
 | 21 Nov 2026 | 1 | **RobotRegistryV4 + EscrowVaultV5** (both live) ([bundle](../audits/RedZone.v6.flat.sol)) | ethereum (auto) | 85/100 | [PDF](audit/2026-11-21-QCAI-stage1-RobotRegistryV4-EscrowVaultV5.pdf), [answers](../audits/QCAI-v5-stage1-response.md) |
 | 21 Nov 2026 | 2 | the same, after every stage 1 finding | qorechain | **82/100, QUANTUM-SAFE** | [PDF](audit/2026-11-21-QCAI-stage2-RobotRegistryV4-EscrowVaultV5.pdf), [answers](../audits/QCAI-v5-stage2-response.md) |
+| 22 Nov 2026 | 2 | the same bundle, rerun on the stage 1 setting so both stages match | ethereum | **85/100** | [PDF](audit/2026-11-22-QCAI-stage2-ethereum-RobotRegistryV4-EscrowVaultV5.pdf), [answers](../audits/QCAI-v5-stage2-ethereum-response.md) |
 
 ## What is live, and what each audit covers
 
 | Contract | Address (diana, EVM 9800) | Audited |
 |---|---|---|
 | RobotRegistryV4 | `0xef521a3a178a344a5cdd6854271e1fca466fa115` | Yes: stage 1 and stage 2 on 19 Nov (85, then 87/100, QUANTUM-SAFE) and again with the V5 vault on 21 Nov; unchanged since |
-| EscrowVaultV5 (prize pools; freeze until fixed) | `0x241767f1d799149060d133001cf4728d85ac41b7` | Yes: stage 1 on 21 Nov (85/100) and stage 2 on 21 Nov (**82/100, QUANTUM-SAFE**); every finding answered, no contract change needed ([stage 1](../audits/QCAI-v5-stage1-response.md), [stage 2](../audits/QCAI-v5-stage2-response.md)). It is the audited vault design (EscrowVaultV3, 19 Nov) plus prize pools and one changed rule; bundle with the live registry: [audits/RedZone.v6.flat.sol](../audits/RedZone.v6.flat.sol). 477 Foundry tests pass (445 at the audit, plus 32 branch tests from the verification pass), including 97 on this vault (invariants: money is conserved, no payout above the prize, an open pool never pays a player twice, a once-per-brain pool never pays the same brain version twice) |
+| EscrowVaultV5 (prize pools; freeze until fixed) | `0x241767f1d799149060d133001cf4728d85ac41b7` | Yes: stage 1 on 21 Nov (85/100, ethereum), stage 2 on 22 Nov on the same ethereum setting (**85/100**), and stage 2 on the QoreChain setting on 21 Nov (**82/100, QUANTUM-SAFE**); every finding answered, no contract change needed ([stage 1](../audits/QCAI-v5-stage1-response.md), [stage 2 ethereum](../audits/QCAI-v5-stage2-ethereum-response.md), [stage 2 qorechain](../audits/QCAI-v5-stage2-response.md)). It is the audited vault design (EscrowVaultV3, 19 Nov) plus prize pools and one changed rule; bundle with the live registry: [audits/RedZone.v6.flat.sol](../audits/RedZone.v6.flat.sol). 477 Foundry tests pass (445 at the audit, plus 32 branch tests from the verification pass), including 97 on this vault (invariants: money is conserved, no payout above the prize, an open pool never pays a player twice, a once-per-brain pool never pays the same brain version twice) |
 
 ## Where the post-quantum checks are, what they protect, and the tests
 
@@ -46,7 +49,18 @@ reverts, so nothing can be paid: `test_Branch_VerifyRevertFailsClosed`,
 `test_Branch_VerifyEmptyAnswerFailsClosed`, `test_Branch_VerifyGarbageAnswerFailsClosed`,
 `test_Attack_PrecompileMissingFailsClosed`.
 
-## Stage 2 (live registry + EscrowVaultV5, 21 Nov): 82/100, QUANTUM-SAFE
+## Stage 2 on the stage 1 setting (live registry + EscrowVaultV5, 22 Nov): 85/100
+
+The rules ask for both stages on the same EVM/Solidity setting, so stage 2 was rerun on "ethereum",
+the setting stage 1 used, with the same bundle. Full answers:
+[audits/QCAI-v5-stage2-ethereum-response.md](../audits/QCAI-v5-stage2-ethereum-response.md).
+Reentrancy in `claimBounty`/`finalizeWithdraw` (`nonReentrant`, all state written before the one
+transfer), `activateReferee` open to anyone (by design: it only activates a key the admin signed
+for, after the 2-day wait), overflow (Solidity 0.8 checked arithmetic), `_send` return value
+(checked, reverts with `TransferFailed`), front-running (every round is bound to the player's
+ML-DSA signature) and the breach list (a cursor, no loop): none needed a contract change.
+
+## Stage 2 on the QoreChain setting (live registry + EscrowVaultV5, 21 Nov): 82/100, QUANTUM-SAFE
 
 Full answers: [audits/QCAI-v5-stage2-response.md](../audits/QCAI-v5-stage2-response.md). ML-DSA-87 key
 format (already checked: algorithm id and exact FIPS 204 sizes), reentrancy (native QOR only,

@@ -67,6 +67,7 @@ AI was used in two ways:
 | 2026-11-21 | Wrote the QCAI bundle for the live pair (RobotRegistryV4 + EscrowVaultV5) and answered every stage 1 and stage 2 finding with code links and tests (85/100, then 82/100, QUANTUM-SAFE; no contract change needed). | Paid for and ran both QCAI stages. |
 | 2026-11-21/22 | Full verification pass: Slither, coverage, 10,000-run fuzzing and 1,000 x 200-call invariants, server review, npm audit. Found and fixed three server bugs, each with a test that failed before the fix. The worst was that take-backs on V5 were signed for the previous vault, so the vault would have refused them. Added 32 branch tests (477 in all); no contract bug found. Each result has a verdict in audits/verification/TRIAGE.md. | Asked for "the most secure contract and a perfectly working app"; approved the commit and deploy. |
 | 2026-11-22 | Rewrote the READMEs and the audit summary in plain language for judges and new readers, checked against the official rules. | Asked for documents anyone can understand. |
+| 2026-11-22 | Checked each of the 6 findings from the QCAI stage 2 rerun on the Ethereum setting against the code and wrote the answers with code links and tests (85/100; no contract change needed). | Paid for and ran the rerun so both stages use the same setting, as the rules require. |
 
 ## Product use of AI
 

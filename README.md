@@ -8,7 +8,7 @@ Built for the QoreChain "Build Before Q-Day" hackathon, **Post-Quantum dApp** ca
 | | |
 |---|---|
 | **Try it (testnet)** | https://redzone.malaysiawest.cloudapp.azure.com |
-| **Audit** | Two-stage QCAI audit on the live contracts (85/100, then 82/100, QUANTUM-SAFE); every finding answered in [docs/AUDIT.md](docs/AUDIT.md) |
+| **Audit** | Two-stage QCAI audit on the live contracts: 85/100 in both stages on the same Ethereum setting, and 82/100, QUANTUM-SAFE on the QoreChain setting; every finding answered in [docs/AUDIT.md](docs/AUDIT.md) |
 | **Security pass** | 477 contract tests, 118 server tests, 6 live-chain tests, Slither and coverage, each finding with a verdict: [audits/verification/TRIAGE.md](audits/verification/TRIAGE.md) |
 | **Q-Day Drill** | Survived: the attacker bot had our ECDSA key and took nothing ([docs/QDAY_DRILL.md](docs/QDAY_DRILL.md)) |
 

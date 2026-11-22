@@ -14,6 +14,7 @@ const TABS: [Tab, string][] = [
 
 const AUDITS = [
   { date: "22 Nov", review: "Verification pass · Slither, coverage, 10,000-run fuzzing, invariants, server review", v: "v4", result: "No contract bug · 3 server bugs fixed", good: true, file: "verification/TRIAGE.md" },
+  { date: "22 Nov", review: "QCAI · stage 2 · live registry + EscrowVaultV5 (Ethereum setting, same as stage 1)", v: "v4", result: "85 / 100 · 6 findings answered", good: true, file: "QCAI-v5-stage2-ethereum-response.md" },
   { date: "21 Nov", review: "QCAI · stage 2 · live registry + EscrowVaultV5 (QoreChain setting)", v: "v4", result: "82 / 100 · QUANTUM-SAFE", good: true, file: "QCAI-v5-stage2-response.md" },
   { date: "21 Nov", review: "QCAI · stage 1 · live registry + EscrowVaultV5", v: "v4", result: "85 / 100 · all findings answered", good: false, file: "QCAI-v5-stage1-response.md" },
   { date: "19 Nov", review: "QCAI · stage 2 (QoreChain setting)", v: "v4", result: "87 / 100 · QUANTUM-SAFE", good: true, file: "QCAI-v4-stage2-response.md" },
