@@ -105,4 +105,4 @@ live end-to-end round with the main QoreX account, screenshots, cover image, dem
 - Hosting accounts: done (Azure for Students)
 - Cover image and demo video (planned for 1 Dec)
 - V5 end-to-end round with the main QoreX account (Phase 6)
-- Project form on build.qorechain.io and the GitHub App install (recommended, so commits show in the feed)
+- Project form on build.qorechain.io (GitHub App: installed 22 Nov)

@@ -13,6 +13,7 @@ const TABS: [Tab, string][] = [
 ];
 
 const AUDITS = [
+  { date: "22 Nov", review: "Verification pass · Slither, coverage, 10,000-run fuzzing, invariants, server review", v: "v4", result: "No contract bug · 3 server bugs fixed", good: true, file: "verification/TRIAGE.md" },
   { date: "21 Nov", review: "QCAI · stage 2 · live registry + EscrowVaultV5 (QoreChain setting)", v: "v4", result: "82 / 100 · QUANTUM-SAFE", good: true, file: "QCAI-v5-stage2-response.md" },
   { date: "21 Nov", review: "QCAI · stage 1 · live registry + EscrowVaultV5", v: "v4", result: "85 / 100 · all findings answered", good: false, file: "QCAI-v5-stage1-response.md" },
   { date: "19 Nov", review: "QCAI · stage 2 (QoreChain setting)", v: "v4", result: "87 / 100 · QUANTUM-SAFE", good: true, file: "QCAI-v4-stage2-response.md" },
@@ -33,13 +34,14 @@ const SIGNERS = [
 ];
 
 const PROGRESS = [
-  { name: "Smart contracts v4", note: "Live on testnet · prize pools · freeze until fixed · 445 tests passing", done: true },
-  { name: "Server & referee", note: "110 unit tests + live contract checks", done: true },
+  { name: "Smart contracts", note: "Registry V4 + vault V5 live on testnet · prize pools · freeze until fixed · 477 tests passing", done: true },
+  { name: "Server & referee", note: "118 unit tests + live contract checks", done: true },
   { name: "Website", note: "Play pass, paid tries, dark arena look", done: true },
-  { name: "Security reviews", note: "Eight reviews across v3, v4 and the live V5 vault", done: true },
+  { name: "Security reviews", note: "Nine reviews across v3, v4 and the live V5 vault, plus a full verification pass", done: true },
   { name: "Q-Day Drill", note: "18 Nov · no funds taken", done: true },
+  { name: "Public hosting", note: "Live 24/7 on an Azure server with HTTPS", done: true },
   { name: "Cover image & demo video", note: "Due 1 Dec 2026", done: false },
-  { name: "Public hosting & final submission", note: "Before 2 Dec 2026", done: false },
+  { name: "Final submission", note: "Before 2 Dec 2026, 23:59 UTC", done: false },
 ];
 
 const REPO = "https://github.com/ponram06/redzone/blob/main";
@@ -55,7 +57,7 @@ export function Report() {
       <section className="rp-hero">
         <div>
           <p className="rp-kicker">
-            <span className="rp-rule" /> Build Before Q-Day / Post-Quantum dApp · Project report · 19 Nov 2026
+            <span className="rp-rule" /> Build Before Q-Day / Post-Quantum dApp · Project report · 22 Nov 2026
           </p>
           <h1 className="rp-title">
             RedZone<span className="red">.</span>
@@ -87,8 +89,8 @@ export function Report() {
         <>
           <div className="rp-stats">
             <Stat label="Latest security score" value="82" unit="/100" note="QCAI stage 2 · live registry + V5 vault · QUANTUM-SAFE" bar={82} />
-            <Stat label="Contract tests" value="445" unit="passing" note="Including attack & invariant tests" />
-            <Stat label="Project complete" value="88" unit="%" note="Final polish & hosting remain" />
+            <Stat label="Contract tests" value="477" unit="passing" note="Including attack & invariant tests" />
+            <Stat label="Project complete" value="95" unit="%" note="Cover image & demo video remain" />
             <Stat label="Live arena bounty" value={formatQor(bountyWei).replace(" QOR", "")} unit="QOR" note={`Locked in ${health?.vaultName ?? "EscrowVaultV4"}`} live />
           </div>
 
@@ -191,11 +193,11 @@ export function Report() {
         <>
           <SectionHead n="02" label="Tests & audits" />
           <h2 className="rp-h2 big">Proof, not promises.</h2>
-          <p className="rp-p">Eight audits. Every finding was fixed or answered with code and a test. Both live contracts, the registry and the V5 vault, are rated QUANTUM-SAFE.</p>
+          <p className="rp-p">{AUDITS.length} reviews. Every finding was fixed or answered with code and a test. Both live contracts, the registry and the V5 vault, are rated QUANTUM-SAFE.</p>
           <div className="rp-stats">
-            <Stat label="Security reviews" value="6" />
+            <Stat label="Security reviews" value={String(AUDITS.length)} />
             <Stat label="Top QCAI score" value="87" unit="/100" />
-            <Stat label="Tests + live checks" value="561" />
+            <Stat label="Tests + live checks" value="601" />
             <div className="rp-stat rp-stat-safe">
               <Shield /> QUANTUM-SAFE
             </div>
@@ -239,7 +241,7 @@ export function Report() {
             </table>
           </div>
           <p className="rp-counts">
-            <b>445</b> Foundry contract tests <b>110</b> backend unit tests <b>6</b> live v4 tests
+            <b>477</b> Foundry contract tests <b>118</b> backend unit tests <b>6</b> live tests
           </p>
         </>
       )}
@@ -248,12 +250,12 @@ export function Report() {
         <>
           <SectionHead n="03" label="Progress" />
           <div className="rp-big">
-            88<small>%</small>
+            95<small>%</small>
           </div>
           <div className="bar rp-bar">
-            <span style={{ width: "88%" }} />
+            <span style={{ width: "95%" }} />
           </div>
-          <p className="rp-foot">Project complete · v4 deployed</p>
+          <p className="rp-foot">Project complete · registry V4 + vault V5 live</p>
           <ul className="rp-progress">
             {PROGRESS.map((p, i) => (
               <li key={p.name} className={p.done ? "done" : ""}>
@@ -289,7 +291,7 @@ export function Report() {
             <span className="red">On-chain</span> · QoreChain · diana
           </p>
           <h2 className="rp-h2">Contracts on testnet</h2>
-          <p className="note">Deployed 19 Nov 2026 · EVM chain id {health?.chainId ?? 9800}</p>
+          <p className="note">Registry deployed 19 Nov · vault V5 21 Nov 2026 · EVM chain id {health?.chainId ?? 9800}</p>
         </div>
         <div className="rp-clist">
           <Contract name="RobotRegistryV4" what="Robots · rounds · results" addr={health?.registry} />
