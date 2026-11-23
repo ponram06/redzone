@@ -106,4 +106,4 @@ live end-to-end round with the main QoreX account, cover image, demo video, subm
 - Hosting accounts: done (Azure for Students)
 - Cover image and demo video (planned for 1 Dec)
 - V5 end-to-end round with the main QoreX account (Phase 6)
-- Project form on build.qorechain.io: done and updated 22 Nov (GitHub App installed)
+- Project form on build.qorechain.io: updated 23 Nov; public page https://build.qorechain.io/p/redzone. Audit line follows the organisers' answer (23 Nov): both QCAI stages on the Ethereum setting (85/100 each) are the ones jurors compare; the QoreChain setting is for CosmWasm. Still missing on the page: the demo video (required) and the cover image
