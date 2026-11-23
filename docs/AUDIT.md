@@ -3,8 +3,14 @@
 **In short:** the two contracts that hold RedZone's money were audited twice by the QoreChain AI
 Smart Contract Auditor (QCAI, dashboard.qorechain.io/audit). Stage 1 found issues, we answered every
 one, and stage 2 audited the result. The live pair scored **85/100 in both stages on the same
-Ethereum setting** (21 and 22 Nov), and **82/100, QUANTUM-SAFE** on the QoreChain setting, which
-scores quantum readiness.
+Ethereum (EVM/Solidity) setting** (stage 1 on 21 Nov, stage 2 on 22 Nov). These two reports are the
+ones to compare.
+
+Earlier we also ran stage 2 on the QoreChain setting (82/100 and 87/100, QUANTUM-SAFE). QoreChain
+told us that setting is meant for CosmWasm contracts, so its rating does not count for Solidity. Those
+reports are kept below for the record only. The post-quantum protection itself is the on-chain
+ML-DSA-87 check through `pqcVerify` and `pqcKeyStatus`, described in the next sections with the tests
+that cover it.
 Every finding was either already handled in the code (with the line and the test that proves it)
 or did not apply, so no contract change was needed. Two earlier versions went through the same
 process.
@@ -21,7 +27,7 @@ reviewed the server ([audits/verification/TRIAGE.md](../audits/verification/TRIA
 | 19 Nov 2026 | 2 | the same, after every stage 1 finding | qorechain | **87/100, QUANTUM-SAFE** | [PDF](audit/2026-11-19-QCAI-stage2-RobotRegistryV4-EscrowVaultV3.pdf) |
 | 21 Nov 2026 | 1 | **RobotRegistryV4 + EscrowVaultV5** (both live) ([bundle](../audits/RedZone.v6.flat.sol)) | ethereum (auto) | 85/100 | [PDF](audit/2026-11-21-QCAI-stage1-RobotRegistryV4-EscrowVaultV5.pdf), [answers](../audits/QCAI-v5-stage1-response.md) |
 | 21 Nov 2026 | 2 | the same, after every stage 1 finding | qorechain | **82/100, QUANTUM-SAFE** | [PDF](audit/2026-11-21-QCAI-stage2-RobotRegistryV4-EscrowVaultV5.pdf), [answers](../audits/QCAI-v5-stage2-response.md) |
-| 22 Nov 2026 | 2 | the same bundle, rerun on the stage 1 setting so both stages match | ethereum | **85/100** | [PDF](audit/2026-11-22-QCAI-stage2-ethereum-RobotRegistryV4-EscrowVaultV5.pdf), [answers](../audits/QCAI-v5-stage2-ethereum-response.md) |
+| 22 Nov 2026 | 2 | the same bundle, rerun on the stage 1 setting so both stages match | ethereum | **85/100** (the stage 2 report to read) | [PDF](audit/2026-11-22-QCAI-stage2-ethereum-RobotRegistryV4-EscrowVaultV5.pdf), [answers](../audits/QCAI-v5-stage2-ethereum-response.md) |
 
 ## What is live, and what each audit covers
 
@@ -60,7 +66,9 @@ for, after the 2-day wait), overflow (Solidity 0.8 checked arithmetic), `_send` 
 (checked, reverts with `TransferFailed`), front-running (every round is bound to the player's
 ML-DSA signature) and the breach list (a cursor, no loop): none needed a contract change.
 
-## Stage 2 on the QoreChain setting (live registry + EscrowVaultV5, 21 Nov): 82/100, QUANTUM-SAFE
+## Extra: stage 2 on the QoreChain setting (live registry + EscrowVaultV5, 21 Nov): 82/100
+
+For the record only: this setting is meant for CosmWasm, so the 22 Nov Ethereum-setting report above is the stage 2 report for these Solidity contracts.
 
 Full answers: [audits/QCAI-v5-stage2-response.md](../audits/QCAI-v5-stage2-response.md). ML-DSA-87 key
 format (already checked: algorithm id and exact FIPS 204 sizes), reentrancy (native QOR only,
@@ -70,15 +78,17 @@ contract change.
 
 ## Stage 1 findings and what was done (live registry + EscrowVaultV5, 21 Nov)
 
+Verdicts: **fixed** (code changed), **already handled** (with the regression test by name) or **false positive** (with the reason). No finding on the live pair needed a code change.
+
 Full answers with code links: [audits/QCAI-v5-stage1-response.md](../audits/QCAI-v5-stage1-response.md).
 
 | # | Finding | Severity | Verdict | Where it is handled | Tests |
 |---|---|---|---|---|---|
 | 1 | Privilege escalation via admin transfer | High | Not an issue: the proposal id is not a secret; acceptance needs the new admin's single-use ML-DSA-87 signature over it | [PQAccess.sol:168-185](../contracts/src/v3/PQAccess.sol#L168-L185) | `test_Attack_AdminSigReplay`, `test_Audit3_AcceptBoundToProposal` |
-| 2 | Overflow in bounty deposit | Medium | Not reachable: each id costs at least 1 QOR | [EscrowVaultV5.sol:180-183](../contracts/src/v5/EscrowVaultV5.sol#L180-L183) | vault invariant tests |
+| 2 | Overflow in bounty deposit | Medium | Not reachable: each id costs at least 1 QOR | [EscrowVaultV5.sol:180-183](../contracts/src/v5/EscrowVaultV5.sol#L180-L183) | `test_Pool_DepositBounds`, `test_Edge_MinimumPoolAndPrize`, `invariant_MoneyIsConserved` |
 | 3 | Unchecked return value in `_send` | Medium | Already checked: `require(success, TransferFailed(to, amount))`, the whole tx reverts | [EscrowVaultV5.sol:327-333](../contracts/src/v5/EscrowVaultV5.sol#L327-L333) | `test_FailedPaymentRevertsEverything` |
 | 4 | Front-running in the play pass | Low | Not possible: only the operator named in the player's signature can use it | [RobotRegistryV4.sol:364-372](../contracts/src/v4/RobotRegistryV4.sol#L364-L372) | `test_Pass_OnlyOperatorAndOnlyInTime`, `test_Pass_BoundsAndSignature` |
-| 5 | Unbounded loop in breach processing | Info | No loop: one breach per call through a cursor | [EscrowVaultV5.sol:203-233](../contracts/src/v5/EscrowVaultV5.sol#L203-L233) | invariant tests, `test_Audit3_StockpiledBreachExpires` |
+| 5 | Unbounded loop in breach processing | Info | No loop: one breach per call through a cursor | [EscrowVaultV5.sol:203-233](../contracts/src/v5/EscrowVaultV5.sol#L203-L233) | `test_Audit3_StockpiledBreachExpires`, `test_Audit3_EarliestBreachWinsWhoeverCalls`, `invariant_OnePrizePerPlayerAndNeverMoreThanThePrize` |
 
 ## Stage 1 findings and what was done (live registry, 19 Nov)
 
@@ -87,7 +97,7 @@ Full answers with code links: [audits/QCAI-v4-stage1-response.md](../audits/QCAI
 | # | Finding | Severity | Verdict | Where it is handled | Tests |
 |---|---|---|---|---|---|
 | 1 | Privilege escalation via admin transfer | High | Not an issue: both steps are single-use ML-DSA-87 signatures (nonce + used digest), and an acceptance is bound to one proposal | [PQAccess.sol:168](../contracts/src/v3/PQAccess.sol#L168), [182-189](../contracts/src/v3/PQAccess.sol#L182-L189) | `test_Attack_AdminSigReplay`, `test_Audit3_AcceptBoundToProposal`, `test_Attack_AdminActionsNeedAdminSignature` |
-| 2 | Overflow of `nextBountyId` | Medium | Not reachable: each id needs a deposit of at least 1 QOR | EscrowVaultV3/V5 `depositPool` (`MIN_BOUNTY`) | vault invariant tests |
+| 2 | Overflow of `nextBountyId` | Medium | Not reachable: each id needs a deposit of at least 1 QOR | EscrowVaultV3/V5 `depositPool` (`MIN_BOUNTY`) | `test_Pool_DepositBounds`, `test_Attack_DepositChecks` |
 | 3 | Race condition in the play pass | Medium | Not an issue: expiry is exact and checked on every start; the operator is named in the player's signature | [RobotRegistryV4.sol:364](../contracts/src/v4/RobotRegistryV4.sol#L364) | `test_Pass_OnlyOperatorAndOnlyInTime`, `test_Pass_BoundsAndSignature` |
 | 4 | Unbounded loop in breach tracking | Low | No such loop: the vault reads one breach per call through a cursor | `breachAt` / `claimBounty` / `skipBreach` | `test_Audit3_StockpiledBreachExpires`, `test_Audit3_EarliestBreachWinsWhoeverCalls` |
 | 5 | Missing ERC standards | Info | Not applicable: robots and bounties are records, bounties are native QOR | n/a | n/a |

@@ -15,9 +15,9 @@ const TABS: [Tab, string][] = [
 const AUDITS = [
   { date: "22 Nov", review: "Verification pass · Slither, coverage, 10,000-run fuzzing, invariants, server review", v: "v4", result: "No contract bug · 3 server bugs fixed", good: true, file: "verification/TRIAGE.md" },
   { date: "22 Nov", review: "QCAI · stage 2 · live registry + EscrowVaultV5 (Ethereum setting, same as stage 1)", v: "v4", result: "85 / 100 · 6 findings answered", good: true, file: "QCAI-v5-stage2-ethereum-response.md" },
-  { date: "21 Nov", review: "QCAI · stage 2 · live registry + EscrowVaultV5 (QoreChain setting)", v: "v4", result: "82 / 100 · QUANTUM-SAFE", good: true, file: "QCAI-v5-stage2-response.md" },
+  { date: "21 Nov", review: "QCAI · stage 2 · live registry + EscrowVaultV5 (extra run, QoreChain setting, meant for CosmWasm)", v: "v4", result: "82 / 100 · QUANTUM-SAFE", good: true, file: "QCAI-v5-stage2-response.md" },
   { date: "21 Nov", review: "QCAI · stage 1 · live registry + EscrowVaultV5", v: "v4", result: "85 / 100 · all findings answered", good: false, file: "QCAI-v5-stage1-response.md" },
-  { date: "19 Nov", review: "QCAI · stage 2 (QoreChain setting)", v: "v4", result: "87 / 100 · QUANTUM-SAFE", good: true, file: "QCAI-v4-stage2-response.md" },
+  { date: "19 Nov", review: "QCAI · stage 2 (QoreChain setting, meant for CosmWasm)", v: "v4", result: "87 / 100 · QUANTUM-SAFE", good: true, file: "QCAI-v4-stage2-response.md" },
   { date: "19 Nov", review: "QCAI · stage 1", v: "v4", result: "85 / 100 · all findings answered", good: false, file: "QCAI-v4-stage1-response.md" },
   { date: "17 Nov", review: "Blockhertz AI auditor (vault)", v: "v3", result: "Gas improvements adopted", good: false, file: "Blockhertz-1-EscrowVaultV2.md" },
   { date: "16 Nov", review: "Adversarial audit (exploit tests)", v: "v3", result: "1 medium, 2 low · all fixed", good: true, file: "ADVERSARIAL_AUDIT.md" },
@@ -72,8 +72,8 @@ export function Report() {
         <div className="rp-safe">
           <Shield />
           <div>
-            <strong>QUANTUM-SAFE</strong>
-            <span>QCAI · registry and vault audited · QUANTUM-SAFE</span>
+            <strong>POST-QUANTUM</strong>
+            <span>ML-DSA-87 via pqcVerify · QCAI 85/100 in both stages</span>
           </div>
         </div>
       </section>
@@ -89,7 +89,7 @@ export function Report() {
       {tab === "overview" && (
         <>
           <div className="rp-stats">
-            <Stat label="Latest security score" value="82" unit="/100" note="QCAI stage 2 · live registry + V5 vault · QUANTUM-SAFE" bar={82} />
+            <Stat label="QCAI security score" value="85" unit="/100" note="Stage 1 and stage 2 · Ethereum setting · live registry + V5 vault" bar={85} />
             <Stat label="Contract tests" value="477" unit="passing" note="Including attack & invariant tests" />
             <Stat label="Project complete" value="95" unit="%" note="Cover image & demo video remain" />
             <Stat label="Live arena bounty" value={formatQor(bountyWei).replace(" QOR", "")} unit="QOR" note={`Locked in ${health?.vaultName ?? "EscrowVaultV4"}`} live />
@@ -194,13 +194,13 @@ export function Report() {
         <>
           <SectionHead n="02" label="Tests & audits" />
           <h2 className="rp-h2 big">Proof, not promises.</h2>
-          <p className="rp-p">{AUDITS.length} reviews. Every finding was fixed or answered with code and a test. Both live contracts, the registry and the V5 vault, are rated QUANTUM-SAFE.</p>
+          <p className="rp-p">{AUDITS.length} reviews. Every finding was fixed or answered with code and a test. The live registry and V5 vault score 85/100 in both QCAI stages on the Ethereum setting, and every signed action is checked with ML-DSA-87 through pqcVerify.</p>
           <div className="rp-stats">
             <Stat label="Security reviews" value={String(AUDITS.length)} />
-            <Stat label="Top QCAI score" value="87" unit="/100" />
+            <Stat label="QCAI score, both stages" value="85" unit="/100" />
             <Stat label="Tests + live checks" value="601" />
             <div className="rp-stat rp-stat-safe">
-              <Shield /> QUANTUM-SAFE
+              <Shield /> ML-DSA-87
             </div>
           </div>
           <div className="rp-row">
