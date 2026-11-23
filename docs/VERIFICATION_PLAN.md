@@ -83,7 +83,7 @@ subtracted from new payments (pools locked short; no money lost, test added), an
       a fix reopens it; the demo robot never freezes.
 - [x] **Input limits and rate limits** on every route; error messages never leak keys or paths.
 - [x] **Secrets**: never logged, never in git, file permissions on the server, `.env` not served.
-- [ ] Live tests (`npm run test:live`) against the deployed contracts.
+- [x] Live tests (`npm run test:live`) against the deployed contracts: 6/6 pass (23 Nov): referee key hash, every digest, the pqcVerify precompile, try price and treasury, game rules, ledger history.
 
 ### C. Website
 
@@ -100,8 +100,8 @@ subtracted from new payments (pools locked short; no money lost, test added), an
 
 ## Results (21 Nov)
 
-Every item above is done except the live end-to-end run (D), which needs the owner, and the
-`test:live` suite. Verdicts and evidence: [audits/verification/TRIAGE.md](../audits/verification/TRIAGE.md).
+Every item above is done except the live end-to-end run (D), which needs the owner (the
+`test:live` suite ran on 23 Nov: 6/6 pass). Verdicts and evidence: [audits/verification/TRIAGE.md](../audits/verification/TRIAGE.md).
 Found and fixed in this pass (server, not contracts): a payout retry could never pay once the verdict
 was on chain (two paths), and a failed payout was only retried if the player pressed "Try again"; the
 server now retries by itself every 2 minutes. No contract bug was found; the contracts are unchanged.
