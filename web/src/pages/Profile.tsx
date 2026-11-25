@@ -405,7 +405,7 @@ export function Profile({ address: raw, own = false }: { address: string; own?: 
                   <span className="pf-robot-status">{(r.brainVersion ?? 0) > 0 ? `Fixed and open: version ${versionOf(r)}.` : "Open."}</span>
                 )}
                 {isMe && r.frozen && (
-                  <a className="btn primary small" href={`#/owners/${r.id}`}>
+                  <a className="btn primary small" href={`#/robots/${r.id}`}>
                     🔧 Fix this robot
                   </a>
                 )}

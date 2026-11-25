@@ -6,6 +6,7 @@ import { RobotIcon } from "../components/RobotIcon";
 import { KIND_LABEL, lookOf } from "../robotLook";
 import { PlayerTag, toEvm } from "../players";
 import { TIER_TEXT, isListed, safetyScore, useData } from "../data";
+import { ManageRobot } from "./Owners";
 
 /** Attacks a robot needs before its score is ranked with the well-tested ones (one lucky block isn't a record). */
 export const RANKED_AFTER = 5;
@@ -261,8 +262,8 @@ export function RobotPage({ id }: { id: number }) {
       </p>
       <div className="row">
         {mine ? (
-          <a className="btn" href="#/owners">
-            This is your robot: manage it
+          <a className="btn" href="#manage" onClick={(e) => (e.preventDefault(), document.getElementById("manage")?.scrollIntoView({ behavior: "smooth" }))}>
+            This is your robot: manage it ↓
           </a>
         ) : (
           <a className="btn primary big" href={`#/play/${r.id}`}>
@@ -271,6 +272,7 @@ export function RobotPage({ id }: { id: number }) {
         )}
       </div>
       <p className="note">Registered {new Date(r.registeredAt * 1000).toLocaleDateString()}. All results are public and can't be edited by anyone.</p>
+      {mine && <ManageRobot robot={r} />}
     </>
   );
 }

@@ -89,17 +89,8 @@ export function Owners({ focus }: { focus?: number } = {}) {
   }, [focus, robots.length, acc.player?.evm]);
 
   const mine = acc.player ? robots.filter((r) => r.owner.toLowerCase() === acc.player!.evm.toLowerCase()) : [];
-  const [bounties, setBounties] = useState<OwnerBounty[]>([]);
-  const loadPrizes = async () => {
-    if (acc.player) setBounties(await api.ownerBounties(acc.player.evm).catch(() => []));
-  };
-  useEffect(() => {
-    loadPrizes();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [acc.player?.evm]);
   const refreshMine = async () => {
     await reloadRobots();
-    await loadPrizes();
   };
 
   return (
@@ -177,17 +168,11 @@ export function Owners({ focus }: { focus?: number } = {}) {
       {mine.length > 0 && (
         <section className="panel step">
           <h2>Your robots</h2>
-          <div className="owner-robots">
+          <p className="note">Open a robot to change its job, brain or bounty.</p>
+          <div className="owner-robots compact">
             {mine.map((r) => (
-              <div key={r.id} id={`owner-robot-${r.id}`} className="owner-robot">
-                <div className="stack">
-                  <RobotCard robot={r} href={`#/robots/${r.id}`} />
-                  <RobotPrize robotId={r.id} hasPrize={r.bounty.totalWei !== "0"} bounties={bounties} onChange={refreshMine} />
-                </div>
-                <div className="stack">
-                  <RobotJob robot={r} onDone={reloadRobots} />
-                  <EditBrain robot={r} onDone={reloadRobots} />
-                </div>
+              <div key={r.id} id={`owner-robot-${r.id}`}>
+                <RobotCard robot={r} href={`#/robots/${r.id}`} />
               </div>
             ))}
           </div>
@@ -198,6 +183,39 @@ export function Owners({ focus }: { focus?: number } = {}) {
   );
 }
 
+
+/** The owner's controls for one robot, shown on its own page: job and look, prize pool, brain. */
+export function ManageRobot({ robot }: { robot: Robot }) {
+  const { reloadRobots } = useData();
+  const acc = useAccount();
+  const [bounties, setBounties] = useState<OwnerBounty[]>([]);
+  const loadPrizes = async () => {
+    if (acc.player) setBounties(await api.ownerBounties(acc.player.evm).catch(() => []));
+  };
+  useEffect(() => {
+    loadPrizes();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [acc.player?.evm]);
+  const refresh = async () => {
+    await reloadRobots();
+    await loadPrizes();
+  };
+  return (
+    <section className="panel step manage-robot" id="manage">
+      <h2>Manage your robot</h2>
+      <p className="note">Only you can change these. Each change is one QoreX approval, signed with your ML-DSA-87 key.</p>
+      <div className="owner-robot">
+        <div className="stack">
+          <RobotJob robot={robot} onDone={reloadRobots} />
+          <RobotPrize robotId={robot.id} hasPrize={robot.bounty.totalWei !== "0"} bounties={bounties} onChange={refresh} />
+        </div>
+        <div className="stack">
+          <EditBrain robot={robot} onDone={reloadRobots} />
+        </div>
+      </div>
+    </section>
+  );
+}
 
 /**
  * What the robot is and does, shown to players: its type (which sets its body in the arena),
