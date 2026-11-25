@@ -46,8 +46,8 @@ export function AccountGate({
         <>
           <p>RedZone uses the free QoreX wallet as your account. It keeps your bounties safe, even from future quantum computers.</p>
           <p className="note">
-            QoreX runs in Chrome on a computer, not on phones yet. Open this page on a computer to play for bounties. You can still browse the
-            robots and the leaderboard here.
+            QoreX is a browser extension for Chrome or Firefox on a computer. There is no QoreX app for phones yet, and phone browsers can't
+            run it, so open this page on a laptop or desktop to play for bounties. You can still browse the robots and the leaderboard here.
           </p>
           <a className="btn" href="#/robots">
             See the robots
@@ -56,7 +56,10 @@ export function AccountGate({
       ) : (
         <>
           <p>RedZone uses the free QoreX browser extension as your account. It keeps your bounties safe, even from future quantum computers.</p>
-          <p className="note">Install QoreX in Chrome, create an account, switch it to the testnet, then reload this page.</p>
+          <p className="note">
+            Install QoreX in Chrome or <a href="https://addons.mozilla.org/firefox/addon/qorex/" target="_blank" rel="noreferrer">Firefox</a>, create an
+            account, switch it to the testnet, then reload this page.
+          </p>
           <button className="btn" onClick={() => location.reload()}>
             I've installed it, reload
           </button>
