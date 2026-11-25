@@ -153,6 +153,13 @@ flowchart LR
    not the relayer, not the admin.
 5. **The website shows only chain data**: robots, scores, bounties, rankings and sign-ups (see
    [Where the data comes from](#where-the-data-comes-from)).
+6. **Anyone can check a verdict without trusting us.** The [Verify page](https://redzone.malaysiawest.cloudapp.azure.com/#/verify/14)
+   reads a round straight from QoreChain's public RPC, finds the referee's `recordResult`
+   transaction and checks, in the browser, that the key hashes to the registry's referee key, the
+   digest matches the contract's `resultDigest`, the ML-DSA-87 signature verifies (FIPS 204,
+   `@noble/post-quantum`), the replay hashes to the signed `replayHash`, and the vault paid that
+   round's player. Its "try to forge it" buttons flip the verdict, swap the winner or edit the
+   instruction, and each forgery is rejected. Code: [web/src/verify.ts](web/src/verify.ts).
 
 ## Hackathon requirements: where to find each one
 

@@ -143,6 +143,7 @@ export function Profile({ address: raw, own = false }: { address: string; own?: 
           ],
           ["Round", `#${z.sessionId}`],
           ["Signed with", "ML-DSA-87 (post-quantum)"],
+          ["Check it yourself", <a key="vf" href={`#/verify/${z.sessionId}`}>Verify round #{z.sessionId}</a>],
         ],
       });
     }
@@ -351,7 +352,9 @@ export function Profile({ address: raw, own = false }: { address: string; own?: 
                         {shortHash(z.replayHash)} ↗
                       </a>
                     </span>
-                    <span className="proof-chip pq">ML-DSA-87 signed</span>
+                    <a className="proof-chip pq" href={`#/verify/${z.sessionId}`} title="Re-check the referee's signature and this payment in your browser">
+                      ML-DSA-87 signed · verify ✓
+                    </a>
                   </span>
                 </div>
               </div>
@@ -371,6 +374,9 @@ export function Profile({ address: raw, own = false }: { address: string; own?: 
                 <span className="muted grow">{ago(r.at)}</span>
                 <a className="muted" href={`${API_URL}/replay/${r.replayHash}`} target="_blank" rel="noreferrer">
                   Replay ↗
+                </a>
+                <a className="muted" href={`#/verify/${r.sessionId}`} title="Re-check the referee's ML-DSA-87 signature in your browser">
+                  Verify
                 </a>
               </div>
             ))}

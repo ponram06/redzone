@@ -187,6 +187,19 @@ export function Report() {
               </tbody>
             </table>
           </div>
+          <div className="rp-checks rp-verify">
+            <Shield />
+            <div>
+              <strong>Check any round yourself</strong>
+              <span>
+                Your browser reads the round straight from the chain, re-verifies the referee's ML-DSA-87 signature, matches the replay to it and finds
+                the payout. Then try to forge it.
+              </span>
+            </div>
+            <a className="btn small" href="#/verify">
+              Verify a round →
+            </a>
+          </div>
         </>
       )}
 

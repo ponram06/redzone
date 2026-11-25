@@ -200,6 +200,11 @@ function RealRound({ health, robot, maxInstruction, onResult, onFinished, compac
           {shortHash(verdict.replayHash)}
         </a>
       </div>
+      {verdict.relay?.resultTx && (
+        <div>
+          <a href={`#/verify/${verdict.sessionId}`}>Check the referee's ML-DSA-87 signature yourself →</a>
+        </div>
+      )}
     </details>
   );
   const triesText =

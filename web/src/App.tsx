@@ -1,4 +1,4 @@
-import { Component, useEffect, useState, type ErrorInfo, type ReactNode } from "react";
+import { Component, lazy, Suspense, useEffect, useState, type ErrorInfo, type ReactNode } from "react";
 import { AccountProvider, useAccount } from "./account";
 import { Backdrop, LiveTicker, useCursorGlow } from "./components/Backdrop";
 import { Icon, TopBar } from "./components/TopBar";
@@ -14,7 +14,10 @@ import { Play } from "./pages/Play";
 import { Leaderboard, RobotPage } from "./pages/Rankings";
 import { Report } from "./pages/Report";
 
-/** Tiny hash router: #/, #/play, #/play/2, #/robots, #/robots/2, #/owners, #/report, #/help */
+// Loaded on demand: it carries the ML-DSA-87 verifier, which no other page needs.
+const Verify = lazy(() => import("./pages/Verify").then((m) => ({ default: m.Verify })));
+
+/** Tiny hash router: #/, #/play, #/play/2, #/robots, #/robots/2, #/owners, #/report, #/verify/14, #/help */
 function useRoute(): string[] {
   const read = () => location.hash.replace(/^#\/?/, "").split("/").filter(Boolean);
   const [parts, setParts] = useState(read);
@@ -56,6 +59,12 @@ function Shell() {
   else if (page === "owners") content = <Owners focus={id} />;
   else if (page === "help") content = <Help />;
   else if (page === "report") content = <Report />;
+  else if (page === "verify")
+    content = (
+      <Suspense fallback={<p className="note">Loading the verifier…</p>}>
+        <Verify id={id} />
+      </Suspense>
+    );
   else if (page === "me") content = <MyProfile />;
   else if (page === "player" && arg) content = <Profile address={arg} />;
   else if (!page) content = <Home />;
