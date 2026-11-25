@@ -1,3 +1,4 @@
+import { hasQorex } from "./qorex";
 import { Component, lazy, Suspense, useEffect, useState, type ErrorInfo, type ReactNode } from "react";
 import { AccountProvider, useAccount } from "./account";
 import { Backdrop, LiveTicker, useCursorGlow } from "./components/Backdrop";
@@ -122,11 +123,21 @@ function AccountChip() {
   }, [open, evm]);
 
   if (!acc.address) {
+    // No QoreX in this browser (e.g. a phone's own browser): the Play page's sign-in step explains how to get it
+    // (on phones, by opening RedZone inside the QoreX app). Otherwise sign in here and show any error under the button.
+    const signIn = () => (hasQorex() ? acc.signIn() : void (location.hash = "#/play"));
     return (
-      <button className="tb-signin" disabled={!!acc.busy} onClick={acc.signIn}>
-        <Icon name="key" size={16} />
-        <span>{acc.busy ? "Signing in…" : "Sign in"}</span>
-      </button>
+      <div className="tb-signin-wrap">
+        <button className="tb-signin" disabled={!!acc.busy} onClick={signIn}>
+          <Icon name="key" size={16} />
+          <span>{acc.busy ? "Signing in…" : "Sign in"}</span>
+        </button>
+        {acc.error && !acc.busy && (
+          <p className="tb-signin-err" role="alert">
+            {acc.error}
+          </p>
+        )}
+      </div>
     );
   }
   const id = evm ?? acc.address;
