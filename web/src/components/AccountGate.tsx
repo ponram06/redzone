@@ -104,7 +104,12 @@ export function AccountGate({
       2,
       "Turn on your safety key",
       <>
-        <p>Your QoreX account needs its quantum-safe key switched on. You only do this once, inside QoreX.</p>
+        <p>Your QoreX account needs its quantum-safe (ML-DSA-87) key on QoreChain. There is no switch for it: QoreX adds the key by itself with your first transfer.</p>
+        <ol className="note">
+          <li>In QoreX (on testnet), send any small amount of QOR, for example 0.01 QOR to a friend's qor1… address. Need QOR? Use the testnet faucet on the QoreChain Dashboard.</li>
+          <li>QoreX shows a small one-time key fee on that first send. Approve it.</li>
+          <li>In the QoreX app, Settings → Security then shows the ML-DSA-87 key as "Registered on-chain ✓". Come back here and tap below.</li>
+        </ol>
         <button className="btn" disabled={!!acc.busy} onClick={acc.refresh}>
           I've done it, check again
         </button>
