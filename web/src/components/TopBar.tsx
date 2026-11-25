@@ -12,6 +12,7 @@ const ICONS: Record<string, ReactNode> = {
   report: <path d="M7 3h7l5 5v13H7zM14 3v5h5M10 13h6M10 17h6M10 9h2" />,
   help: <path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18ZM9.6 9.3a2.5 2.5 0 1 1 3.6 2.3c-.8.4-1.2.9-1.2 1.7v.4M12 16.8h.01" />,
   play: <path d="M8 5.5v13l10.5-6.5z" />,
+  shield: <path d="M12 3 5 6v5c0 4.5 3 8.3 7 10 4-1.7 7-5.5 7-10V6l-7-3ZM9 12l2 2 4-4" />,
   key: <path d="M14.5 9.5a4 4 0 1 1-1.2-2.8M14.5 9.5 21 16v3h-3v-2h-2v-2h-2l-1.6-1.6M9 9.5h.01" />,
   menu: <path d="M4 7h16M4 12h16M4 17h16" />,
   close: <path d="M6 6l12 12M18 6 6 18" />,
@@ -30,6 +31,8 @@ export const NAV = [
   { path: "", label: "Home", icon: "home", hint: "The arena, live" },
   { path: "robots", label: "Leaderboard", icon: "trophy", hint: "Safest robots and best players" },
   { path: "owners", label: "Build a robot", icon: "build", hint: "Add your robot and set a bounty" },
+  { path: "verify", label: "Verify", icon: "shield", hint: "Re-check any round's verdict and payout yourself" },
+  { path: "lab", label: "Q-Day Lab", icon: "key", hint: "A leaked key, attacked live every hour" },
   { path: "report", label: "Report", icon: "report", hint: "How RedZone works, audits, tests" },
   { path: "help", label: "Help", icon: "help", hint: "Questions and answers" },
 ] as const;
