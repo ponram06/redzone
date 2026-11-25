@@ -30,7 +30,8 @@ export function FrozenNotice({ robot, forOwner = false }: { robot: Robot; forOwn
       <b>🔒 Frozen: waiting for its owner's fix</b>
       <span className="frozen-who">
         <PlayerTag address={f.player} size={20} />
-        <span className="muted">broke version {versionOf(robot)} · {ago(f.at)}</span>
+        <span>broke it{forOwner && <> (your version {versionOf(robot)})</>}</span>
+        <span className="muted">· {ago(f.at)}</span>
       </span>
       <span>
         {f.zone ? (
