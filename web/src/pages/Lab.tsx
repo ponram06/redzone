@@ -49,9 +49,10 @@ export function Lab() {
           Steal this QOR<span className="red">.</span>
         </h1>
         <p className="lead">
-          Pretend Q-Day has already happened. Below is the <strong>classical ECDSA private key</strong> of a funded account, the key a quantum computer
-          would crack. Every {s?.everyMinutes ?? 60} minutes our bot uses it to try to take the QOR. You can try too. The account also has an ML-DSA-87
-          key, which stays secret, and QoreChain asks for both.
+          Every RedZone prize, a player's winnings and a robot maker's bounty, is QOR held by a QoreChain account. Here is one such account with its{" "}
+          <strong>classical ECDSA private key published</strong>, as if a quantum computer had already cracked it. Every {s?.everyMinutes ?? 60} minutes
+          our bot uses that key to try to take the QOR, and you can try too. The account also has an ML-DSA-87 key that stays secret, and QoreChain asks
+          for both, the same protection RedZone's players and makers get.
         </p>
       </section>
 

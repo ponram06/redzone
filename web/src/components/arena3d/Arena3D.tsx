@@ -1730,7 +1730,7 @@ export default function Arena3D({
   return (
     <div className={`arena3d ${breachAt ? "alarm" : ""} ${showcase ? "showcase" : ""}`}>
       <Canvas
-        shadows={!low}
+        shadows={low ? false : "percentage"}
         dpr={quality === 2 ? [1, 1.5] : quality === 1 ? [1, 1.25] : 1}
         frameloop={paused ? "never" : "always"}
         camera={{ position: [0, 26, 70], fov: 45, near: 0.5, far: 700 }}

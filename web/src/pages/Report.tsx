@@ -91,7 +91,7 @@ export function Report() {
           <div className="rp-stats">
             <Stat label="QCAI security score" value="85" unit="/100" note="Stage 1 and stage 2 · Ethereum setting · live registry + V5 vault" bar={85} />
             <Stat label="Contract tests" value="477" unit="passing" note="Including attack & invariant tests" />
-            <Stat label="Project complete" value="95" unit="%" note="Cover image & demo video remain" />
+            <Stat label="Attacks judged on chain" value={String(robots.reduce((n, r) => n + r.attacks, 0))} unit="rounds" note={`${robots.reduce((n, r) => n + r.breached, 0)} breached · each verdict ML-DSA-87 signed`} live />
             <Stat label="Live arena bounty" value={formatQor(bountyWei).replace(" QOR", "")} unit="QOR" note={`Locked in ${health?.vaultName ?? "EscrowVaultV4"}`} live />
           </div>
 
