@@ -296,6 +296,19 @@ export function Report() {
               <small>lost</small>
             </div>
           </div>
+          <div className="rp-checks rp-verify">
+            <Shield />
+            <div>
+              <strong>Q-Day Lab · live</strong>
+              <span>
+                A funded account's classical key is published. Our bot attacks it with that key every hour, and anyone can try. Its post-quantum key
+                keeps the QOR in place.
+              </span>
+            </div>
+            <a className="btn small" href="#/lab">
+              Steal this QOR →
+            </a>
+          </div>
         </>
       )}
 

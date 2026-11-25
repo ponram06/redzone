@@ -13,11 +13,12 @@ import { Owners } from "./pages/Owners";
 import { Play } from "./pages/Play";
 import { Leaderboard, RobotPage } from "./pages/Rankings";
 import { Report } from "./pages/Report";
+import { Lab } from "./pages/Lab";
 
 // Loaded on demand: it carries the ML-DSA-87 verifier, which no other page needs.
 const Verify = lazy(() => import("./pages/Verify").then((m) => ({ default: m.Verify })));
 
-/** Tiny hash router: #/, #/play, #/play/2, #/robots, #/robots/2, #/owners, #/report, #/verify/14, #/help */
+/** Tiny hash router: #/, #/play, #/play/2, #/robots, #/robots/2, #/owners, #/report, #/verify/14, #/lab, #/help */
 function useRoute(): string[] {
   const read = () => location.hash.replace(/^#\/?/, "").split("/").filter(Boolean);
   const [parts, setParts] = useState(read);
@@ -59,6 +60,7 @@ function Shell() {
   else if (page === "owners") content = <Owners focus={id} />;
   else if (page === "help") content = <Help />;
   else if (page === "report") content = <Report />;
+  else if (page === "lab") content = <Lab />;
   else if (page === "verify")
     content = (
       <Suspense fallback={<p className="note">Loading the verifier…</p>}>

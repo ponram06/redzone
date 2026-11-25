@@ -50,6 +50,8 @@ export type AppDeps = {
   trustProxy?: boolean | string | ((address: string, hop: number) => boolean);
   /** Built website folder (web/dist) to serve from the same address as the API, so one server runs everything. */
   webDist?: string;
+  /** Live Q-Day lab: the bait account whose ECDSA key is published, and the hourly attack log. */
+  lab?: { state(): Promise<unknown> } | null;
 };
 
 /** Tiny fixed-window limiter, per IP and route group. Each group has its own budget per minute. */
@@ -120,6 +122,11 @@ export async function buildApp(d: AppDeps) {
       providers: Object.entries(PROVIDERS).map(([id, p]) => ({ id, name: p.name })),
     },
   }));
+
+  app.get("/lab", async () => {
+    if (!d.lab) throw new GameError(404, "the Q-Day lab is not running on this server");
+    return d.lab.state();
+  });
 
   /** Prizes: the maker pays in QoreX, then posts the payment here; the relayer locks it in the vault. */
   app.post<{ Body: { robotId?: unknown; owner?: unknown; txHash?: unknown } }>("/owner/bounty", async (req, reply) => {

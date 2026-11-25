@@ -6588,3 +6588,60 @@ a.ptag:hover .ptag-name {
 .rp-verify > div {
   flex: 1 1 260px;
 }
+
+/* ---------- Q-Day lab ---------- */
+.lab-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+}
+.lab-stats .panel {
+  display: grid;
+  gap: 6px;
+}
+.lab-stats b {
+  font-size: 26px;
+  font-weight: 600;
+  font-family: var(--mono);
+}
+.lab-key {
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.lab-why {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 8px;
+  font-size: 14px;
+}
+.lab-log {
+  margin-top: 16px;
+}
+.lab-log h2 {
+  font-size: 18px;
+  margin: 0 0 12px;
+}
+.lab-log details {
+  border-bottom: 1px solid var(--border);
+  padding: 8px 0;
+}
+.lab-log summary {
+  cursor: pointer;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  font-size: 14px;
+}
+.lab-log details .vf-tries {
+  margin-top: 10px;
+}
+.lab-code {
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  font-size: 12px;
+  overflow-x: auto;
+  white-space: pre;
+}

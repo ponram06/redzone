@@ -296,6 +296,7 @@ export const api = {
     call<Verdict>("/attempt", { method: "POST", body: JSON.stringify({ sessionId, instruction, ...auth }) }),
   relayAgain: (sessionId: number) => call<Verdict>(`/attempt/${sessionId}/relay`, { method: "POST" }),
   health: () => call<Health>("/health"),
+  lab: () => call<LabState>("/lab"),
   arena: () => call<Arena>("/arena"),
   robots: () => call<{ robots: Robot[] }>("/robots").then((r) => r.robots),
   practice: (brainHash: string, instruction: string) =>
@@ -316,4 +317,19 @@ export async function newRoundKey(): Promise<{ key: string; hash: string }> {
 export const formatQor = (wei: string) => {
   const n = Number(BigInt(wei) / 10n ** 14n) / 10_000;
   return `${n.toLocaleString(undefined, { maximumFractionDigits: 4 })} QOR`;
+};
+
+export type LabAttempt = { attack: string; blocked: boolean; detail: string };
+export type LabRun = { at: number; balanceBefore: string; balanceAfter: string; attempts: LabAttempt[]; skipped?: string };
+export type LabState = {
+  cosmos: string;
+  evm: string;
+  ecdsaPrivateKey: string;
+  attacker: string;
+  balanceUqor: string;
+  pqcRegistered: boolean;
+  everyMinutes: number;
+  nextAt: number | null;
+  runs: LabRun[];
+  totals: { runs: number; attempts: number; blocked: number };
 };

@@ -20,8 +20,12 @@ Thumbs.db
 .referee-key.json
 *.key.json
 .attacker.json
+.bait.json
 
 # Backend data
 backend/data/
 contracts/.v3-proofs.json
 contracts/.v4-proofs.json
+
+# Q-Day lab key on the server (deploy/qday-lab/leaked.json)
+deploy/qday-lab/

@@ -1,6 +1,7 @@
 /** Entry point: npm start (reads .env). */
 import { resolve } from "node:path";
 import { buildApp } from "./app.js";
+import { QdayLab } from "./qdaylab.js";
 import { ARENAS, PLANT } from "./arena.js";
 import { KeyVault } from "./brains/keys.js";
 import { BrainRegistry, LEGACY_DEMO_HASH, RULE_BRAIN, brainHash } from "./brains/registry.js";
@@ -141,7 +142,9 @@ const game = new Game({
 const builtInBrains: Record<string, string> = { rule: brainHash(RULE_BRAIN), "demo-legacy (robot 1)": LEGACY_DEMO_HASH };
 if (builtIns[0]) builtInBrains["llm-sentinel"] = brainHash(builtIns[0]);
 
+const lab = QdayLab.fromEnv(env, dataDir);
 const app = await buildApp({
+  lab,
   game,
   arena: ARENA,
   brains,
@@ -200,6 +203,8 @@ if (relayer) {
   }, 120_000).unref();
 }
 
+lab?.start();
+
 const port = Number(env.PORT ?? 8787);
 await app.listen({ port, host: env.HOST ?? "127.0.0.1" });
 console.log(`RedZone referee on http://${env.HOST ?? "127.0.0.1"}:${port}`);
@@ -207,6 +212,7 @@ console.log(`  vault: ${VAULT_NAME} ${VAULT}${PREVIOUS_VAULTS.length ? ` (histor
 console.log(`  brains: ${Object.entries(builtInBrains).map(([k, v]) => `${k}=${v.slice(0, 10)}…`).join(", ")}`);
 console.log(`  llm: ${endpoint ? `${endpoint.baseUrl} (${models.length} model(s))` : "off (rule brain only)"}`);
 console.log(`  relayer: ${relayer ? `${relayer.address} (${relayer.cosmosAddress})` : "none (players relay their own transactions)"}`);
+console.log(`  Q-Day lab: ${lab ? "on (hourly attacks on the bait account)" : "off (set QDAY_LAB_KEY_FILE)"}`);
 console.log(`  own AI keys: ${keys ? "on" : "off (set BRAIN_KEY_SECRET)"}`);
 console.log(`  fallbacks: ${fallbacks.length ? fallbacks.map((f) => `${f.model} at ${new URL(f.endpoint.baseUrl).host}`).join(" -> ") : "none"}`);
 
