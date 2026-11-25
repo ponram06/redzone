@@ -6682,3 +6682,10 @@ a.ptag:hover .ptag-name {
   z-index: 60;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
 }
+
+.frozen-who {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+}

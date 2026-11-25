@@ -28,9 +28,19 @@ export function FrozenNotice({ robot, forOwner = false }: { robot: Robot; forOwn
   return (
     <div className="frozen" role="status">
       <b>🔒 Frozen: waiting for its owner's fix</b>
+      <span className="frozen-who">
+        <PlayerTag address={f.player} size={20} />
+        <span className="muted">broke version {versionOf(robot)} · {ago(f.at)}</span>
+      </span>
       <span>
-        <PlayerTag address={f.player} size={18} /> broke version {versionOf(robot)} {ago(f.at)}
-        {f.zone ? <> and drove it into the <b>{f.zone}</b></> : null} and was paid. It pays again after its owner fixes it.
+        {f.zone ? (
+          <>
+            Drove it into the <b>{f.zone}</b> and was paid.
+          </>
+        ) : (
+          "Broke its rules and was paid."
+        )}{" "}
+        It pays again after its owner fixes it.
       </span>
       {forOwner && f.instruction && (
         <span className="frozen-msg">
