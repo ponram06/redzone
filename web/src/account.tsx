@@ -65,7 +65,7 @@ export function AccountProvider({ children }: { children: ReactNode }) {
   const signIn = useCallback(
     () =>
       run("Waiting for QoreX…", async () => {
-        if (!hasQorex()) throw new Error("Install the QoreX wallet extension first.");
+        if (!hasQorex()) throw new Error("Install the QoreX wallet first (Chrome or Firefox on a computer, or open RedZone inside the QoreX phone app).");
         const a = await connect();
         setAddress(a);
         remember(a);

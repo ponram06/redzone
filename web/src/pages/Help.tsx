@@ -10,6 +10,10 @@ const faq = ({ fee, perDay, minutes }: Facts): [string, string][] => [
   ],
   ["Do I need to know about crypto?", "No. You need the free QoreX wallet as your account. RedZone does the rest in the background."],
   [
+    "Can I play on my phone?",
+    "Yes, inside the QoreX app. Install QoreX from Google Play or the App Store, create a wallet, and in its Settings turn on Use testnet. Then open RedZone on your phone and tap Open RedZone in the QoreX app (or type the address into QoreX's dApp browser). Ordinary phone browsers can't sign for you; on a computer use the QoreX extension for Chrome or Firefox.",
+  ],
+  [
     "Why pay to verify my account?",
     `A tiny one-time payment (${fee}) makes fake accounts costly, and it pays the blockchain fees for your rounds. After that, your daily bounty rounds are free.`,
   ],

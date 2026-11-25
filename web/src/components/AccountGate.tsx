@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useAccount } from "../account";
 import { qorAmount } from "../format";
 import { hasQorex } from "../qorex";
@@ -18,6 +18,14 @@ export function AccountGate({
   requireVerified?: boolean;
 }) {
   const acc = useAccount();
+  // A wallet's in-app browser may inject window.qorex a moment after the page starts: look again for 3 s.
+  const [, rerender] = useState(0);
+  useEffect(() => {
+    if (hasQorex()) return;
+    const t = setInterval(() => hasQorex() && (rerender((n) => n + 1), clearInterval(t)), 300);
+    const stop = setTimeout(() => clearInterval(t), 3000);
+    return () => (clearInterval(t), clearTimeout(stop));
+  }, []);
 
   const step = (n: number, title: string, body: ReactNode) => (
     <div className="gate">
@@ -46,12 +54,22 @@ export function AccountGate({
         <>
           <p>RedZone uses the free QoreX wallet as your account. It keeps your bounties safe, even from future quantum computers.</p>
           <p className="note">
-            QoreX is a browser extension for Chrome or Firefox on a computer. There is no QoreX app for phones yet, and phone browsers can't
-            run it, so open this page on a laptop or desktop to play for bounties. You can still browse the robots and the leaderboard here.
+            On a phone, RedZone runs inside the QoreX app's own browser. First, in the QoreX app, open Settings and turn on{" "}
+            <b>Use testnet</b>. Then tap below: RedZone opens in QoreX and you sign in there.
           </p>
+          <a className="btn primary" href={`https://link.qore.network/browse?url=${encodeURIComponent(location.href)}`}>
+            Open RedZone in the QoreX app
+          </a>{" "}
           <a className="btn" href="#/robots">
-            See the robots
+            Just look around
           </a>
+          <p className="note">
+            No QoreX app yet? Get it from{" "}
+            <a href="https://play.google.com/store/apps/details?id=network.qore.qorex" target="_blank" rel="noreferrer">
+              Google Play
+            </a>{" "}
+            or the App Store, create a wallet, then come back here.
+          </p>
         </>
       ) : (
         <>

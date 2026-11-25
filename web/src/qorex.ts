@@ -1,4 +1,8 @@
-/** Minimal QoreX wallet access (window.qorex, injected by the QoreX extension). */
+/**
+ * Minimal QoreX wallet access: window.qorex, injected by the QoreX browser extension (desktop) and by the
+ * dApp browser inside the QoreX phone app. Both give the same native provider, except that the app has
+ * no listAccounts(); getKey() returns the active account in both.
+ */
 
 /** The native chain id QoreX signs for. Set from the server's /health (deployment record) on load. */
 let NATIVE_CHAIN_ID = "";
@@ -12,7 +16,8 @@ function chainId(): string {
 
 type QorexNative = {
   enable(chainId: string): Promise<unknown>;
-  listAccounts(): Promise<{ accounts: { address: string; label?: string }[]; activeIndex: number }>;
+  listAccounts?(): Promise<{ accounts: { address: string; label?: string }[]; activeIndex: number }>;
+  getKey(chainId: string): Promise<{ bech32Address: string }>;
   signArbitrary(chainId: string, signer: string, data: string): Promise<{ signatureType?: string; pq?: { algorithmId: number | string; signature: string } }>;
 };
 
@@ -36,10 +41,15 @@ function native(): QorexNative {
 export async function connect(): Promise<string> {
   const n = native();
   await n.enable(chainId());
-  const { accounts, activeIndex } = await n.listAccounts();
-  const acc = accounts[activeIndex] ?? accounts[0];
-  if (!acc) throw new Error("QoreX has no account");
-  return acc.address;
+  if (typeof n.listAccounts === "function") {
+    const { accounts, activeIndex } = await n.listAccounts();
+    const acc = accounts[activeIndex] ?? accounts[0];
+    if (acc) return acc.address;
+  }
+  // The QoreX app's dApp browser: getKey is the active account.
+  const key = await n.getKey(chainId());
+  if (!key?.bech32Address) throw new Error("QoreX has no account");
+  return key.bech32Address;
 }
 
 const isLocked = (e: unknown) => /locked/i.test((e as Error)?.message ?? String(e));
@@ -64,7 +74,8 @@ async function withUnlocked<T>(fn: () => Promise<T>): Promise<T> {
 /** Sign text with the account's ML-DSA-87 key; returns the post-quantum signature (base64). */
 export async function signPq(address: string, text: string): Promise<string> {
   const r = await withUnlocked(() => native().signArbitrary(chainId(), address, text));
-  if (r.signatureType !== "ml-dsa-87-hybrid" || !r.pq?.signature) {
+  // The server checks this signature against the ML-DSA-87 key registered on chain.
+  if (!r.pq?.signature || (r.signatureType && r.signatureType !== "ml-dsa-87-hybrid")) {
     throw new Error("QoreX did not return an ML-DSA-87 signature (is the account's PQC key registered?)");
   }
   return r.pq.signature;
@@ -73,8 +84,9 @@ export async function signPq(address: string, text: string): Promise<string> {
 /** Friendlier messages for the errors people actually hit. */
 export function explainQorexError(e: unknown): string {
   const m = (e as Error)?.message ?? String(e);
-  if (/locked/i.test(m)) return "QoreX locked itself. Click the QoreX icon in your browser bar, unlock it, then try again.";
-  if (/does not match the active network/i.test(m)) return `Switch QoreX to the right network (${NATIVE_CHAIN_ID}) and try again.`;
+  if (/locked/i.test(m)) return "QoreX locked itself. Unlock QoreX (the icon in your browser bar, or the QoreX app), then try again.";
+  if (/does not match the active network|mismatch/i.test(m))
+    return `Switch QoreX to the testnet (${NATIVE_CHAIN_ID}) and try again. In the QoreX app: Settings, then Use testnet.`;
   if (/reject|denied|cancel/i.test(m)) return "You cancelled the request in QoreX.";
   return m;
 }
