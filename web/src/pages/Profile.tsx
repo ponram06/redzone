@@ -81,16 +81,36 @@ export function Profile({ address: raw, own = false }: { address: string; own?: 
   const [tab, setTab] = useState<"activity" | "rounds" | "rewards">("activity");
   const explorer = health?.explorerUrl ?? null;
 
+  // Wallet balance: live from the chain; if the chain can't be reached, the last balance it gave (and when).
+  const [bal, setBal] = useState<{ uqor: string; at: number; live: boolean } | null>(null);
+  const balKey = `rz.balance.${address.toLowerCase()}`;
   const load = () =>
     api
       .playerProfile(address)
       .then((r) => {
         setP(r);
         setError(null);
+        if (r.balanceUqor !== null) {
+          const b = { uqor: r.balanceUqor, at: Date.now() };
+          setBal({ ...b, live: true });
+          try {
+            localStorage.setItem(balKey, JSON.stringify(b));
+          } catch {
+            /* private window: no cache */
+          }
+        } else {
+          try {
+            const b = JSON.parse(localStorage.getItem(balKey) ?? "null") as { uqor: string; at: number } | null;
+            setBal(b ? { ...b, live: false } : null);
+          } catch {
+            setBal(null);
+          }
+        }
       })
       .catch((e) => setError((e as Error).message));
   useEffect(() => {
     setP(null);
+    setBal(null);
     load();
     const t = setInterval(load, 30_000);
     return () => clearInterval(t);
@@ -214,7 +234,21 @@ export function Profile({ address: raw, own = false }: { address: string; own?: 
         </div>
         <div className="pf-wallet">
           <span className="pf-label">Wallet balance</span>
-          <span className="pf-balance">{p?.balanceUqor ? qorAmount(p.balanceUqor) : p ? "—" : "…"}</span>
+          <span className="pf-balance">{bal ? qorAmount(bal.uqor) : p ? "—" : "…"}</span>
+          {p && (
+            <span className="pf-live" title="Read from QoreChain testnet every 30 seconds">
+              {bal?.live ? (
+                <>
+                  <i className="pf-dot" /> Live from QoreChain · {clock(new Date(bal.at))}
+                </>
+              ) : bal ? (
+                `Chain unreachable · last known ${ago(Math.floor(bal.at / 1000))}`
+              ) : (
+                "Chain unreachable right now"
+              )}
+            </span>
+          )}
+          {isMe && bal?.live && bal.uqor === "0" && <span className="pf-live">All spent: add testnet QOR in QoreX to buy tries or post bounties</span>}
           <span className="pf-label">Prizes earned</span>
           <span className="pf-earned">{earned}</span>
           {isMe && acc.player && (
