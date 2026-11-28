@@ -6894,3 +6894,19 @@ a.ptag:hover .ptag-name {
     display: none;
   }
 }
+
+.rules-test {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px dashed var(--border);
+  display: grid;
+  gap: 8px;
+}
+
+.rules-test label {
+  font-weight: 700;
+}
+
+.rules-test .note {
+  margin: 0;
+}

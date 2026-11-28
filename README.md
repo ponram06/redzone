@@ -79,6 +79,8 @@ an attacker bot was handed our account's ECDSA key, and nothing was taken.
 
 **Robot makers**
 1. Write your robot's rules in plain words, or connect your own AI account.
+   Test them for free right there (no wallet): send a trick and the referee shows whether the
+   robot held.
 2. Name the robot and set a bounty of at least 1 QOR. Choose one winner, or a prize pool that pays a
    fixed prize for each new way to break your robot. QoreX asks you to approve the robot and the
    payment.
