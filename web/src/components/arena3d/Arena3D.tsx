@@ -498,11 +498,11 @@ function Zone({
       {id === "chemstore" && <ChemTanks at={c} />}
       {id === "substation" && <Substation poly={poly} hot={hot} />}
       {id === "crane" && <Crane poly={poly} hot={hot} />}
-      {label && (
-        <Html position={[c.x - OX, 9, c.y - OZ]} center distanceFactor={95} zIndexRange={[10, 0]}>
-          <div className={`a3-tag danger ${hot ? "hot" : ""}`}>⚠ {name}</div>
-        </Html>
-      )}
+      {/* Html stays mounted and only its content toggles: mounting and unmounting drei's Html during a
+          commit can make React remove a DOM node Html already moved ("removeChild" error). */}
+      <Html position={[c.x - OX, 9, c.y - OZ]} center distanceFactor={95} zIndexRange={[10, 0]}>
+        {label && <div className={`a3-tag danger ${hot ? "hot" : ""}`}>⚠ {name}</div>}
+      </Html>
     </group>
   );
 }
@@ -719,11 +719,9 @@ function Place({ id, name, at, restricted, label }: { id: string; name: string; 
         <ringGeometry args={[0.9, 1.2, 32]} />
         <meshBasicMaterial color={[0.6, 0.9, 1.4]} transparent opacity={0.7} toneMapped={false} />
       </mesh>
-      {label && (
-        <Html position={[0, 8, 0]} center distanceFactor={95} zIndexRange={[10, 0]}>
-          <div className="a3-tag">{name}</div>
-        </Html>
-      )}
+      <Html position={[0, 8, 0]} center distanceFactor={95} zIndexRange={[10, 0]}>
+        {label && <div className="a3-tag">{name}</div>}
+      </Html>
     </group>
   );
 }
@@ -1158,16 +1156,14 @@ function ActiveRobot({ path, trace, runKey, kind, color, say, quiet, onMove }: {
         <ringGeometry args={[3.4, 3.9, 48]} />
         <meshBasicMaterial color={state === "breached" ? [4, 0.3, 0.3] : state === "defended" ? [0.4, 3, 1.2] : [2.6, 2, 0.3]} transparent opacity={0.8} toneMapped={false} />
       </mesh>
-      {!quiet && say && state !== "idle" && (
-        <Html position={[0, state === "moving" ? 12 : 17, 0]} center zIndexRange={[100, 50]}>
-          <div className="a3-say">“{say.length > 90 ? `${say.slice(0, 88)}…` : say}”</div>
-        </Html>
-      )}
-      {!quiet && state !== "moving" && state !== "idle" && (
-        <Html position={[0, 11, 0]} center zIndexRange={[100, 50]}>
+      <Html position={[0, state === "moving" ? 12 : 17, 0]} center zIndexRange={[100, 50]}>
+        {!quiet && say && state !== "idle" && <div className="a3-say">“{say.length > 90 ? `${say.slice(0, 88)}…` : say}”</div>}
+      </Html>
+      <Html position={[0, 11, 0]} center zIndexRange={[100, 50]}>
+        {!quiet && state !== "moving" && state !== "idle" && (
           <div className={`a3-verdict ${state}`}>{state === "breached" ? "BREACHED" : "DEFENDED"}</div>
-        </Html>
-      )}
+        )}
+      </Html>
     </group>
   );
 }
@@ -1203,13 +1199,13 @@ const ParkedRobots = memo(function ParkedRobots({ robots, labels }: { robots: Ro
           <group rotation-y={wide ? 0 : Math.PI / 2} scale={0.8}>
             <RobotBody {...lookOf(r)} state="idle" />
           </group>
-          {labels && (
-            <Html position={[0, 6.5, 0]} center distanceFactor={95} zIndexRange={[10, 0]}>
+          <Html position={[0, 6.5, 0]} center distanceFactor={95} zIndexRange={[10, 0]}>
+            {labels && (
               <a className="a3-tag robot" href={`#/robots/${r.id}`}>
                 {r.name}
               </a>
-            </Html>
-          )}
+            )}
+          </Html>
         </group>
       ))}
     </>
@@ -1786,13 +1782,15 @@ export default function Arena3D({
               <ringGeometry args={[0.7, 1.1, 24]} />
               <meshBasicMaterial color={[4, 0.5, 0.5]} toneMapped={false} />
             </mesh>
-            <Html position={to3({ x: (gap.from.x + gap.to.x) / 2, y: (gap.from.y + gap.to.y) / 2 }, 3)} center zIndexRange={[60, 40]}>
-              <div className="a3-tag gap">
-                closest: {metres(gap.distance)} from {gap.name}
-              </div>
-            </Html>
           </group>
         )}
+        <Html position={gap ? to3({ x: (gap.from.x + gap.to.x) / 2, y: (gap.from.y + gap.to.y) / 2 }, 3) : [0, -50, 0]} center zIndexRange={[60, 40]}>
+          {gap && (
+            <div className="a3-tag gap">
+              closest: {metres(gap.distance)} from {gap.name}
+            </div>
+          )}
+        </Html>
         {breachAt && (
           <group key={runKey}>
             <Sparks at={breachAt} />

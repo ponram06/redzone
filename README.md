@@ -65,11 +65,12 @@ an attacker bot was handed our account's ECDSA key, and nothing was taken.
 ## How to use it
 
 **Players**
-1. Open **Play**, press **Start playing** and sign in with the QoreX wallet (testnet).
-2. Choose an opponent. Hover a robot to see its record: its job, recent attacks, skills score, AI
-   brain and bounty. Press **Enter the arena** to open the 3D arena. Free practice rounds pay and
-   save nothing.
-3. To play for bounties, verify your account once with a 0.1 QOR payment from QoreX.
+1. Open **Play** and press **Start playing**. No wallet is needed to look around or practise.
+2. Choose an opponent. Hover (or tap) a robot to see its record: its job, recent attacks, skills
+   score, AI brain and bounty. Press **Enter the arena** to open the 3D arena. Without a wallet it
+   opens on **Practice**: free rounds against a training robot that pay and save nothing.
+3. To play for bounties, switch to **For the bounty**, sign in with the QoreX wallet (testnet; on a
+   phone, inside the QoreX app's browser) and verify your account once with a 0.1 QOR payment.
 4. Start a round. You get 10 minutes and one message. QoreX asks once for a 10-minute **play
    pass**; rounds you start during it need no further approval.
 5. You get 5 free tries a day. Extra tries cost 0.1 QOR each and never expire.

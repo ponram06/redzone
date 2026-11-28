@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { TRAINING_BRAIN, type Arena, type Health, type Robot } from "../api";
 import { prizeHeadline, usePlayerPrize } from "../prize";
 import { useAccount } from "../account";
+import { hasQorex } from "../qorex";
 import { ArenaView } from "./ArenaView";
 import { PlayPanel } from "./PlayPanel";
 import { PracticePanel } from "./PracticePanel";
@@ -24,7 +25,8 @@ type Props = {
  */
 export function GameView({ arena, health, robot, all, demoPrompt, onBack, onFinished }: Props) {
   const acc = useAccount();
-  const [mode, setMode] = useState<"practice" | "real">("real");
+  // Without a signed-in QoreX wallet the free practice opens first; the bounty tab shows how to sign in.
+  const [mode, setMode] = useState<"practice" | "real">(() => (acc.address && hasQorex() ? "real" : "practice"));
   const [round, setRound] = useState<RoundInfo | null>(null);
   const [runKey, setRunKey] = useState(0);
   const [storyOpen, setStoryOpen] = useState(false);
@@ -94,7 +96,7 @@ export function GameView({ arena, health, robot, all, demoPrompt, onBack, onFini
         </div>
         {document.fullscreenEnabled && (
           <button
-            className="hud-btn"
+            className="hud-btn hud-fs"
             onClick={() => {
               const p = document.fullscreenElement ? document.exitFullscreen() : root.current?.requestFullscreen();
               p?.catch(() => {});

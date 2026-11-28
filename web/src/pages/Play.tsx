@@ -1,19 +1,19 @@
 import { useState } from "react";
 import { formatQor } from "../api";
-import { AccountGate } from "../components/AccountGate";
 import { GameView } from "../components/GameView";
 import { RobotSpotlight } from "../components/RobotSpotlight";
 import { isListed, useData } from "../data";
 
-/** Start → sign in → choose a robot → the arena opens full size with the message box at the bottom. */
+/**
+ * Start → choose a robot → the arena opens full size with the message box at the bottom. Anyone can look
+ * around and practise for free; signing in with QoreX is asked for only when a bounty round starts.
+ */
 export function Play({ robotId }: { robotId?: number }) {
   const [started, setStarted] = useState(robotId !== undefined);
   if (!started) return <Intro onStart={() => setStarted(true)} />;
   return (
     <div className="play-flow">
-      <AccountGate purpose="play" requireVerified={false}>
-        <Choose robotId={robotId} />
-      </AccountGate>
+      <Choose robotId={robotId} />
     </div>
   );
 }
@@ -32,11 +32,11 @@ function Intro({ onStart }: { onStart: () => void }) {
       <div className="intro-steps">
         <div>
           <b>1</b>
-          <span>Sign in with QoreX</span>
+          <span>Pick a robot, practise for free</span>
         </div>
         <div>
           <b>2</b>
-          <span>Pick a robot to attack</span>
+          <span>Sign in with QoreX to play for its bounty</span>
         </div>
         <div>
           <b>3</b>

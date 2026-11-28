@@ -6877,3 +6877,20 @@ a.ptag:hover .ptag-name {
     margin: 8px 0 0;
   }
 }
+
+@media (max-width: 640px) {
+  /* Game bar: the two mode tabs stay on one line each. */
+  .hud-mode button {
+    white-space: nowrap;
+    padding-left: 10px;
+    padding-right: 10px;
+    font-size: 12.5px;
+  }
+}
+
+@media (max-width: 640px) {
+  /* The game already fills a phone screen. */
+  .hud-fs {
+    display: none;
+  }
+}
