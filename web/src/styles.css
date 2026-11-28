@@ -6718,3 +6718,162 @@ a.ptag:hover .ptag-name {
     overflow-wrap: anywhere;
   }
 }
+
+/* ---------- phone polish (28 Nov): aligned buttons, readable tables, no clipped names ---------- */
+
+.on-touch {
+  display: none;
+}
+
+@media (hover: none) and (pointer: coarse) {
+  .on-hover {
+    display: none;
+  }
+  .on-touch {
+    display: inline;
+  }
+}
+
+.lab-more {
+  display: block;
+  margin: 14px auto 0;
+}
+
+@media (max-width: 640px) {
+  /* Hero: one clear line of status, both actions the same full width. */
+  .hx-kicker {
+    font-size: 10.5px;
+    letter-spacing: 0.06em;
+    line-height: 1.4;
+    hyphens: none;
+    padding: 6px 12px;
+    border-radius: 14px;
+  }
+  .hx-cta {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+  .hx-cta .btn {
+    width: 100%;
+    margin: 0;
+    justify-content: center;
+    text-align: center;
+  }
+  /* The stat strip right below says the same thing in bigger type. */
+  .hx-ticker {
+    display: none;
+  }
+
+  /* Section titles with a link: keep the link on one line, beside the title. */
+  .section-head {
+    align-items: center;
+  }
+  .section-head > a {
+    white-space: nowrap;
+    flex-shrink: 0;
+    font-size: 14px;
+  }
+
+  /* Live feed: name on its own line, verdict tag and time below it, nothing cut off. */
+  .feed li {
+    grid-template-columns: 10px 1fr auto;
+    grid-template-areas: "dot who who" "dot time tag";
+    row-gap: 6px;
+  }
+  .feed-who {
+    white-space: normal;
+    overflow: visible;
+  }
+
+  /* Leaderboards: one card per row instead of a table cut off on the right. */
+  .table-wrap:has(table.stack) {
+    overflow: visible;
+  }
+  table.rank.stack thead {
+    display: none;
+  }
+  table.rank.stack,
+  .rank.stack tbody {
+    display: block;
+  }
+  .rank.stack tr {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    row-gap: 8px;
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--border);
+  }
+  .rank.stack tbody tr:last-child {
+    border-bottom: none;
+  }
+  .rank.stack td {
+    border: none;
+    padding: 0;
+    white-space: normal;
+  }
+  .rank.stack td:first-child {
+    flex: 0 0 30px;
+    font-weight: 700;
+  }
+  .rank.stack td:nth-child(2) {
+    flex: 1 1 calc(100% - 30px);
+    font-family: inherit;
+  }
+  .rank.stack td[data-label] {
+    flex: 0 0 50%;
+    padding-left: 30px;
+    font-size: 14px;
+  }
+  .rank.stack td[data-label]:nth-child(even) {
+    padding-left: 6px;
+  }
+  .rank.stack td[data-label]::before {
+    content: attr(data-label);
+    display: block;
+    font-family: var(--mono);
+    font-size: 10.5px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 2px;
+  }
+
+  /* Robot page: numbers two to a row. */
+  .bigstats {
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+  .bigstats div {
+    padding: 14px;
+    font-size: 13px;
+  }
+
+  .bigstats div:last-child:nth-child(odd) {
+    grid-column: 1 / -1;
+  }
+
+  /* Report: four section tabs as an even 2 x 2 grid, the three audience tabs in one row. */
+  .rp-tabs {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+  .rp-tabs.small {
+    grid-template-columns: repeat(3, 1fr);
+  }
+  .rp-tabs button {
+    text-align: center;
+    padding-left: 4px;
+    padding-right: 4px;
+  }
+
+  /* Sign-in steps: every action button the same full width. */
+  .gate .btn {
+    display: flex;
+    width: 100%;
+    justify-content: center;
+    text-align: center;
+    margin: 8px 0 0;
+  }
+}

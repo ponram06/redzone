@@ -6,6 +6,8 @@ import { api, type LabState } from "../api";
  * cracked it. Our bot attacks it every hour with that key; anyone can try the same.
  */
 
+/** Attack runs listed before "Show all": the newest ones. */
+const LOG_SHOWN = 8;
 const REPO = "https://github.com/ponram06/redzone/blob/main";
 const qor = (uqor: string | bigint) => (Number(BigInt(uqor)) / 1e6).toLocaleString(undefined, { maximumFractionDigits: 6 });
 
@@ -14,6 +16,7 @@ export function Lab() {
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [now, setNow] = useState(Date.now());
+  const [allRuns, setAllRuns] = useState(false);
 
   useEffect(() => {
     const load = () =>
@@ -126,7 +129,7 @@ export function Lab() {
           <section className="panel lab-log">
             <h2>Attack log</h2>
             {s.runs.length === 0 && <p className="note">The first attack runs a minute after the server starts.</p>}
-            {s.runs.map((r) => (
+            {(allRuns ? s.runs : s.runs.slice(0, LOG_SHOWN)).map((r) => (
               <details key={r.at} open={r === s.runs[0]}>
                 <summary>
                   <span>{new Date(r.at * 1000).toLocaleString()}</span>
@@ -148,6 +151,11 @@ export function Lab() {
                 </ul>
               </details>
             ))}
+            {!allRuns && s.runs.length > LOG_SHOWN && (
+              <button className="btn lab-more" onClick={() => setAllRuns(true)}>
+                Show all {s.runs.length} attack runs
+              </button>
+            )}
           </section>
 
           <section className="vf-how">

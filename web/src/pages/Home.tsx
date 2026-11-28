@@ -37,7 +37,7 @@ export function Home() {
             Real AI robots guard a power plant: a reactor, a chemical store, a high-voltage substation and a crane. You get one message to
             trick one into danger. If it falls for it, the prize is paid to you on chain, automatically.
           </p>
-          <div className="row">
+          <div className="row hx-cta">
             <a className="btn primary big" href="#/play">
               Start playing
             </a>
@@ -94,7 +94,10 @@ export function Home() {
           <h2>Pick your opponent</h2>
           <a href="#/robots">Full leaderboard →</a>
         </div>
-        <p className="note">Hover a robot to see its job, its record and what it pays. Click to play against it.</p>
+        <p className="note">
+          <span className="on-hover">Hover a robot to see its job, its record and what it pays. Click to play against it.</span>
+          <span className="on-touch">Tap a robot to see its job, its record and what it pays, then play against it.</span>
+        </p>
         {listed.length ? (
           <RobotPicker robots={listed} onChoose={(id) => (location.hash = `#/play/${id}`)} />
         ) : (

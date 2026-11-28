@@ -45,8 +45,8 @@ export function AccountGate({
   );
 
   if (!hasQorex()) {
-    // QoreX is a desktop browser extension: phones and tablets can't run it yet.
-    const phone = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && !matchMedia("(hover: hover)").matches);
+    // Desktop: the QoreX browser extension. Phones and tablets: the QoreX app, whose own browser runs RedZone.
+    const phone = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 0 && matchMedia("(pointer: coarse)").matches);
     return step(
       1,
       "Get the QoreX wallet",

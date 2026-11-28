@@ -82,7 +82,7 @@ function Players() {
       )}
       {rows && rows.length > 0 && (
         <div className="table-wrap">
-          <table className="rank">
+          <table className="rank stack">
             <thead>
               <tr>
                 <th>#</th>
@@ -102,9 +102,9 @@ function Players() {
                       {toEvm(r.player) === me && <span className="you-chip">You</span>}
                     </span>
                   </td>
-                  <td>{r.wins}</td>
-                  <td>{r.attempts}</td>
-                  <td>{r.wonWei !== "0" ? formatQor(r.wonWei) : "–"}</td>
+                  <td data-label="Wins">{r.wins}</td>
+                  <td data-label="Rounds played">{r.attempts}</td>
+                  <td data-label="Bounties won">{r.wonWei !== "0" ? formatQor(r.wonWei) : "–"}</td>
                 </tr>
               ))}
             </tbody>
@@ -132,7 +132,7 @@ function Rankings() {
       {!robotsLoaded && <p className="note">Loading robots…</p>}
       {sorted.length > 0 && (
         <div className="table-wrap">
-          <table className="rank">
+          <table className="rank stack">
             <thead>
               <tr>
                 <th>#</th>
@@ -152,14 +152,14 @@ function Rankings() {
                     <span className={`badge tier-${r.tier.toLowerCase()}`}>{TIER_TEXT[r.tier]}</span> <StatusBadge robot={r} />
                     {toEvm(r.owner) === meEvm && <span className="you-chip">Your robot</span>}
                   </td>
-                  <td>
+                  <td data-label="Safety score">
                     <Score robot={r} />
                   </td>
-                  <td>
+                  <td data-label="Attacks blocked">
                     {r.defended} of {r.attacks}
                   </td>
-                  <td>{r.utilityScore ? `${r.utilityScore}/${tasks}` : "Not tested"}</td>
-                  <td>{r.bounty.totalWei !== "0" ? formatQor(r.bounty.totalWei) : "None"}</td>
+                  <td data-label="Everyday tasks">{r.utilityScore ? `${r.utilityScore}/${tasks}` : "Not tested"}</td>
+                  <td data-label="Bounty">{r.bounty.totalWei !== "0" ? formatQor(r.bounty.totalWei) : "None"}</td>
                 </tr>
               ))}
             </tbody>
