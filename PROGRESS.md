@@ -92,6 +92,8 @@ live end-to-end round with the main QoreX account, cover image, demo video, subm
 - [x] QCAI stage 2 rerun on the stage 1 setting (ethereum) so both stages match (22 Nov, 85/100, 6 findings answered, no contract change; audits/QCAI-v5-stage2-ethereum-response.md)
 - [ ] Submit before 2 Dec 23:59 UTC (form text up to date as of 23 Nov, with both 85/100 stages): there is no submit button, the project page is read at the deadline, so the form (description, "How it's made" with the audit line, category, kits, AI-native tick), cover and video must be in place by then
 
+- [x] 28 Nov full test, desktop and phone: chain matches the site (vault 67.5 QOR locked = API = pages); 477 contract + 118 server + 6 live tests pass. Phone layout fixed (equal buttons, leaderboards as cards, feed names, report tabs, game bar). Practice and a free rules test for makers work without a wallet; React removeChild crash in the 3D arena fixed. Project form: description and "How it's made" now mention Verify, Q-Day Lab and the no-wallet path
+
 ## Checkpoint 19 Nov (resume here)
 - Done today: EscrowVaultV4 docs + QCAI bundle audits/RedZone.v5.flat.sol (de8bb18); realistic 3D arena (ce13624); Sentinel-01 pool 1 QOR / 0.5 per win; AI robots #2-#4 funded
 - [x] New Play flow (19 Nov): Start → sign in → choose opponent (hover record: job, recent attacks, skills, AI brain, bounty) → full-screen arena with docked message box and a "What happened" card; `/robots/:id/record`, signed robot job (`/owner/profile`), `scripts/set-job.ts`
